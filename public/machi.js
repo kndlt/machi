@@ -98,6 +98,9 @@ class Game {
         // Add UI controls
         this.createUI();
         
+        // Auto-start the game
+        await this.startGame();
+        
         console.log('🎮 Game initialized');
     }
     
