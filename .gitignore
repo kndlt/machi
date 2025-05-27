@@ -53,6 +53,7 @@ out/
 # Backup files
 *.bak
 *.backup
+.next/
 
 # OS generated files
 .DS_Store
