@@ -1,16 +1,26 @@
-import init, { hello_world, compute_fibonacci, heavy_computation } from './pkg/hello_wasm.js';
+// Game coordinator using WASM worker and Pixi.js rendering
 
 // Class to handle WASM worker communication
-class WasmWorker {
+class GameWorker {
     constructor() {
         this.worker = new Worker('./wasm-worker.js', { type: 'module' });
         this.messageId = 0;
         this.pendingMessages = new Map();
+        this.onGameStateUpdate = null;
         
         this.worker.onmessage = (e) => {
-            const { type, id, result, error } = e.data;
-            const pending = this.pendingMessages.get(id);
+            const { type, id, result, error, data, timestamp } = e.data;
             
+            // Handle game state updates (no ID required)
+            if (type === 'game_state_update') {
+                if (this.onGameStateUpdate) {
+                    this.onGameStateUpdate(data, timestamp);
+                }
+                return;
+            }
+            
+            // Handle request/response messages
+            const pending = this.pendingMessages.get(id);
             if (pending) {
                 this.pendingMessages.delete(id);
                 if (type === 'success') {
@@ -31,121 +41,222 @@ class WasmWorker {
         });
     }
     
+    // Send message without expecting response
+    sendMessage(type, data = {}) {
+        this.worker.postMessage({ type, data });
+    }
+    
     terminate() {
         this.worker.terminate();
     }
 }
 
-let wasmWorker;
-
-async function runMainThread() {
-    console.log('\n🧵 === MAIN THREAD EXECUTION ===');
-    
-    // Initialize the wasm module on main thread
-    await init();
-    
-    // Test 1: Simple hello world
-    console.log('1. Calling hello_world() on main thread...');
-    const message = hello_world();
-    console.log('   Result:', message);
-    
-    // Test 2: Fibonacci calculation
-    console.log('2. Computing fibonacci(40) on main thread...');
-    const start = performance.now();
-    const fib = compute_fibonacci(40);
-    const end = performance.now();
-    console.log(`   Result: ${fib} (took ${(end - start).toFixed(2)}ms)`);
-}
-
-async function runWorkerThread() {
-    console.log('\n🔧 === WORKER THREAD EXECUTION ===');
-    
-    wasmWorker = new WasmWorker();
-    
-    // Test 1: Simple hello world in worker
-    console.log('1. Calling hello_world() in worker thread...');
-    try {
-        const message = await wasmWorker.callFunction('hello_world');
-        console.log('   Result:', message);
-    } catch (error) {
-        console.error('   Error:', error);
+// Game class that manages Pixi.js rendering and game state
+class Game {
+    constructor() {
+        this.app = null;
+        this.worker = null;
+        this.promiserSprites = new Map();
+        this.container = null;
+        this.isRunning = false;
+        
+        // Game settings
+        this.worldWidth = 800;
+        this.worldHeight = 600;
     }
     
-    // Test 2: Fibonacci calculation in worker
-    console.log('2. Computing fibonacci(40) in worker thread...');
-    const start = performance.now();
-    try {
-        const fib = await wasmWorker.callFunction('fibonacci', { n: 40 });
-        const end = performance.now();
-        console.log(`   Result: ${fib} (took ${(end - start).toFixed(2)}ms)`);
-    } catch (error) {
-        console.error('   Error:', error);
-    }
-    
-    // Test 3: Heavy computation in worker (non-blocking)
-    console.log('3. Starting heavy computation in worker thread...');
-    console.log('   (This runs in background - main thread stays responsive)');
-    
-    wasmWorker.callFunction('heavy_computation')
-        .then(result => {
-            console.log('   Heavy computation result:', result);
-            updateStatus('✅ All worker operations completed!');
-        })
-        .catch(error => {
-            console.error('   Heavy computation error:', error);
+    async init() {
+        console.log('🎮 Initializing game...');
+        
+        // Create Pixi.js application
+        this.app = new window.PIXI.Application();
+        await this.app.init({
+            width: this.worldWidth,
+            height: this.worldHeight,
+            backgroundColor: 0x1a1a2e,
+            antialias: true
         });
-}
-
-function updateStatus(message) {
-    const statusEl = document.getElementById('status');
-    if (statusEl) {
-        statusEl.textContent = message;
+        
+        // Replace loading content with game canvas
+        const gameContainer = document.getElementById('gameContainer');
+        const loadingDiv = gameContainer.querySelector('.loading');
+        if (loadingDiv) {
+            loadingDiv.remove();
+        }
+        gameContainer.appendChild(this.app.canvas);
+        
+        // Create container for promisers
+        this.container = new window.PIXI.Container();
+        this.app.stage.addChild(this.container);
+        
+        // Initialize worker
+        this.worker = new GameWorker();
+        this.worker.onGameStateUpdate = (data, timestamp) => {
+            this.updateRender(data, timestamp);
+        };
+        
+        // Add UI controls
+        this.createUI();
+        
+        console.log('🎮 Game initialized');
     }
-}
-
-async function run() {
-    console.log('🚀 === WASM THREADING DEMONSTRATION ===');
     
-    // Update HTML with status
-    document.body.innerHTML += `
-        <div style="padding: 20px; font-family: Arial, sans-serif;">
-            <h2>WebAssembly Threading Demo</h2>
-            <p id="status">🔄 Running tests...</p>
-            <div style="margin-top: 20px;">
-                <h3>Key Differences:</h3>
-                <ul>
-                    <li><strong>Main Thread:</strong> WASM blocks the UI during execution</li>
-                    <li><strong>Worker Thread:</strong> WASM runs in background, UI stays responsive</li>
-                </ul>
-                <p><em>Check the browser console for detailed logs!</em></p>
-            </div>
-        </div>
-    `;
+    createUI() {
+        const controls = document.createElement('div');
+        controls.style.cssText = `
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: Arial, sans-serif;
+            z-index: 1000;
+        `;
+        
+        controls.innerHTML = `
+            <h3 style="margin: 0 0 10px 0;">Promiser Game</h3>
+            <button id="startGame">Start Game</button>
+            <button id="stopGame">Stop Game</button>
+            <button id="addPromiser">Add Promiser</button>
+            <div id="status" style="margin-top: 10px; font-size: 12px;">Ready to start</div>
+        `;
+        
+        document.body.appendChild(controls);
+        
+        // Add event listeners
+        document.getElementById('startGame').onclick = () => this.startGame();
+        document.getElementById('stopGame').onclick = () => this.stopGame();
+        document.getElementById('addPromiser').onclick = () => this.addPromiser();
+    }
     
-    try {
-        // Run main thread tests
-        await runMainThread();
+    updateStatus(message) {
+        const statusEl = document.getElementById('status');
+        if (statusEl) {
+            statusEl.textContent = message;
+        }
+    }
+    
+    async startGame() {
+        if (this.isRunning) return;
         
-        // Small delay to show the difference
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        console.log('🎮 Starting game...');
+        this.updateStatus('Starting game...');
         
-        // Run worker thread tests
-        await runWorkerThread();
+        try {
+            const result = await this.worker.callFunction('start_game', {
+                worldWidth: this.worldWidth,
+                worldHeight: this.worldHeight
+            });
+            
+            this.isRunning = true;
+            this.updateStatus('Game running - Promisers are moving!');
+            console.log('🎮 Game started:', result);
+            
+        } catch (error) {
+            console.error('🎮 Failed to start game:', error);
+            this.updateStatus('Failed to start game');
+        }
+    }
+    
+    async stopGame() {
+        if (!this.isRunning) return;
         
-        updateStatus('🔄 Tests running... (worker operations in progress)');
+        console.log('🎮 Stopping game...');
+        this.updateStatus('Stopping game...');
         
-    } catch (error) {
-        console.error('Error:', error);
-        updateStatus('❌ Error occurred during tests');
+        try {
+            const result = await this.worker.callFunction('stop_game');
+            
+            this.isRunning = false;
+            this.updateStatus('Game stopped');
+            console.log('🎮 Game stopped:', result);
+            
+            // Clear all sprites
+            this.clearSprites();
+            
+        } catch (error) {
+            console.error('🎮 Failed to stop game:', error);
+            this.updateStatus('Failed to stop game');
+        }
+    }
+    
+    async addPromiser() {
+        if (!this.isRunning) return;
+        
+        try {
+            const result = await this.worker.callFunction('add_promiser');
+            console.log('🎮 Added promiser, total count:', result.count);
+            this.updateStatus(`Game running - ${result.count} promisers`);
+            
+        } catch (error) {
+            console.error('🎮 Failed to add promiser:', error);
+        }
+    }
+    
+    updateRender(gameState, timestamp) {
+        if (!gameState.promisers) return;
+        
+        // Update existing sprites and create new ones
+        const currentIds = new Set();
+        
+        gameState.promisers.forEach(promiser => {
+            currentIds.add(promiser.id);
+            
+            let sprite = this.promiserSprites.get(promiser.id);
+            
+            if (!sprite) {
+                // Create new sprite
+                sprite = new window.PIXI.Graphics();
+                this.promiserSprites.set(promiser.id, sprite);
+                this.container.addChild(sprite);
+            }
+            
+            // Update sprite appearance and position
+            sprite.clear();
+            sprite.circle(0, 0, promiser.size);
+            sprite.fill({ color: promiser.color & 0xFFFFFF }); // Remove alpha from color
+            sprite.x = promiser.x;
+            sprite.y = promiser.y;
+        });
+        
+        // Remove sprites for promisers that no longer exist
+        for (const [id, sprite] of this.promiserSprites.entries()) {
+            if (!currentIds.has(id)) {
+                this.container.removeChild(sprite);
+                this.promiserSprites.delete(id);
+            }
+        }
+    }
+    
+    clearSprites() {
+        for (const sprite of this.promiserSprites.values()) {
+            this.container.removeChild(sprite);
+        }
+        this.promiserSprites.clear();
+    }
+    
+    destroy() {
+        if (this.worker) {
+            this.worker.terminate();
+        }
+        if (this.app) {
+            this.app.destroy(true);
+        }
     }
 }
 
-// Cleanup worker on page unload
-window.addEventListener('beforeunload', () => {
-    if (wasmWorker) {
-        wasmWorker.terminate();
-    }
+// Initialize and start the game
+const game = new Game();
+
+game.init().then(() => {
+    console.log('🎮 Game ready! Click "Start Game" to begin.');
+}).catch(error => {
+    console.error('🎮 Failed to initialize game:', error);
 });
 
-// Run the function when the page loads
-run().catch(console.error);
+// Cleanup on page unload
+window.addEventListener('beforeunload', () => {
+    game.destroy();
+});

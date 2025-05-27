@@ -1,102 +1,105 @@
-# WebAssembly Threading Demo
+# Promiser Game - WebAssembly + Pixi.js
 
-This project demonstrates the difference between running WebAssembly on the main thread vs. in a background thread using Web Workers.
+An interactive game demonstrating real-time WebAssembly game state management with Pixi.js rendering. Little creatures called "promisers" move around randomly on a 2D plane, with all game logic running in a Web Worker to keep the UI responsive.
 
-## Files Overview
+## Features
 
-### Core Files
-- **`index.html`** - Main HTML page
-- **`machi.js`** - Main thread coordinator and WASM interface
-- **`wasm-worker.js`** - Web Worker script for background WASM execution
-- **`src/lib.rs`** - Rust WASM module with multiple functions
-- **`pkg/`** - Generated WASM bindings and files
+- **Real-time Game State**: WASM manages game entities with 60fps updates
+- **Web Worker Threading**: Game logic runs in background thread, UI stays responsive
+- **Pixi.js Rendering**: Smooth 2D graphics with efficient sprite management
+- **Interactive Controls**: Add promisers dynamically, start/stop the simulation
+- **Compact State Transfer**: Optimized data serialization between worker and main thread
 
-## Threading Models
+## Architecture
 
-### 1. Main Thread Execution (Original)
-```javascript
-// Direct WASM calls on main thread
-const result = hello_world();  // Blocks UI if heavy computation
-```
+### Core Components
+- **`src/lib.rs`** - Rust WASM game engine with promiser entities and game state
+- **`public/wasm-worker.js`** - Web Worker running game loop and state updates
+- **`public/machi.js`** - Main thread coordinator with Pixi.js rendering
+- **`public/index.html`** - Game interface and canvas container
 
-**Characteristics:**
-- ✅ Simple and straightforward
-- ✅ No message passing overhead
-- ❌ Blocks the main thread during execution
-- ❌ Can freeze the UI for heavy computations
+### Data Flow
+1. **Game State (WASM)**: Promisers move randomly, bounce off boundaries, change direction
+2. **Worker Thread**: Updates game state 60 times per second 
+3. **State Transfer**: Compact JSON representation sent to main thread
+4. **Rendering**: Pixi.js sprites updated with current promiser positions/colors
 
-### 2. Background Thread Execution (Web Workers)
-```javascript
-// WASM runs in Web Worker
-const result = await wasmWorker.callFunction('hello_world');
-```
+## Game Entities: Promisers
 
-**Characteristics:**
-- ✅ Non-blocking - UI stays responsive
-- ✅ True parallel execution
-- ✅ Can handle heavy computations without freezing
-- ❌ More complex setup required
-- ❌ Message passing overhead
-- ❌ Limited access to DOM from worker
-
-## Functions Demonstrated
-
-1. **`hello_world()`** - Simple string return
-2. **`compute_fibonacci(n)`** - CPU-intensive calculation
-3. **`heavy_computation()`** - Simulates very heavy work
-
-## Key Differences Observed
-
-### Main Thread:
-- WASM executes synchronously
-- Heavy computations block the browser UI
-- Direct function calls (faster for simple operations)
-
-### Worker Thread:
-- WASM executes asynchronously via message passing
-- Heavy computations run in background
-- UI remains responsive during execution
-- Small overhead for message serialization
-
-## When to Use Each Approach
-
-### Use Main Thread When:
-- Simple, fast computations
-- Need immediate results
-- Working with DOM elements directly
-- Simplicity is preferred
-
-### Use Worker Thread When:
-- Heavy computational workloads
-- Long-running operations
-- UI responsiveness is critical
-- Parallel processing is beneficial
-
-## Browser Console Output
-
-The demo shows both execution methods with timing information:
-```
-🧵 === MAIN THREAD EXECUTION ===
-1. Calling hello_world() on main thread...
-   Result: Hello World from WebAssembly!
-2. Computing fibonacci(40) on main thread...
-   Result: 102334155 (took 2.50ms)
-
-🔧 === WORKER THREAD EXECUTION ===
-1. Calling hello_world() in worker thread...
-   Result: Hello World from WebAssembly!
-2. Computing fibonacci(40) in worker thread...
-   Result: 102334155 (took 3.20ms)
-3. Starting heavy computation in worker thread...
-   (This runs in background - main thread stays responsive)
-```
+Promisers are autonomous entities with the following properties:
+- **Position** (x, y): Current location on the 2D plane
+- **Velocity** (vx, vy): Movement speed and direction
+- **Size**: Visual radius (5-15 pixels)
+- **Color**: Random RGB color for identification
+- **Behavior**: Random movement with boundary bouncing and occasional direction changes
 
 ## Technical Implementation
 
-The Web Worker implementation uses:
-- ES6 modules for worker scripts
-- Promise-based message passing
-- Unique message IDs for request/response matching
-- Error handling and cleanup
+### WASM Game State
+```rust
+// Game state contains all promisers and world bounds
+pub struct GameState {
+    promisers: HashMap<u32, Promiser>,
+    world_width: f64,
+    world_height: f64,
+}
 
-This demonstrates how WebAssembly can be used effectively in both threading models depending on your application's needs.
+// Each promiser moves independently
+impl Promiser {
+    fn update(&mut self, world_width: f64, world_height: f64, dt: f64) {
+        // Update position, handle boundary collisions
+    }
+}
+```
+
+### Worker Threading
+```javascript
+// Game loop running at 60fps in Web Worker
+setInterval(() => {
+    const stateData = update_game(performance.now());
+    self.postMessage({
+        type: 'game_state_update',
+        data: JSON.parse(stateData)
+    });
+}, 16);
+```
+
+### Efficient Rendering
+```javascript
+// Only update sprites that exist, create/remove as needed
+gameState.promisers.forEach(promiser => {
+    let sprite = this.promiserSprites.get(promiser.id);
+    if (!sprite) {
+        sprite = new PIXI.Graphics();
+        this.promiserSprites.set(promiser.id, sprite);
+    }
+    // Update position and appearance
+});
+```
+
+## Performance Benefits
+
+### Threading Model
+- **Main Thread**: Handles UI, rendering, user interactions
+- **Worker Thread**: Manages game state, physics, entity updates
+- **Result**: Smooth 60fps animation with responsive controls
+
+### State Management
+- **Compact Serialization**: Only essential data transferred between threads
+- **Efficient Updates**: Sprite pool management, minimal DOM manipulation
+- **Memory Management**: Automatic cleanup of removed entities
+
+## Controls
+
+- **Start Game**: Initialize promisers and begin simulation
+- **Stop Game**: Pause simulation and clear display
+- **Add Promiser**: Spawn new entity with random properties
+
+## Running the Game
+
+1. **Build WASM**: `wasm-pack build --target web --out-dir public/pkg`
+2. **Start Server**: `cd public && python3 -m http.server 8000`
+3. **Open Browser**: Navigate to `http://localhost:8000`
+4. **Play**: Click "Start Game" and watch the promisers move!
+
+This project demonstrates how WebAssembly can efficiently manage real-time game state while keeping browser UI responsive through proper threading architecture.

@@ -3,11 +3,61 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WASM Hello World</title>
+    <title>Promiser Game - WASM + Pixi.js</title>
+    <script src="./lib/pixi-8.9.2.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #0f0f23;
+            color: white;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        
+        #gameContainer {
+            position: relative;
+            border: 2px solid #333;
+            border-radius: 8px;
+            box-shadow: 0 0 20px rgba(0, 150, 255, 0.3);
+        }
+        
+        canvas {
+            display: block;
+            border-radius: 6px;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+        }
+        
+        .info {
+            position: absolute;
+            bottom: -50px;
+            left: 0;
+            right: 0;
+            text-align: center;
+            font-size: 14px;
+            color: #888;
+        }
+    </style>
 </head>
 <body>
-    <h1>WebAssembly Hello World</h1>
-    <p>Check the console for the WASM output!</p>
+    <div id="gameContainer">
+        <div class="loading">
+            <h1>🎮 Promiser Game</h1>
+            <p>Loading WebAssembly game engine...</p>
+            <p><small>Watch little promisers move around in real-time!</small></p>
+        </div>
+        
+        <div class="info">
+            <p>Game state managed in WASM worker thread • Rendered with Pixi.js</p>
+        </div>
+    </div>
     
     <script type="module" src="machi.js"></script>
 </body>
