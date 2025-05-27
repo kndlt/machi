@@ -2,12 +2,16 @@
   "name": "machi",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=18.17.0"
+  },
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "next build",
+    "build": "pnpm run build:wasm && next build",
+    "build:next": "next build",
     "start": "next start",
     "lint": "next lint",
-    "build:wasm": "wasm-pack build --target web --out-dir ../public/pkg ./wasm"
+    "build:wasm": "cd wasm && wasm-pack build --target web --out-dir ../public/pkg"
   },
   "dependencies": {
     "next": "15.3.2",
