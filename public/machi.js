@@ -130,6 +130,14 @@ class Game {
             <button id="startGame">Start Game</button>
             <button id="stopGame">Stop Game</button>
             <button id="addPromiser">Add Promiser</button>
+            <div style="margin-top: 10px;">
+                <label style="font-size: 12px;">AI Coordinator:</label>
+                <select id="aiSelector" style="margin-left: 5px; background: #333; color: white; border: 1px solid #555;">
+                    <option value="ollama">Ollama (Local)</option>
+                    <option value="test">Test AI</option>
+                    <option value="openai">OpenAI</option>
+                </select>
+            </div>
             <div id="status" style="margin-top: 10px; font-size: 12px;">Ready to start</div>
         `;
         
@@ -139,6 +147,11 @@ class Game {
         document.getElementById('startGame').onclick = () => this.startGame();
         document.getElementById('stopGame').onclick = () => this.stopGame();
         document.getElementById('addPromiser').onclick = () => this.addPromiser();
+        
+        // Set up AI selector
+        const aiSelector = document.getElementById('aiSelector');
+        aiSelector.value = this.getSelectedAIType();
+        aiSelector.onchange = (e) => this.setAIType(e.target.value);
     }
     
     updateStatus(message) {
@@ -218,9 +231,28 @@ class Game {
         
         console.log('🤖 Connecting to AI coordinator...');
         
+        // Get the selected AI coordinator type from the UI or default to ollama
+        const aiType = this.getSelectedAIType();
+        console.log(`🤖 Using AI coordinator type: ${aiType}`);
+        
         // Get the promiser count for the coordinator
         const promiserCount = 20; // Default promiser count
-        this.aiCoordinator = new EventSource(`/api/test-ai?count=${promiserCount}`);
+        
+        let endpoint;
+        switch (aiType) {
+            case 'ollama':
+                endpoint = '/api/ollama-ai';
+                break;
+            case 'openai':
+                endpoint = `/api/ai-coordinator?count=${promiserCount}`;
+                break;
+            case 'test':
+            default:
+                endpoint = `/api/test-ai?count=${promiserCount}`;
+                break;
+        }
+        
+        this.aiCoordinator = new EventSource(endpoint);
         
         this.aiCoordinator.onopen = () => {
             console.log('🤖 AI coordinator connected');
@@ -258,6 +290,24 @@ class Game {
         };
     }
     
+    getSelectedAIType() {
+        // Check if there's a stored preference
+        const stored = localStorage.getItem('machi-ai-type');
+        if (stored) return stored;
+        
+        // Default to Ollama for local AI
+        return 'ollama';
+    }
+    
+    setAIType(type) {
+        localStorage.setItem('machi-ai-type', type);
+        console.log(`🤖 AI type changed to: ${type}`);
+        
+        // Reconnect with new AI type
+        this.connectAICoordinator();
+        this.updateStatus(`Switched to ${type} AI coordinator`);
+    }
+    
     disconnectAICoordinator() {
         if (this.aiCoordinator) {
             console.log('🤖 Disconnecting AI coordinator...');
@@ -275,7 +325,46 @@ class Game {
         } else if (data.type === 'ping') {
             // Just log pings quietly
             console.log('🤖 Ping received');
+        } else if (data.type === 'ai_behavior') {
+            // Handle Ollama AI coordinator events
+            const { promiser_id, action, content } = data;
+            
+            console.log(`🤖 Promiser ${promiser_id} AI behavior: ${action} - "${content}"`);
+            
+            // Send command to WASM worker
+            try {
+                console.log(`🤖 Sending AI action to worker: ${action} for promiser ${promiser_id}`);
+                switch (action) {
+                    case 'think':
+                        await this.worker.callFunction('make_promiser_think', { id: promiser_id });
+                        console.log(`🤖 Sent think command for promiser ${promiser_id}`);
+                        break;
+                    case 'speak':
+                        await this.worker.callFunction('make_promiser_speak', { id: promiser_id, thought: content });
+                        console.log(`🤖 Sent speak command for promiser ${promiser_id}: "${content}"`);
+                        break;
+                    case 'whisper':
+                        // For whisper, pick a random target
+                        const targetId = Math.floor(Math.random() * 20);
+                        await this.worker.callFunction('make_promiser_whisper', { id: promiser_id, thought: content, targetId });
+                        console.log(`🤖 Sent whisper command for promiser ${promiser_id} to ${targetId}: "${content}"`);
+                        break;
+                    case 'run':
+                        await this.worker.callFunction('make_promiser_run', { id: promiser_id });
+                        console.log(`🤖 Sent run command for promiser ${promiser_id}`);
+                        break;
+                }
+                
+                // Show thought bubble if it's a speaking/whispering action
+                if (action === 'speak' || action === 'whisper') {
+                    this.showThoughtBubble(promiser_id, content, action === 'whisper');
+                }
+                
+            } catch (error) {
+                console.error('🤖 Error sending AI action to worker:', error);
+            }
         } else if (data.type === 'promiser_action') {
+            // Handle test AI and OpenAI coordinator events (legacy format)
             const { promiserId, behavior, thought, targetId } = data;
             
             console.log(`🤖 Promiser ${promiserId} action: ${behavior} - "${thought}"`);

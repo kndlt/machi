@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Coordinator Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #1a1a2e;
+            color: white;
+            padding: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .event {
+            background: rgba(255,255,255,0.1);
+            border-radius: 8px;
+            padding: 15px;
+            margin: 10px 0;
+            border-left: 4px solid #4CAF50;
+        }
+        .ai-behavior {
+            border-left-color: #FF9800;
+        }
+        .error {
+            border-left-color: #F44336;
+        }
+        .controls {
+            background: rgba(0,0,0,0.5);
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        select, button {
+            background: #333;
+            color: white;
+            border: 1px solid #555;
+            padding: 8px 12px;
+            border-radius: 4px;
+            margin: 5px;
+        }
+        .timestamp {
+            color: #888;
+            font-size: 12px;
+        }
+        .promiser-id {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+        .content {
+            font-style: italic;
+            margin: 10px 0;
+            background: rgba(255,255,255,0.05);
+            padding: 10px;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 AI Coordinator Test</h1>
+        
+        <div class="controls">
+            <label>AI Coordinator:</label>
+            <select id="aiType">
+                <option value="ollama">Ollama (Local LLM)</option>
+                <option value="test">Test AI</option>
+                <option value="openai">OpenAI</option>
+            </select>
+            <button onclick="connect()">Connect</button>
+            <button onclick="disconnect()">Disconnect</button>
+            <button onclick="clearEvents()">Clear</button>
+            <div id="status" style="margin-top: 10px; color: #4CAF50;">Ready to connect</div>
+        </div>
+        
+        <div id="events"></div>
+    </div>
+
+    <script>
+        let eventSource = null;
+        let eventCount = 0;
+
+        function connect() {
+            disconnect(); // Close any existing connection
+            
+            const aiType = document.getElementById('aiType').value;
+            
+            let endpoint;
+            switch (aiType) {
+                case 'ollama':
+                    endpoint = '/api/ollama-ai';
+                    break;
+                case 'openai':
+                    endpoint = '/api/ai-coordinator?count=20';
+                    break;
+                case 'test':
+                default:
+                    endpoint = '/api/test-ai?count=20';
+                    break;
+            }
+            
+            document.getElementById('status').textContent = `Connecting to ${aiType} coordinator...`;
+            
+            eventSource = new EventSource(endpoint);
+            
+            eventSource.onopen = () => {
+                document.getElementById('status').textContent = `✅ Connected to ${aiType} coordinator`;
+                document.getElementById('status').style.color = '#4CAF50';
+            };
+            
+            eventSource.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    addEvent(data);
+                } catch (error) {
+                    console.error('Error parsing event:', error);
+                    addEvent({
+                        type: 'error',
+                        message: 'Failed to parse event: ' + event.data
+                    });
+                }
+            };
+            
+            eventSource.onerror = (error) => {
+                console.error('EventSource error:', error);
+                document.getElementById('status').textContent = '❌ Connection error';
+                document.getElementById('status').style.color = '#F44336';
+            };
+        }
+        
+        function disconnect() {
+            if (eventSource) {
+                eventSource.close();
+                eventSource = null;
+                document.getElementById('status').textContent = 'Disconnected';
+                document.getElementById('status').style.color = '#888';
+            }
+        }
+        
+        function clearEvents() {
+            document.getElementById('events').innerHTML = '';
+            eventCount = 0;
+        }
+        
+        function addEvent(data) {
+            eventCount++;
+            const eventsContainer = document.getElementById('events');
+            const eventDiv = document.createElement('div');
+            
+            let eventClass = 'event';
+            let eventTitle = data.type;
+            let eventContent = '';
+            
+            if (data.type === 'ai_behavior') {
+                eventClass += ' ai-behavior';
+                eventTitle = `🧠 AI Behavior`;
+                eventContent = `
+                    <div>Promiser <span class="promiser-id">#${data.promiser_id}</span> → <strong>${data.action}</strong></div>
+                    <div class="content">"${data.content}"</div>
+                `;
+            } else if (data.type === 'promiser_action') {
+                eventClass += ' ai-behavior';
+                eventTitle = `🎭 Promiser Action`;
+                eventContent = `
+                    <div>Promiser <span class="promiser-id">#${data.promiserId}</span> → <strong>${data.behavior}</strong></div>
+                    <div class="content">"${data.thought}"</div>
+                    ${data.targetId !== undefined ? `<div>Target: #${data.targetId}</div>` : ''}
+                `;
+            } else if (data.type === 'connected') {
+                eventTitle = `✅ Connected`;
+                eventContent = `<div>${data.message}</div>`;
+            } else if (data.type === 'error') {
+                eventClass += ' error';
+                eventTitle = `❌ Error`;
+                eventContent = `<div>${data.message}</div>`;
+            } else if (data.type === 'ping') {
+                eventTitle = `📡 Ping`;
+                eventContent = `<div>Keep-alive ping</div>`;
+            } else {
+                eventContent = `<div>${JSON.stringify(data, null, 2)}</div>`;
+            }
+            
+            eventDiv.className = eventClass;
+            eventDiv.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <strong>${eventTitle}</strong>
+                    <span class="timestamp">#${eventCount} - ${new Date().toLocaleTimeString()}</span>
+                </div>
+                ${eventContent}
+            `;
+            
+            eventsContainer.insertBefore(eventDiv, eventsContainer.firstChild);
+            
+            // Limit to 50 events to prevent memory issues
+            if (eventsContainer.children.length > 50) {
+                eventsContainer.removeChild(eventsContainer.lastChild);
+            }
+        }
+        
+        // Auto-connect to Ollama on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('aiType').value = 'ollama';
+            connect();
+        });
+        
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', disconnect);
+    </script>
+</body>
+</html>
