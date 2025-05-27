@@ -68,16 +68,16 @@ export async function GET(request: NextRequest) {
           
           switch (behavior) {
             case 'think':
-              userPrompt = 'Share a brief contemplative thought (10-20 words max)';
+              userPrompt = 'Think one word or phrase (1-3 words max)';
               break;
             case 'speak':
-              userPrompt = 'Say something meaningful to nearby promisers (15-30 words max)';
+              userPrompt = 'Say something brief (1-5 words max)';
               break;
             case 'whisper':
-              userPrompt = 'Whisper a secret or insight to another promiser (10-25 words max)';
+              userPrompt = 'Whisper briefly (1-3 words max)';
               break;
             case 'run':
-              userPrompt = 'Express why you suddenly feel like running (5-15 words max)';
+              userPrompt = 'Express energy in 1-2 words';
               break;
           }
           
@@ -87,7 +87,7 @@ export async function GET(request: NextRequest) {
               { role: 'system', content: systemPrompt },
               { role: 'user', content: userPrompt }
             ],
-            max_tokens: 50,
+            max_tokens: 20,
             temperature: 0.9,
           });
           

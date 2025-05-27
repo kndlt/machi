@@ -148,6 +148,13 @@ class Game {
         document.getElementById('stopGame').onclick = () => this.stopGame();
         document.getElementById('addPromiser').onclick = () => this.addPromiser();
         
+        // Debug button to test thought bubbles
+        const debugButton = document.createElement('button');
+        debugButton.textContent = 'Test Bubble';
+        debugButton.onclick = () => this.testThoughtBubble();
+        debugButton.style.marginLeft = '5px';
+        controls.appendChild(debugButton);
+        
         // Set up AI selector
         const aiSelector = document.getElementById('aiSelector');
         aiSelector.value = this.getSelectedAIType();
@@ -355,9 +362,9 @@ class Game {
                         break;
                 }
                 
-                // Show thought bubble if it's a speaking/whispering action
-                if (action === 'speak' || action === 'whisper') {
-                    this.showThoughtBubble(promiser_id, content, action === 'whisper');
+                // Show thought bubble for think, speak, and whisper actions
+                if (action === 'think' || action === 'speak' || action === 'whisper') {
+                    this.showThoughtBubble(promiser_id, content, action === 'whisper', action === 'think');
                 }
                 
             } catch (error) {
@@ -391,9 +398,9 @@ class Game {
                         break;
                 }
                 
-                // Show thought bubble if it's a speaking/whispering action
-                if (behavior === 'speak' || behavior === 'whisper') {
-                    this.showThoughtBubble(promiserId, thought, behavior === 'whisper');
+                // Show thought bubble for think, speak, and whisper actions
+                if (behavior === 'think' || behavior === 'speak' || behavior === 'whisper') {
+                    this.showThoughtBubble(promiserId, thought, behavior === 'whisper', behavior === 'think');
                 }
                 
             } catch (error) {
@@ -407,52 +414,92 @@ class Game {
         }
     }
     
-    showThoughtBubble(promiserId, thought, isWhisper = false) {
+    testThoughtBubble() {
+        console.log('🧪 Testing thought bubble...');
+        // Get any random promiser that exists
+        const promiserIds = Array.from(this.promiserSprites.keys());
+        if (promiserIds.length > 0) {
+            const testId = promiserIds[0];
+            this.showThoughtBubble(testId, "Hmm...", false, true); // Test thought bubble
+            console.log(`🧪 Created test thought bubble for promiser ${testId}`);
+        } else {
+            console.log('🧪 No promisers available for testing');
+        }
+    }
+    
+    showThoughtBubble(promiserId, thought, isWhisper = false, isThought = false) {
+        console.log(`💭 Creating thought bubble for promiser ${promiserId}: "${thought}" (thought: ${isThought})`);
+        
         // Remove existing thought bubble for this promiser
         this.removeThoughtBubble(promiserId);
         
         const sprite = this.promiserSprites.get(promiserId);
-        if (!sprite) return;
+        if (!sprite) {
+            console.log(`💭 No sprite found for promiser ${promiserId}`);
+            return;
+        }
+        
+        console.log(`💭 Sprite position: x=${sprite.x}, y=${sprite.y}`);
         
         // Create thought bubble container
         const bubbleContainer = new window.PIXI.Container();
         
-        // Create bubble background
+        // Create bubble background with different styles for thoughts vs speech
         const bubble = new window.PIXI.Graphics();
-        const bubbleColor = isWhisper ? 0x444444 : 0xFFFFFF;
-        const bubbleAlpha = isWhisper ? 0.7 : 0.9;
         
-        bubble.roundRect(-50, -30, 100, 20, 10);
-        bubble.fill({ color: bubbleColor, alpha: bubbleAlpha });
-        bubble.stroke({ color: 0x000000, width: 1 });
+        if (isThought) {
+            // Understated thought style - just text with subtle background
+            const thoughtAlpha = 0.3;
+            bubble.roundRect(-35, -15, 70, 30, 8);
+            bubble.fill({ color: 0x888888, alpha: thoughtAlpha });
+            // No stroke for thoughts - more subtle
+        } else {
+            // Regular speech/whisper bubble
+            const bubbleColor = isWhisper ? 0x444444 : 0xFFFFFF;
+            const bubbleAlpha = isWhisper ? 0.9 : 0.95;
+            bubble.roundRect(-40, -20, 80, 40, 6);
+            bubble.fill({ color: bubbleColor, alpha: bubbleAlpha });
+            bubble.stroke({ color: 0x000000, width: 3 });
+        }
         
-        // Create text
+        // Create text with different styles for thoughts vs speech
         const text = new window.PIXI.Text({
             text: thought,
             style: {
-                fontSize: 10,
-                fill: isWhisper ? 0xCCCCCC : 0x000000,
+                fontSize: isThought ? 9 : 11,
+                fill: isThought ? 0xAAAAAA : (isWhisper ? 0xCCCCCC : 0x000000),
+                alpha: isThought ? 0.7 : 1.0,
                 align: 'center',
                 wordWrap: true,
-                wordWrapWidth: 90
+                wordWrapWidth: isThought ? 60 : 70,
+                fontStyle: isThought ? 'italic' : 'normal'
             }
         });
         
         text.anchor.set(0.5, 0.5);
         text.x = 0;
-        text.y = -20;
+        text.y = 0;
         
         bubbleContainer.addChild(bubble);
         bubbleContainer.addChild(text);
         bubbleContainer.x = sprite.x;
-        bubbleContainer.y = sprite.y - sprite.width - 20;
+        bubbleContainer.y = sprite.y - 40; // Position above the sprite
+        
+        console.log(`💭 Bubble container position: x=${bubbleContainer.x}, y=${bubbleContainer.y}`);
         
         this.uiContainer.addChild(bubbleContainer);
         this.thoughtBubbles.set(promiserId, bubbleContainer);
         
+        console.log(`💭 Added thought bubble to UI container. Total bubbles: ${this.thoughtBubbles.size}`);
+        
+        // Ensure the UI container is on top
+        this.app.stage.removeChild(this.uiContainer);
+        this.app.stage.addChild(this.uiContainer);
+        
         // Auto-remove after 3-5 seconds
         const duration = isWhisper ? 2000 : 4000;
         setTimeout(() => {
+            console.log(`💭 Auto-removing thought bubble for promiser ${promiserId}`);
             this.removeThoughtBubble(promiserId);
         }, duration);
     }

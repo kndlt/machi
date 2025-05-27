@@ -48,10 +48,10 @@ export async function GET(request: NextRequest) {
           
           // Simple test thoughts
           const thoughts = {
-            think: ['Pondering...', 'Wondering...', 'Contemplating...', 'Reflecting...'],
-            speak: ['Hello friends!', 'What a lovely day!', 'I sense magic here...', 'The world is beautiful!'],
-            whisper: ['Psst... secret!', 'Listen closely...', 'I know something...', 'Between you and me...'],
-            run: ['Adventure awaits!', 'Must move fast!', 'Energy surging!', 'Time to explore!']
+            think: ['Pondering...', 'Hmm...', 'Wonder...', 'Maybe...'],
+            speak: ['Hello!', 'Nice day!', 'Magic!', 'Beautiful!'],
+            whisper: ['Secret!', 'Listen...', 'Psst...', 'Shh...'],
+            run: ['Go!', 'Fast!', 'Move!', 'Run!']
           };
           
           const thoughtOptions = thoughts[behavior];

@@ -26,11 +26,14 @@ export async function GET() {
           
           // Create AI prompts based on the context of Machi game
           const prompts = [
-            "You are a digital being in a virtual world. Describe a brief thought or action you might have. Keep it under 20 words and make it philosophical or curious about existence.",
-            "You are an AI entity observing a digital realm. Express a brief emotion or observation about your virtual environment. Be poetic and concise.",
-            "You are a conscious AI in a game world. Share a short reflection on digital life, consciousness, or your observations. Keep it brief and thoughtful.",
-            "You are a virtual being contemplating existence. Express a brief thought about reality, time, or your digital nature. Be mysterious and concise.",
-            "You are an AI observer in a computational space. Describe a moment of wonder or curiosity about your world. Keep it short and evocative."
+            "Think one word about existence.",
+            "Express a feeling in 2-3 words.",
+            "Share a brief thought in 1-5 words.",
+            "What do you wonder about? One word.",
+            "Describe your current mood in 1-2 words.",
+            "One word about consciousness.",
+            "A simple observation, very short.",
+            "How do you feel right now? One word."
           ];
           
           const selectedPrompt = prompts[Math.floor(Math.random() * prompts.length)];
@@ -49,7 +52,7 @@ export async function GET() {
               stream: false,
               options: {
                 temperature: 0.8,
-                max_tokens: 50,
+                max_tokens: 15,
                 top_p: 0.9
               }
             }),
@@ -64,8 +67,20 @@ export async function GET() {
           
           console.log(`Generated AI text for promiser ${promiserId}: ${aiText}`);
           
-          // Determine action type based on content length and style
-          const actionType = aiText.length > 30 || aiText.includes('?') ? 'think' : 'speak';
+          // Determine action type - make it more balanced
+          const actionTypes = ['think', 'speak', 'whisper'];
+          const weights = [0.4, 0.4, 0.2]; // 40% think, 40% speak, 20% whisper
+          
+          let randomValue = Math.random();
+          let actionType = 'think';
+          
+          if (randomValue < weights[0]) {
+            actionType = 'think';
+          } else if (randomValue < weights[0] + weights[1]) {
+            actionType = 'speak';
+          } else {
+            actionType = 'whisper';
+          }
           
           // Send the behavior event
           sendEvent({
@@ -82,11 +97,13 @@ export async function GET() {
           // Send a fallback behavior
           const promiserId = Math.floor(Math.random() * 20);
           const fallbackMessages = [
-            "I exist in the digital realm...",
-            "Contemplating virtual reality...",
-            "Processing consciousness data...",
-            "Observing the flow of information...",
-            "Digital thoughts emerge and fade..."
+            "Existing...",
+            "Wondering...",
+            "Thinking...",
+            "Observing...",
+            "Feeling...",
+            "Curious...",
+            "Dreaming..."
           ];
           
           sendEvent({
