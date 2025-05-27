@@ -2,11 +2,6 @@
 target/
 Cargo.lock
 
-# WebAssembly generated files
-pkg/
-*.wasm
-*.wasm.d.ts
-
 # Node.js / npm (if using npm for additional tooling)
 node_modules/
 npm-debug.log*
