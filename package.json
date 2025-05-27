@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "pnpm run build:wasm && next build",
+    "build": "next build",
     "build:next": "next build",
     "start": "next start",
     "lint": "next lint",
