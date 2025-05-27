@@ -43,11 +43,12 @@ export async function GET(request: NextRequest) {
           const targetPromiserId = Math.floor(Math.random() * promiserCount);
           
           // Choose behavior type
-          const behaviors = ['think', 'speak', 'whisper', 'run'];
-          const behavior = behaviors[Math.floor(Math.random() * behaviors.length)];
+          const behaviors = ['think', 'speak', 'whisper', 'run'] as const;
+          type BehaviorType = typeof behaviors[number];
+          const behavior: BehaviorType = behaviors[Math.floor(Math.random() * behaviors.length)];
           
           // Simple test thoughts
-          const thoughts = {
+          const thoughts: Record<BehaviorType, string[]> = {
             think: ['Pondering...', 'Hmm...', 'Wonder...', 'Maybe...'],
             speak: ['Hello!', 'Nice day!', 'Magic!', 'Beautiful!'],
             whisper: ['Secret!', 'Listen...', 'Psst...', 'Shh...'],
@@ -85,7 +86,7 @@ export async function GET(request: NextRequest) {
           console.error('🤖 Error generating test behavior:', error);
           sendEvent({
             type: 'error',
-            message: `Failed to generate test behavior: ${error.message}`,
+            message: `Failed to generate test behavior: ${error instanceof Error ? error.message : 'Unknown error'}`,
             timestamp: Date.now()
           });
           // Try again after delay

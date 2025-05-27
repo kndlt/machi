@@ -36,9 +36,9 @@ function getRandomBehavior(personality: keyof typeof PROMISER_PERSONALITIES) {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const promiserId = params.id;
+  const { id: promiserId } = await params;
   const isPixel = promiserId === '0';
   
   // Create a readable stream

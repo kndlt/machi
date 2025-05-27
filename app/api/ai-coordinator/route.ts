@@ -121,7 +121,7 @@ export async function GET(request: NextRequest) {
           console.error('🤖 Error generating promiser behavior:', error);
           sendEvent({
             type: 'error',
-            message: `Failed to generate behavior: ${error.message}`,
+            message: `Failed to generate behavior: ${error instanceof Error ? error.message : 'Unknown error'}`,
             timestamp: Date.now()
           });
           // Try again after a longer delay

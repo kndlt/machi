@@ -1,16 +1,4 @@
 {
   "buildCommand": "pnpm run build",
-  "installCommand": "pnpm install",
-  "devCommand": "pnpm run dev",
-  "functions": {
-    "app/api/*/route.ts": {
-      "runtime": "nodejs20.x"
-    }
-  },
-  "rewrites": [
-    {
-      "source": "/api/(.*)",
-      "destination": "/api/$1"
-    }
-  ]
+  "installCommand": "pnpm install"
 }
