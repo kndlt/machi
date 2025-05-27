@@ -133,9 +133,9 @@ class Game {
             <div style="margin-top: 10px;">
                 <label style="font-size: 12px;">AI Coordinator:</label>
                 <select id="aiSelector" style="margin-left: 5px; background: #333; color: white; border: 1px solid #555;">
+                    <option value="openai">OpenAI</option>
                     <option value="ollama">Ollama (Local)</option>
                     <option value="test">Test AI</option>
-                    <option value="openai">OpenAI</option>
                 </select>
             </div>
             <div id="status" style="margin-top: 10px; font-size: 12px;">Ready to start</div>
@@ -302,8 +302,9 @@ class Game {
         const stored = localStorage.getItem('machi-ai-type');
         if (stored) return stored;
         
-        // Default to Ollama for local AI
-        return 'ollama';
+        // Default based on environment - OpenAI for production/server, Ollama for local
+        const isProduction = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
+        return isProduction ? 'openai' : 'ollama';
     }
     
     setAIType(type) {

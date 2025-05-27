@@ -82,7 +82,7 @@ export async function GET(request: NextRequest) {
           }
           
           const completion = await openai.chat.completions.create({
-            model: 'gpt-4',
+            model: 'gpt-3.5-turbo',
             messages: [
               { role: 'system', content: systemPrompt },
               { role: 'user', content: userPrompt }

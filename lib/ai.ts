@@ -10,7 +10,7 @@ export async function getPixelThought(): Promise<string> {
       { role: 'system', content: 'You are a pixel sprite who lives in a strange town. You speak in short poetic phrases.' },
       { role: 'user', content: 'What are you thinking right now?' }
     ],
-    model: 'gpt-4',
+    model: 'gpt-3.5-turbo',
   });
 
   return res.choices[0]?.message.content ?? "Silence.";
