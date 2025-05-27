@@ -1,36 +1,61 @@
-import init, { hello_world, heavy_work } from './pkg/hello_wasm.js';
+// Web Worker script for running WASM in background thread
+import init, { hello_world, compute_fibonacci, heavy_computation } from './pkg/hello_wasm.js';
 
-let wasmReady = false;
+console.log('🔧 Worker: Starting WASM worker...');
+
+// Initialize WASM module
+let wasmInitialized = false;
 
 async function initWasm() {
-    if (!wasmReady) {
+    if (!wasmInitialized) {
         await init();
-        wasmReady = true;
-        console.log('🔧 Worker: WASM ready');
+        wasmInitialized = true;
+        console.log('🔧 Worker: WASM module initialized in worker thread');
     }
 }
 
+// Listen for messages from main thread
 self.onmessage = async function(e) {
-    const { type, id } = e.data;
+    const { type, data, id } = e.data;
+    
+    console.log(`🔧 Worker: Received message type: ${type}`);
     
     try {
+        // Initialize WASM if not already done
         await initWasm();
         
         let result;
+        
         switch (type) {
-            case 'hello':
+            case 'hello_world':
                 result = hello_world();
                 break;
-            case 'heavy':
-                result = heavy_work();
+                
+            case 'fibonacci':
+                result = compute_fibonacci(data.n);
                 break;
+                
+            case 'heavy_computation':
+                result = heavy_computation();
+                break;
+                
             default:
-                throw new Error(`Unknown type: ${type}`);
+                throw new Error(`Unknown message type: ${type}`);
         }
         
-        self.postMessage({ id, result });
+        // Send result back to main thread
+        self.postMessage({
+            type: 'success',
+            id: id,
+            result: result
+        });
         
     } catch (error) {
-        self.postMessage({ id, error: error.message });
+        console.error('🔧 Worker: Error:', error);
+        self.postMessage({
+            type: 'error',
+            id: id,
+            error: error.message
+        });
     }
 };
