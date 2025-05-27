@@ -1,5 +1,16 @@
 // Web Worker script for running WASM game state in background thread
-import init, { init_game, update_game, add_promiser, get_promiser_count } from './pkg/hello_wasm.js';
+import init, { 
+    init_game, 
+    update_game, 
+    add_promiser, 
+    get_promiser_count,
+    make_promiser_think,
+    make_promiser_speak,
+    make_promiser_whisper,
+    make_promiser_run,
+    get_pixel_id,
+    get_random_promiser_id
+} from './pkg/hello_wasm.js';
 
 console.log('🎮 Worker: Starting WASM game worker...');
 
@@ -90,6 +101,36 @@ self.onmessage = async function(e) {
                     promiserCount: get_promiser_count(),
                     wasmInitialized
                 };
+                break;
+                
+            case 'make_promiser_think':
+                console.log('🤖 Worker: Making promiser think:', data.id);
+                make_promiser_think(data.id);
+                result = { status: 'promiser_thinking', id: data.id };
+                break;
+                
+            case 'make_promiser_speak':
+                console.log('🤖 Worker: Making promiser speak:', data.id, data.thought);
+                make_promiser_speak(data.id, data.thought);
+                result = { status: 'promiser_speaking', id: data.id, thought: data.thought };
+                break;
+                
+            case 'make_promiser_whisper':
+                make_promiser_whisper(data.id, data.thought, data.targetId);
+                result = { status: 'promiser_whispering', id: data.id, thought: data.thought, targetId: data.targetId };
+                break;
+                
+            case 'make_promiser_run':
+                make_promiser_run(data.id);
+                result = { status: 'promiser_running', id: data.id };
+                break;
+                
+            case 'get_pixel_id':
+                result = { pixelId: get_pixel_id() };
+                break;
+                
+            case 'get_random_promiser_id':
+                result = { promiserId: get_random_promiser_id() };
                 break;
                 
             default:

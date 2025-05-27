@@ -17,6 +17,62 @@ function getStringFromWasm0(ptr, len) {
     ptr = ptr >>> 0;
     return cachedTextDecoder.decode(getUint8ArrayMemory0().subarray(ptr, ptr + len));
 }
+
+let WASM_VECTOR_LEN = 0;
+
+const cachedTextEncoder = (typeof TextEncoder !== 'undefined' ? new TextEncoder('utf-8') : { encode: () => { throw Error('TextEncoder not available') } } );
+
+const encodeString = (typeof cachedTextEncoder.encodeInto === 'function'
+    ? function (arg, view) {
+    return cachedTextEncoder.encodeInto(arg, view);
+}
+    : function (arg, view) {
+    const buf = cachedTextEncoder.encode(arg);
+    view.set(buf);
+    return {
+        read: arg.length,
+        written: buf.length
+    };
+});
+
+function passStringToWasm0(arg, malloc, realloc) {
+
+    if (realloc === undefined) {
+        const buf = cachedTextEncoder.encode(arg);
+        const ptr = malloc(buf.length, 1) >>> 0;
+        getUint8ArrayMemory0().subarray(ptr, ptr + buf.length).set(buf);
+        WASM_VECTOR_LEN = buf.length;
+        return ptr;
+    }
+
+    let len = arg.length;
+    let ptr = malloc(len, 1) >>> 0;
+
+    const mem = getUint8ArrayMemory0();
+
+    let offset = 0;
+
+    for (; offset < len; offset++) {
+        const code = arg.charCodeAt(offset);
+        if (code > 0x7F) break;
+        mem[ptr + offset] = code;
+    }
+
+    if (offset !== len) {
+        if (offset !== 0) {
+            arg = arg.slice(offset);
+        }
+        ptr = realloc(ptr, len, len = offset + arg.length * 3, 1) >>> 0;
+        const view = getUint8ArrayMemory0().subarray(ptr + offset, ptr + len);
+        const ret = encodeString(arg, view);
+
+        offset += ret.written;
+        ptr = realloc(ptr, len, offset, 1) >>> 0;
+    }
+
+    WASM_VECTOR_LEN = offset;
+    return ptr;
+}
 /**
  * @param {number} world_width
  * @param {number} world_height
@@ -51,6 +107,57 @@ export function add_promiser() {
  */
 export function get_promiser_count() {
     const ret = wasm.get_promiser_count();
+    return ret >>> 0;
+}
+
+/**
+ * @param {number} id
+ */
+export function make_promiser_think(id) {
+    wasm.make_promiser_think(id);
+}
+
+/**
+ * @param {number} id
+ * @param {string} thought
+ */
+export function make_promiser_speak(id, thought) {
+    const ptr0 = passStringToWasm0(thought, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    wasm.make_promiser_speak(id, ptr0, len0);
+}
+
+/**
+ * @param {number} id
+ * @param {string} thought
+ * @param {number} target_id
+ */
+export function make_promiser_whisper(id, thought, target_id) {
+    const ptr0 = passStringToWasm0(thought, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    wasm.make_promiser_whisper(id, ptr0, len0, target_id);
+}
+
+/**
+ * @param {number} id
+ */
+export function make_promiser_run(id) {
+    wasm.make_promiser_run(id);
+}
+
+/**
+ * @returns {number}
+ */
+export function get_pixel_id() {
+    const ret = wasm.get_pixel_id();
+    return ret >>> 0;
+}
+
+/**
+ * @returns {number}
+ */
+export function get_random_promiser_id() {
+    const ret = wasm.get_random_promiser_id();
     return ret >>> 0;
 }
 
@@ -122,6 +229,51 @@ export class GameState {
         const ret = wasm.gamestate_promiser_count(this.__wbg_ptr);
         return ret >>> 0;
     }
+    /**
+     * @param {number} id
+     */
+    make_promiser_think(id) {
+        wasm.gamestate_make_promiser_think(this.__wbg_ptr, id);
+    }
+    /**
+     * @param {number} id
+     * @param {string} thought
+     */
+    make_promiser_speak(id, thought) {
+        const ptr0 = passStringToWasm0(thought, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.gamestate_make_promiser_speak(this.__wbg_ptr, id, ptr0, len0);
+    }
+    /**
+     * @param {number} id
+     * @param {string} thought
+     * @param {number} target_id
+     */
+    make_promiser_whisper(id, thought, target_id) {
+        const ptr0 = passStringToWasm0(thought, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.gamestate_make_promiser_whisper(this.__wbg_ptr, id, ptr0, len0, target_id);
+    }
+    /**
+     * @param {number} id
+     */
+    make_promiser_run(id) {
+        wasm.gamestate_make_promiser_run(this.__wbg_ptr, id);
+    }
+    /**
+     * @returns {number}
+     */
+    get_pixel_id() {
+        const ret = wasm.gamestate_get_pixel_id(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    get_random_promiser_id() {
+        const ret = wasm.gamestate_get_random_promiser_id(this.__wbg_ptr);
+        return ret >>> 0;
+    }
 }
 
 const PromiserFinalization = (typeof FinalizationRegistry === 'undefined')
@@ -186,6 +338,62 @@ export class Promiser {
     get color() {
         const ret = wasm.promiser_color(this.__wbg_ptr);
         return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    get state() {
+        const ret = wasm.promiser_state(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {string}
+     */
+    get thought() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.promiser_thought(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * @returns {number}
+     */
+    get target_id() {
+        const ret = wasm.promiser_target_id(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {boolean}
+     */
+    get is_pixel() {
+        const ret = wasm.promiser_is_pixel(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * @param {string} thought
+     */
+    set_thought(thought) {
+        const ptr0 = passStringToWasm0(thought, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.promiser_set_thought(this.__wbg_ptr, ptr0, len0);
+    }
+    /**
+     * @param {string} thought
+     * @param {number} target_id
+     */
+    set_whisper(thought, target_id) {
+        const ptr0 = passStringToWasm0(thought, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.promiser_set_whisper(this.__wbg_ptr, ptr0, len0, target_id);
+    }
+    start_running() {
+        wasm.promiser_start_running(this.__wbg_ptr);
     }
 }
 

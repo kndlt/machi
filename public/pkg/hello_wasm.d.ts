@@ -4,6 +4,12 @@ export function init_game(world_width: number, world_height: number): void;
 export function update_game(current_time: number): string;
 export function add_promiser(): void;
 export function get_promiser_count(): number;
+export function make_promiser_think(id: number): void;
+export function make_promiser_speak(id: number, thought: string): void;
+export function make_promiser_whisper(id: number, thought: string, target_id: number): void;
+export function make_promiser_run(id: number): void;
+export function get_pixel_id(): number;
+export function get_random_promiser_id(): number;
 export function main(): void;
 export class GameState {
   free(): void;
@@ -12,16 +18,29 @@ export class GameState {
   remove_promiser(id: number): void;
   update(current_time: number): void;
   get_state_data(): string;
+  make_promiser_think(id: number): void;
+  make_promiser_speak(id: number, thought: string): void;
+  make_promiser_whisper(id: number, thought: string, target_id: number): void;
+  make_promiser_run(id: number): void;
+  get_pixel_id(): number;
+  get_random_promiser_id(): number;
   readonly promiser_count: number;
 }
 export class Promiser {
   free(): void;
   constructor(id: number, x: number, y: number);
+  set_thought(thought: string): void;
+  set_whisper(thought: string, target_id: number): void;
+  start_running(): void;
   readonly id: number;
   readonly x: number;
   readonly y: number;
   readonly size: number;
   readonly color: number;
+  readonly state: number;
+  readonly thought: string;
+  readonly target_id: number;
+  readonly is_pixel: boolean;
 }
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
@@ -35,6 +54,13 @@ export interface InitOutput {
   readonly promiser_y: (a: number) => number;
   readonly promiser_size: (a: number) => number;
   readonly promiser_color: (a: number) => number;
+  readonly promiser_state: (a: number) => number;
+  readonly promiser_thought: (a: number) => [number, number];
+  readonly promiser_target_id: (a: number) => number;
+  readonly promiser_is_pixel: (a: number) => number;
+  readonly promiser_set_thought: (a: number, b: number, c: number) => void;
+  readonly promiser_set_whisper: (a: number, b: number, c: number, d: number) => void;
+  readonly promiser_start_running: (a: number) => void;
   readonly __wbg_gamestate_free: (a: number, b: number) => void;
   readonly gamestate_new: (a: number, b: number) => number;
   readonly gamestate_add_promiser: (a: number) => void;
@@ -42,13 +68,27 @@ export interface InitOutput {
   readonly gamestate_update: (a: number, b: number) => void;
   readonly gamestate_get_state_data: (a: number) => [number, number];
   readonly gamestate_promiser_count: (a: number) => number;
+  readonly gamestate_make_promiser_think: (a: number, b: number) => void;
+  readonly gamestate_make_promiser_speak: (a: number, b: number, c: number, d: number) => void;
+  readonly gamestate_make_promiser_whisper: (a: number, b: number, c: number, d: number, e: number) => void;
+  readonly gamestate_make_promiser_run: (a: number, b: number) => void;
+  readonly gamestate_get_pixel_id: (a: number) => number;
+  readonly gamestate_get_random_promiser_id: (a: number) => number;
   readonly init_game: (a: number, b: number) => void;
   readonly update_game: (a: number) => [number, number];
   readonly add_promiser: () => void;
   readonly get_promiser_count: () => number;
+  readonly make_promiser_think: (a: number) => void;
+  readonly make_promiser_speak: (a: number, b: number, c: number) => void;
+  readonly make_promiser_whisper: (a: number, b: number, c: number, d: number) => void;
+  readonly make_promiser_run: (a: number) => void;
+  readonly get_pixel_id: () => number;
+  readonly get_random_promiser_id: () => number;
   readonly main: () => void;
   readonly __wbindgen_export_0: WebAssembly.Table;
   readonly __wbindgen_free: (a: number, b: number, c: number) => void;
+  readonly __wbindgen_malloc: (a: number, b: number) => number;
+  readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
   readonly __wbindgen_start: () => void;
 }
 

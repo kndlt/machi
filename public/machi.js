@@ -57,8 +57,11 @@ class Game {
         this.app = null;
         this.worker = null;
         this.promiserSprites = new Map();
+        this.thoughtBubbles = new Map();
         this.container = null;
+        this.uiContainer = null;
         this.isRunning = false;
+        this.aiCoordinator = null;
         
         // Game settings
         this.worldWidth = 800;
@@ -88,6 +91,10 @@ class Game {
         // Create container for promisers
         this.container = new window.PIXI.Container();
         this.app.stage.addChild(this.container);
+        
+        // Create container for UI elements (thought bubbles, etc.)
+        this.uiContainer = new window.PIXI.Container();
+        this.app.stage.addChild(this.uiContainer);
         
         // Initialize worker
         this.worker = new GameWorker();
@@ -157,6 +164,9 @@ class Game {
             this.updateStatus('Game running - Promisers are moving!');
             console.log('🎮 Game started:', result);
             
+            // Start AI coordinator
+            this.connectAICoordinator();
+            
         } catch (error) {
             console.error('🎮 Failed to start game:', error);
             this.updateStatus('Failed to start game');
@@ -175,6 +185,9 @@ class Game {
             this.isRunning = false;
             this.updateStatus('Game stopped');
             console.log('🎮 Game stopped:', result);
+            
+            // Stop AI coordinator
+            this.disconnectAICoordinator();
             
             // Clear all sprites
             this.clearSprites();
@@ -198,6 +211,171 @@ class Game {
         }
     }
     
+    connectAICoordinator() {
+        if (this.aiCoordinator) {
+            this.aiCoordinator.close();
+        }
+        
+        console.log('🤖 Connecting to AI coordinator...');
+        
+        // Get the promiser count for the coordinator
+        const promiserCount = 20; // Default promiser count
+        this.aiCoordinator = new EventSource(`/api/test-ai?count=${promiserCount}`);
+        
+        this.aiCoordinator.onopen = () => {
+            console.log('🤖 AI coordinator connected');
+            this.updateStatus('AI coordinator connected - Promisers thinking...');
+        };
+        
+        this.aiCoordinator.onmessage = (event) => {
+            console.log('🤖 Raw event received:', event.data);
+            try {
+                const data = JSON.parse(event.data);
+                console.log('🤖 Parsed event data:', data);
+                this.handleAIAction(data);
+            } catch (error) {
+                console.error('🤖 Error parsing AI coordinator message:', error, event.data);
+            }
+        };
+        
+        this.aiCoordinator.onerror = (error) => {
+            console.error('🤖 AI coordinator error:', error);
+            this.updateStatus('AI coordinator connection error - retrying...');
+            
+            // Close the current connection
+            if (this.aiCoordinator) {
+                this.aiCoordinator.close();
+                this.aiCoordinator = null;
+            }
+            
+            // Reconnect after delay if game is still running
+            setTimeout(() => {
+                if (this.isRunning) {
+                    console.log('🤖 Attempting to reconnect AI coordinator...');
+                    this.connectAICoordinator();
+                }
+            }, 5000);
+        };
+    }
+    
+    disconnectAICoordinator() {
+        if (this.aiCoordinator) {
+            console.log('🤖 Disconnecting AI coordinator...');
+            this.aiCoordinator.close();
+            this.aiCoordinator = null;
+        }
+    }
+    
+    async handleAIAction(data) {
+        console.log('🤖 Received AI action:', data);
+        
+        if (data.type === 'connected') {
+            console.log('🤖 AI coordinator connected:', data.message);
+            this.updateStatus(data.message);
+        } else if (data.type === 'ping') {
+            // Just log pings quietly
+            console.log('🤖 Ping received');
+        } else if (data.type === 'promiser_action') {
+            const { promiserId, behavior, thought, targetId } = data;
+            
+            console.log(`🤖 Promiser ${promiserId} action: ${behavior} - "${thought}"`);
+            
+            // Send command to WASM worker
+            try {
+                console.log(`🤖 Sending AI action to worker: ${behavior} for promiser ${promiserId}`);
+                switch (behavior) {
+                    case 'think':
+                        await this.worker.callFunction('make_promiser_think', { id: promiserId });
+                        console.log(`🤖 Sent think command for promiser ${promiserId}`);
+                        break;
+                    case 'speak':
+                        await this.worker.callFunction('make_promiser_speak', { id: promiserId, thought });
+                        console.log(`🤖 Sent speak command for promiser ${promiserId}: "${thought}"`);
+                        break;
+                    case 'whisper':
+                        await this.worker.callFunction('make_promiser_whisper', { id: promiserId, thought, targetId });
+                        console.log(`🤖 Sent whisper command for promiser ${promiserId} to ${targetId}: "${thought}"`);
+                        break;
+                    case 'run':
+                        await this.worker.callFunction('make_promiser_run', { id: promiserId });
+                        console.log(`🤖 Sent run command for promiser ${promiserId}`);
+                        break;
+                }
+                
+                // Show thought bubble if it's a speaking/whispering action
+                if (behavior === 'speak' || behavior === 'whisper') {
+                    this.showThoughtBubble(promiserId, thought, behavior === 'whisper');
+                }
+                
+            } catch (error) {
+                console.error('🤖 Error sending AI action to worker:', error);
+            }
+        } else if (data.type === 'error') {
+            console.error('🤖 AI coordinator error:', data.message);
+            this.updateStatus(`AI error: ${data.message}`);
+        } else {
+            console.log('🤖 Unknown AI action type:', data.type);
+        }
+    }
+    
+    showThoughtBubble(promiserId, thought, isWhisper = false) {
+        // Remove existing thought bubble for this promiser
+        this.removeThoughtBubble(promiserId);
+        
+        const sprite = this.promiserSprites.get(promiserId);
+        if (!sprite) return;
+        
+        // Create thought bubble container
+        const bubbleContainer = new window.PIXI.Container();
+        
+        // Create bubble background
+        const bubble = new window.PIXI.Graphics();
+        const bubbleColor = isWhisper ? 0x444444 : 0xFFFFFF;
+        const bubbleAlpha = isWhisper ? 0.7 : 0.9;
+        
+        bubble.roundRect(-50, -30, 100, 20, 10);
+        bubble.fill({ color: bubbleColor, alpha: bubbleAlpha });
+        bubble.stroke({ color: 0x000000, width: 1 });
+        
+        // Create text
+        const text = new window.PIXI.Text({
+            text: thought,
+            style: {
+                fontSize: 10,
+                fill: isWhisper ? 0xCCCCCC : 0x000000,
+                align: 'center',
+                wordWrap: true,
+                wordWrapWidth: 90
+            }
+        });
+        
+        text.anchor.set(0.5, 0.5);
+        text.x = 0;
+        text.y = -20;
+        
+        bubbleContainer.addChild(bubble);
+        bubbleContainer.addChild(text);
+        bubbleContainer.x = sprite.x;
+        bubbleContainer.y = sprite.y - sprite.width - 20;
+        
+        this.uiContainer.addChild(bubbleContainer);
+        this.thoughtBubbles.set(promiserId, bubbleContainer);
+        
+        // Auto-remove after 3-5 seconds
+        const duration = isWhisper ? 2000 : 4000;
+        setTimeout(() => {
+            this.removeThoughtBubble(promiserId);
+        }, duration);
+    }
+    
+    removeThoughtBubble(promiserId) {
+        const bubble = this.thoughtBubbles.get(promiserId);
+        if (bubble) {
+            this.uiContainer.removeChild(bubble);
+            this.thoughtBubbles.delete(promiserId);
+        }
+    }
+    
     updateRender(gameState, timestamp) {
         if (!gameState.promisers) return;
         
@@ -216,12 +394,54 @@ class Game {
                 this.container.addChild(sprite);
             }
             
-            // Update sprite appearance and position
+            // Update sprite appearance based on state
             sprite.clear();
+            
+            // Different visual effects based on promiser state
+            let effectColor = promiser.color & 0xFFFFFF;
+            let effectAlpha = 1.0;
+            
+            switch (promiser.state) {
+                case 1: // Thinking
+                    effectColor = 0xFFFF00; // Yellow glow
+                    effectAlpha = 0.8;
+                    break;
+                case 2: // Speaking
+                    effectColor = 0x00FF00; // Green glow
+                    effectAlpha = 0.9;
+                    break;
+                case 3: // Whispering
+                    effectColor = 0x8888FF; // Purple glow
+                    effectAlpha = 0.7;
+                    break;
+                case 4: // Running
+                    effectColor = 0xFF4444; // Red glow
+                    effectAlpha = 1.0;
+                    // Add motion blur effect
+                    sprite.circle(0, 0, promiser.size + 2);
+                    sprite.fill({ color: effectColor, alpha: 0.3 });
+                    break;
+            }
+            
+            // Draw main sprite
             sprite.circle(0, 0, promiser.size);
-            sprite.fill({ color: promiser.color & 0xFFFFFF }); // Remove alpha from color
+            sprite.fill({ color: promiser.color & 0xFFFFFF, alpha: effectAlpha });
+            
+            // Add special effect glow for active states
+            if (promiser.state > 0) {
+                sprite.circle(0, 0, promiser.size + 3);
+                sprite.stroke({ color: effectColor, width: 2, alpha: 0.5 });
+            }
+            
             sprite.x = promiser.x;
             sprite.y = promiser.y;
+            
+            // Update thought bubble position if it exists
+            const bubble = this.thoughtBubbles.get(promiser.id);
+            if (bubble) {
+                bubble.x = promiser.x;
+                bubble.y = promiser.y - promiser.size - 20;
+            }
         });
         
         // Remove sprites for promisers that no longer exist
@@ -229,6 +449,7 @@ class Game {
             if (!currentIds.has(id)) {
                 this.container.removeChild(sprite);
                 this.promiserSprites.delete(id);
+                this.removeThoughtBubble(id);
             }
         }
     }
@@ -238,6 +459,12 @@ class Game {
             this.container.removeChild(sprite);
         }
         this.promiserSprites.clear();
+        
+        // Clear thought bubbles
+        for (const bubble of this.thoughtBubbles.values()) {
+            this.uiContainer.removeChild(bubble);
+        }
+        this.thoughtBubbles.clear();
     }
     
     destroy() {
