@@ -12,12 +12,10 @@ export default function Home() {
       <Script 
         src="/lib/pixi-8.9.2.js" 
         strategy="beforeInteractive"
-        // onLoad={() => console.log('PixiJS loaded')}
       />
       <Script 
         src="/machi.js" 
         strategy="afterInteractive"
-        // onLoad={() => console.log('Machi.js loaded')}
       />
     </main>
   );

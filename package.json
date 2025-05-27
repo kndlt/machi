@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "build:wasm": "cd wasm && wasm-pack build --target web --out-dir ../public/pkg"
+    "build:wasm": "wasm-pack build --target web --out-dir ../public/pkg ./wasm"
   },
   "dependencies": {
     "next": "15.3.2",
