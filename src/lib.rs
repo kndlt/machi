@@ -37,8 +37,8 @@ impl Promiser {
             id,
             x,
             y,
-            vx: (random() - 0.5) * 2.0, // Random velocity between -1 and 1
-            vy: (random() - 0.5) * 2.0,
+            vx: (random() - 0.5) * 4.0, // Random horizontal velocity between -2 and 2
+            vy: -random() * 3.0 - 1.0,   // Random upward velocity between -1 and -4
             size: 5.0 + random() * 10.0, // Size between 5 and 15
             color: ((random() * 0xFFFFFF as f64) as u32) | 0xFF000000, // Random color with full alpha
         }
@@ -62,30 +62,43 @@ impl Promiser {
 
 impl Promiser {
     fn update(&mut self, world_width: f64, world_height: f64, dt: f64) {
+        // Apply gravity to vertical velocity
+        const GRAVITY: f64 = 300.0; // Pixels per second squared
+        self.vy += GRAVITY * dt;
+        
         // Update position based on velocity
-        self.x += self.vx * dt * 50.0; // Scale velocity
-        self.y += self.vy * dt * 50.0;
+        self.x += self.vx * dt * 50.0; // Scale horizontal velocity
+        self.y += self.vy * dt * 50.0; // Scale vertical velocity
         
         // Bounce off world boundaries
-        if self.x <= 0.0 || self.x >= world_width {
-            self.vx = -self.vx;
-            self.x = self.x.clamp(0.0, world_width);
+        if self.x <= self.size || self.x >= world_width - self.size {
+            self.vx = -self.vx * 0.8; // Add some energy loss on bounce
+            self.x = self.x.clamp(self.size, world_width - self.size);
         }
         
-        if self.y <= 0.0 || self.y >= world_height {
-            self.vy = -self.vy;
-            self.y = self.y.clamp(0.0, world_height);
-        }
-        
-        // Occasionally change direction slightly
-        if random() < 0.02 {
-            self.vx += (random() - 0.5) * 0.5;
-            self.vy += (random() - 0.5) * 0.5;
+        // Ground collision with bounce
+        if self.y >= world_height - self.size {
+            self.vy = -self.vy * 0.7; // Bounce with energy loss
+            self.y = world_height - self.size;
             
-            // Clamp velocity to reasonable bounds
-            self.vx = self.vx.clamp(-2.0, 2.0);
-            self.vy = self.vy.clamp(-2.0, 2.0);
+            // Add some horizontal friction when on ground
+            self.vx *= 0.95;
         }
+        
+        // Ceiling collision
+        if self.y <= self.size {
+            self.vy = -self.vy * 0.5;
+            self.y = self.size;
+        }
+        
+        // Occasionally add some random horizontal impulse
+        if random() < 0.01 {
+            self.vx += (random() - 0.5) * 2.0;
+        }
+        
+        // Clamp velocities to reasonable bounds
+        self.vx = self.vx.clamp(-4.0, 4.0);
+        self.vy = self.vy.clamp(-10.0, 10.0);
     }
 }
 
@@ -123,7 +136,7 @@ impl GameState {
     
     pub fn add_promiser(&mut self) {
         let x = random() * self.world_width;
-        let y = random() * self.world_height;
+        let y = random() * (self.world_height * 0.3); // Spawn in upper 30% of screen
         let promiser = Promiser::new(self.next_id, x, y);
         self.promisers.insert(self.next_id, promiser);
         self.next_id += 1;
