@@ -1,5 +1,6 @@
 use wasm_bindgen::prelude::*;
 use std::collections::HashMap;
+use serde::{Serialize, Deserialize};
 
 // Import the `console.log` function from the `console` object in the web-sys crate
 #[wasm_bindgen]
@@ -208,6 +209,7 @@ pub struct GameState {
     world_width: f64,
     world_height: f64,
     last_update: f64,
+    tile_map: TileMap, // Add tile map to game state
 }
 
 #[wasm_bindgen]
@@ -216,12 +218,20 @@ impl GameState {
     pub fn new(world_width: f64, world_height: f64) -> GameState {
         console_log!("Creating new game state with world size: {}x{}", world_width, world_height);
         
+        // Calculate tile dimensions - each tile is 16x16 pixels
+        let tile_width = (world_width / 16.0) as usize;
+        let tile_height = (world_height / 16.0) as usize;
+        
+        console_log!("Creating tile map with dimensions: {}x{} tiles ({}x{} pixels)", 
+                     tile_width, tile_height, tile_width * 16, tile_height * 16);
+        
         let mut state = GameState {
             promisers: HashMap::new(),
             next_id: 0,
             world_width,
             world_height,
             last_update: 0.0,
+            tile_map: TileMap::new(tile_width, tile_height),
         };
         
         // Create initial promisers
@@ -278,12 +288,22 @@ impl GameState {
             ));
         }
         
-        format!("{{\"promisers\":[{}]}}", data.join(","))
+        // Serialize tile map manually to JSON
+        let tile_map_json = serde_json::to_string(&self.tile_map)
+            .unwrap_or_else(|_| "null".to_string());
+        
+        format!("{{\"promisers\":[{}],\"tile_map\":{}}}", data.join(","), tile_map_json)
     }
     
     #[wasm_bindgen(getter)]
     pub fn promiser_count(&self) -> usize {
         self.promisers.len()
+    }
+    
+    #[wasm_bindgen(getter)]
+    pub fn tile_map(&self) -> JsValue {
+        // Serialize the tile map to JsValue for JS interop
+        serde_wasm_bindgen::to_value(&self.tile_map).unwrap()
     }
     
     pub fn make_promiser_think(&mut self, id: u32) {
@@ -434,4 +454,52 @@ pub fn get_random_promiser_id() -> u32 {
 #[wasm_bindgen(start)]
 pub fn main() {
     console_log!("WASM game module loaded successfully!");
+}
+
+
+/// MARK - Start of Tile Map Section
+/// Inspirations will be taken from Minecraft
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum TileType {
+    Air,
+    Dirt,
+    Stone,
+    Water,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Tile {
+    pub tile_type: TileType,
+    pub water_amount: f32, // 0.0 = dry, 1.0 = full
+}
+
+// Tile map structure
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TileMap {
+    pub width: usize,
+    pub height: usize,
+    pub tiles: Vec<Tile>,
+}
+impl TileMap {
+    pub fn new(width: usize, height: usize) -> Self {
+        let tiles = vec![Tile {
+            tile_type: TileType::Air,
+            water_amount: 0.0,
+        }; width * height];
+        TileMap { width, height, tiles }
+    }
+
+    pub fn get_tile(&self, x: usize, y: usize) -> Option<&Tile> {
+        if x < self.width && y < self.height {
+            Some(&self.tiles[y * self.width + x])
+        } else {
+            None
+        }
+    }
+
+    pub fn set_tile(&mut self, x: usize, y: usize, tile: Tile) {
+        if x < self.width && y < self.height {
+            self.tiles[y * self.width + x] = tile;
+        }
+    }
 }

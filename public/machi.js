@@ -60,8 +60,11 @@ class Game {
         this.thoughtBubbles = new Map();
         this.container = null;
         this.uiContainer = null;
+        this.tileMapContainer = null; // Container for tile map rendering
         this.isRunning = false;
         this.aiCoordinator = null;
+        this.tileMapCreated = false; // Track if tile map has been created
+        this.currentTileMap = null; // Store current tile map data for comparison
         
         // Game settings
         this.worldWidth = 800;
@@ -96,6 +99,10 @@ class Game {
         this.uiContainer = new window.PIXI.Container();
         this.app.stage.addChild(this.uiContainer);
         
+        // Create container for tile map (below promisers)
+        this.tileMapContainer = new window.PIXI.Container();
+        this.app.stage.addChildAt(this.tileMapContainer, 0); // Add at bottom
+
         // Initialize worker
         this.worker = new GameWorker();
         this.worker.onGameStateUpdate = (data, timestamp) => {
@@ -514,6 +521,13 @@ class Game {
     }
     
     updateRender(gameState, timestamp) {
+        // Draw tile map if present (only once or when changed)
+        if (gameState.tile_map && !this.tileMapCreated) {
+            this.drawTileMap(gameState.tile_map);
+            this.tileMapCreated = true;
+            this.currentTileMap = gameState.tile_map;
+        }
+        
         if (!gameState.promisers) return;
         
         // Update existing sprites and create new ones
@@ -591,6 +605,73 @@ class Game {
         }
     }
     
+    drawTileMap(tileMap) {
+        // Only create tiles once - this function should only be called when tile map changes
+        if (this.tileMapCreated) {
+            console.log('🗺️ Tile map already created, skipping recreation');
+            return;
+        }
+        
+        // Clear any existing tiles
+        this.tileMapContainer.removeChildren();
+        const tileSize = 16;
+        
+        console.log(`🗺️ Creating tile map: ${tileMap.width}x${tileMap.height} tiles, total: ${tileMap.tiles.length}`);
+        
+        // Create all tiles at once
+        for (let y = 0; y < tileMap.height; y++) {
+            for (let x = 0; x < tileMap.width; x++) {
+                const idx = y * tileMap.width + x;
+                const tile = tileMap.tiles[idx];
+                let color = 0xCCCCCC;
+                let label = 'Air';
+                
+                switch (tile.tile_type) {
+                    case 'Dirt': color = 0x8B5A2B; label = 'D'; break;
+                    case 'Stone': color = 0x888888; label = 'S'; break;
+                    case 'Water': color = 0x3399FF; label = 'W'; break;
+                    case 'Air':
+                    default: color = 0xEEEEEE; label = 'A'; break;
+                }
+                
+                // Create tile container for this position
+                const tileContainer = new window.PIXI.Container();
+                
+                // Draw tile background
+                const tileGraphic = new window.PIXI.Graphics();
+                tileGraphic.rect(0, 0, tileSize, tileSize);
+                tileGraphic.fill({ color, alpha: 0.85 });
+                tileGraphic.stroke({ color: 0x222222, width: 1, alpha: 0.5 });
+                
+                // Draw type text (use shorter labels for performance)
+                const text = new window.PIXI.Text({
+                    text: label,
+                    style: {
+                        fontSize: 8,
+                        fill: 0x222222,
+                        align: 'center'
+                    }
+                });
+                text.anchor.set(0.5, 0.5);
+                text.x = tileSize / 2;
+                text.y = tileSize / 2;
+                
+                // Add to tile container
+                tileContainer.addChild(tileGraphic);
+                tileContainer.addChild(text);
+                
+                // Position the tile container
+                tileContainer.x = x * tileSize;
+                tileContainer.y = y * tileSize;
+                
+                // Add to tile map container
+                this.tileMapContainer.addChild(tileContainer);
+            }
+        }
+        
+        console.log(`🗺️ Tile map created with ${this.tileMapContainer.children.length} tile containers`);
+    }
+    
     clearSprites() {
         for (const sprite of this.promiserSprites.values()) {
             this.container.removeChild(sprite);
@@ -602,6 +683,11 @@ class Game {
             this.uiContainer.removeChild(bubble);
         }
         this.thoughtBubbles.clear();
+        
+        // Clear tile map
+        this.tileMapContainer.removeChildren();
+        this.tileMapCreated = false;
+        this.currentTileMap = null;
     }
     
     destroy() {

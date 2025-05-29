@@ -25,6 +25,7 @@ export class GameState {
   get_pixel_id(): number;
   get_random_promiser_id(): number;
   readonly promiser_count: number;
+  readonly tile_map: any;
 }
 export class Promiser {
   free(): void;
@@ -68,6 +69,7 @@ export interface InitOutput {
   readonly gamestate_update: (a: number, b: number) => void;
   readonly gamestate_get_state_data: (a: number) => [number, number];
   readonly gamestate_promiser_count: (a: number) => number;
+  readonly gamestate_tile_map: (a: number) => any;
   readonly gamestate_make_promiser_think: (a: number, b: number) => void;
   readonly gamestate_make_promiser_speak: (a: number, b: number, c: number, d: number) => void;
   readonly gamestate_make_promiser_whisper: (a: number, b: number, c: number, d: number, e: number) => void;
@@ -85,10 +87,10 @@ export interface InitOutput {
   readonly get_pixel_id: () => number;
   readonly get_random_promiser_id: () => number;
   readonly main: () => void;
-  readonly __wbindgen_export_0: WebAssembly.Table;
-  readonly __wbindgen_free: (a: number, b: number, c: number) => void;
   readonly __wbindgen_malloc: (a: number, b: number) => number;
   readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
+  readonly __wbindgen_export_2: WebAssembly.Table;
+  readonly __wbindgen_free: (a: number, b: number, c: number) => void;
   readonly __wbindgen_start: () => void;
 }
 
