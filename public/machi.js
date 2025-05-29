@@ -250,6 +250,10 @@ class Game {
                 this.camera.targetX -= deltaX / this.camera.zoom;
                 this.camera.targetY -= deltaY / this.camera.zoom;
                 
+                // Snap camera target to pixel grid immediately during drag
+                this.camera.targetX = Math.round(this.camera.targetX);
+                this.camera.targetY = Math.round(this.camera.targetY);
+                
                 this.mouseControls.lastMouseX = event.clientX;
                 this.mouseControls.lastMouseY = event.clientY;
                 event.preventDefault();
@@ -287,6 +291,10 @@ class Game {
             const zoomRatio = this.camera.targetZoom / this.camera.zoom;
             this.camera.targetX = worldMouseX * this.camera.targetZoom - mouseX;
             this.camera.targetY = worldMouseY * this.camera.targetZoom - mouseY;
+            
+            // Snap camera target to pixel grid after zoom
+            this.camera.targetX = Math.round(this.camera.targetX);
+            this.camera.targetY = Math.round(this.camera.targetY);
         });
 
         // Set initial cursor style
@@ -322,6 +330,10 @@ class Game {
         if (this.cameraKeys.d) {
             this.camera.targetX += adjustedSpeed;
         }
+        
+        // Snap camera target to pixel grid
+        this.camera.targetX = Math.round(this.camera.targetX);
+        this.camera.targetY = Math.round(this.camera.targetY);
     }
     
     updateCameraPosition() {
@@ -333,6 +345,10 @@ class Game {
         this.camera.x += deltaX * this.camera.speed;
         this.camera.y += deltaY * this.camera.speed;
         this.camera.zoom += deltaZoom * this.camera.zoomSpeed;
+        
+        // Snap camera position to pixel grid
+        this.camera.x = Math.round(this.camera.x);
+        this.camera.y = Math.round(this.camera.y);
         
         // Apply camera position and zoom to world container
         this.worldContainer.x = -this.camera.x;
