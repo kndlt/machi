@@ -1339,29 +1339,31 @@ class Game {
     }
     
     updateWaterTile(tileGraphic, tile) {
-        // Calculate water color based on amount (0.0 = transparent, 1.0 = full blue)
-        const waterAmount = tile.water_amount || 0.0;
+        // Calculate water color based on amount (0 = transparent, 1024 = full blue)
+        const maxWaterAmount = 1024;
+        const waterAmount = tile.water_amount || 0;
+        const waterRatio = waterAmount / maxWaterAmount; // Convert to 0.0-1.0 range
         const baseColor = 0x1E90FF; // Dodger blue
-        const alpha = Math.max(0.2, waterAmount); // Minimum alpha for visibility
+        const alpha = Math.max(0.2, waterRatio); // Minimum alpha for visibility
         
         // Create a darker blue for fuller water
         let color = baseColor;
-        if (waterAmount > 0.5) {
+        if (waterRatio > 0.5) {
             color = 0x0066CC; // Darker blue for more water
         }
         
         // Clear and redraw the tile
         tileGraphic.clear();
         
-        if (waterAmount > 0.0 && waterAmount < 1.0) {
+        if (waterAmount > 0 && waterAmount < maxWaterAmount) {
             // For partial water, only fill the bottom portion
-            const waterHeight = waterAmount * this.tileSize;
+            const waterHeight = waterRatio * this.tileSize;
             const airHeight = this.tileSize - waterHeight;
             
             // Draw only the water portion at the bottom, leaving air space transparent
             tileGraphic.rect(0, airHeight, this.tileSize, waterHeight);
             tileGraphic.fill({ color, alpha });
-        } else {
+        } else if (waterAmount >= maxWaterAmount) {
             // Full water tile
             tileGraphic.rect(0, 0, this.tileSize, this.tileSize);
             tileGraphic.fill({ color, alpha });
