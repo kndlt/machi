@@ -11,7 +11,8 @@ import init, {
     get_pixel_id,
     get_random_promiser_id,
     place_tile,
-    get_tile_at
+    get_tile_at,
+    simulate_water
 } from './pkg/hello_wasm.js';
 
 console.log('🎮 Worker: Starting WASM game worker...');
@@ -20,6 +21,8 @@ console.log('🎮 Worker: Starting WASM game worker...');
 let wasmInitialized = false;
 let gameRunning = false;
 let updateInterval = null;
+let lastWaterSimulation = 0;
+const waterSimulationInterval = 100; // Run water simulation every 100ms
 
 async function initWasm() {
     if (!wasmInitialized) {
@@ -39,6 +42,13 @@ function startGameLoop(worldWidthTiles, worldHeightTiles) {
     // Update game state every 16ms (approximately 60fps)
     updateInterval = setInterval(() => {
         const currentTime = performance.now();
+        
+        // Run water simulation at a slower rate than game updates
+        if (currentTime - lastWaterSimulation > waterSimulationInterval) {
+            simulate_water();
+            lastWaterSimulation = currentTime;
+        }
+        
         const stateData = update_game(currentTime);
         
         // Send compact state to main thread for rendering

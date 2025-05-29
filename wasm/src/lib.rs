@@ -19,6 +19,7 @@ macro_rules! console_log {
 
 // Constants
 const TILE_SIZE_PIXELS: f64 = 32.0;
+const MAX_WATER_AMOUNT: u16 = 1024; // Maximum water amount (1024 = full)
 
 // Promiser entity that moves randomly on a 2D plane
 #[wasm_bindgen]
@@ -247,6 +248,31 @@ impl GameState {
             state.add_promiser();
         }
         
+        // Add some initial water tiles for testing water simulation
+        // First, create some dirt ground at the bottom for water to settle on (y=0 is bottom)
+        for x in 0..tile_width {
+            for y in 0..3 {
+                state.tile_map.set_tile(x, y, Tile {
+                    tile_type: TileType::Dirt,
+                    water_amount: 0,
+                });
+            }
+        }
+        
+        // Place water at the center for testing gravity (it should fall down to smaller y values)
+        let center_x = tile_width / 2;
+        let center_y = tile_height / 2;
+        let water_size = 6; // 6x6 water block
+        
+        for x in (center_x.saturating_sub(water_size/2))..(center_x + water_size/2 + 1).min(tile_width) {
+            for y in (center_y)..(center_y + 6).min(tile_height) {
+                state.tile_map.set_tile(x, y, Tile {
+                    tile_type: TileType::Water,
+                    water_amount: MAX_WATER_AMOUNT,
+                });
+            }
+        }
+
         state
     }
     
@@ -352,7 +378,7 @@ impl GameState {
         
         let new_tile = Tile {
             tile_type: tile_type_enum,
-            water_amount: if matches!(tile_type_enum, TileType::Water) { 1.0 } else { 0.0 },
+            water_amount: if matches!(tile_type_enum, TileType::Water) { MAX_WATER_AMOUNT } else { 0 },
         };
         
         self.tile_map.set_tile(x, y, new_tile);
@@ -390,6 +416,102 @@ impl GameState {
         let promiser_ids: Vec<u32> = self.promisers.keys().cloned().collect();
         let random_index = (random() * promiser_ids.len() as f64) as usize;
         promiser_ids.get(random_index).copied().unwrap_or(0)
+    }
+
+    /// Order-independent cellular-automata water step.
+    pub fn simulate_water(&mut self) {
+        let w  = self.tile_map.width;
+        let h  = self.tile_map.height;
+        let len = w * h;
+
+        // Signed changes for each tile (outflow = negative, inflow = positive)
+        let mut delta: Vec<i32> = vec![0; len];
+
+        // --- 1 ░ Gather phase -------------------------------------------------
+        for y in 0..h {
+            for x in 0..w {
+                let i = y * w + x;
+                let tile = &self.tile_map.tiles[i];
+
+                // Only flowing water can move
+                if tile.tile_type != TileType::Water || tile.water_amount == 0 {
+                    continue;
+                }
+
+                let mut remaining = tile.water_amount;
+
+                // helper to register a flow
+                let mut push = |from_idx: usize, to_idx: usize, amount: u16| {
+                    if amount == 0 { return; }
+                    delta[from_idx] -= amount as i32;
+                    delta[to_idx]   += amount as i32;
+                };
+
+                // ── a) Vertical – gravity first (toward smaller world-y)
+                if y > 0 {
+                    let j = (y - 1) * w + x;
+                    let below = &self.tile_map.tiles[j];
+
+                    if below.tile_type == TileType::Air ||
+                       (below.tile_type == TileType::Water &&
+                        below.water_amount < MAX_WATER_AMOUNT)
+                    {
+                        let room   = MAX_WATER_AMOUNT - below.water_amount;
+                        let flow   = remaining.min(room);
+                        remaining -= flow;
+                        push(i, j, flow);
+                    }
+                }
+
+                // ── b) Horizontal – equalise with neighbours
+                // Only move half the height difference to avoid “teleporting”
+                let neighbours = [
+                    (x.wrapping_sub(1), y),      // left  (wraps harmlessly for x=0)
+                    (x + 1,             y),      // right
+                ];
+
+                for (nx, ny) in neighbours {
+                    if nx >= w { continue; }
+                    let j = ny * w + nx;
+                    let n_tile = &self.tile_map.tiles[j];
+
+                    if n_tile.tile_type == TileType::Stone || n_tile.tile_type == TileType::Dirt {
+                        continue; // solid wall
+                    }
+
+                    let target = (remaining as i32 + n_tile.water_amount as i32) / 2;
+                    if remaining as i32 > target {
+                        let flow = (remaining as i32 - target) as u16;
+                        remaining -= flow;
+                        push(i, j, flow);
+                    }
+                }
+
+                // ── c) Optional small upflow (pressure equalisation) -------------
+                // Not strictly needed – comment out if you want one-way gravity.
+            }
+        }
+
+        // --- 2 ░ Apply phase ---------------------------------------------------
+        for idx in 0..len {
+            let change = delta[idx];
+            if change == 0 { continue; }
+
+            let t = &mut self.tile_map.tiles[idx];
+            let new_amt = (t.water_amount as i32 + change)
+                .clamp(0, MAX_WATER_AMOUNT as i32) as u16;
+
+            // Flip tile_type depending on new water level
+            if new_amt == 0 {
+                if t.tile_type == TileType::Water {
+                    t.tile_type = TileType::Air;
+                }
+            } else {
+                t.tile_type = TileType::Water;
+            }
+
+            t.water_amount = new_amt;
+        }
     }
 }
 
@@ -514,6 +636,15 @@ pub fn get_tile_at(x: usize, y: usize) -> String {
     }
 }
 
+#[wasm_bindgen]
+pub fn simulate_water() {
+    unsafe {
+        if let Some(ref mut state) = GAME_STATE {
+            state.simulate_water();
+        }
+    }
+}
+
 // Called when the wasm module is instantiated
 #[wasm_bindgen(start)]
 pub fn main() {
@@ -534,7 +665,7 @@ pub enum TileType {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Tile {
     pub tile_type: TileType,
-    pub water_amount: f32, // 0.0 = dry, 1.0 = full
+    pub water_amount: u16, // 0 = dry, 1024 = full
 }
 
 // Tile map structure
@@ -548,7 +679,7 @@ impl TileMap {
     pub fn new(width: usize, height: usize) -> Self {
         let tiles = vec![Tile {
             tile_type: TileType::Air,
-            water_amount: 0.0,
+            water_amount: 0,
         }; width * height];
         TileMap { width, height, tiles }
     }
