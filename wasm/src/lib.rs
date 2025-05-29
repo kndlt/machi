@@ -218,9 +218,9 @@ impl GameState {
     pub fn new(world_width: f64, world_height: f64) -> GameState {
         console_log!("Creating new game state with world size: {}x{}", world_width, world_height);
         
-        // Calculate tile dimensions - each tile is 16x16 pixels
-        let tile_width = (world_width / 16.0) as usize;
-        let tile_height = (world_height / 16.0) as usize;
+        // Create a fixed 8x8 tile grid - each tile is 16x16 pixels
+        let tile_width = 8;
+        let tile_height = 8;
         
         console_log!("Creating tile map with dimensions: {}x{} tiles ({}x{} pixels)", 
                      tile_width, tile_height, tile_width * 16, tile_height * 16);

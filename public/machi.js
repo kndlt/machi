@@ -120,6 +120,7 @@ class Game {
     
     createUI() {
         const controls = document.createElement('div');
+        controls.id = 'gameControls';
         controls.style.cssText = `
             position: absolute;
             top: 10px;
@@ -130,6 +131,7 @@ class Game {
             border-radius: 8px;
             font-family: Arial, sans-serif;
             z-index: 1000;
+            transition: opacity 0.3s ease;
         `;
         
         controls.innerHTML = `
@@ -154,6 +156,32 @@ class Game {
         document.getElementById('startGame').onclick = () => this.startGame();
         document.getElementById('stopGame').onclick = () => this.stopGame();
         document.getElementById('addPromiser').onclick = () => this.addPromiser();
+        
+        // HUD toggle functionality - start hidden by default
+        let hudVisible = false;
+        
+        // Hide HUD by default
+        controls.style.opacity = '0';
+        controls.style.pointerEvents = 'none';
+        
+        const toggleHUD = () => {
+            hudVisible = !hudVisible;
+            if (hudVisible) {
+                controls.style.opacity = '1';
+                controls.style.pointerEvents = 'auto';
+            } else {
+                controls.style.opacity = '0';
+                controls.style.pointerEvents = 'none';
+            }
+        };
+        
+        // ESC key toggle
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                toggleHUD();
+            }
+        });
         
         // Debug button to test thought bubbles
         const debugButton = document.createElement('button');
