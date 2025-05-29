@@ -113,13 +113,14 @@ class Game {
     async init() {
         console.log('🎮 Initializing game...');
         
-        // Create Pixi.js application
+        // Create Pixi.js application with fullscreen canvas
         this.app = new window.PIXI.Application();
         await this.app.init({
-            width: this.worldWidth,
-            height: this.worldHeight,
+            width: window.innerWidth,
+            height: window.innerHeight,
             backgroundColor: 0x1a1a2e,
-            antialias: true
+            antialias: true,
+            resizeTo: window
         });
         
         // Replace loading content with game canvas
@@ -128,6 +129,27 @@ class Game {
         if (loadingDiv) {
             loadingDiv.remove();
         }
+        
+        // Style the game container for fullscreen
+        gameContainer.style.cssText = `
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        `;
+        
+        // Style the canvas for fullscreen
+        this.app.canvas.style.cssText = `
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+        `;
+        
         gameContainer.appendChild(this.app.canvas);
         
         // Create world container that will be affected by camera movement
@@ -149,12 +171,16 @@ class Game {
         // Initialize camera controls
         this.initCameraControls();
         
+        // Add window resize handler
+        window.addEventListener('resize', () => {
+            this.app.renderer.resize(window.innerWidth, window.innerHeight);
+        });
+        
         // Center camera on the tile map
         const tileMapCenterX = (this.worldWidthTiles * this.tileSize) / 2;
         const tileMapCenterY = (this.worldHeightTiles * this.tileSize) / 2;
-        this.camera.x = tileMapCenterX - this.worldWidth / 2;
-        this.camera.y = tileMapCenterY - this.worldHeight / 2;
-        this.camera.y = - tileMapCenterY - this.worldHeight / 2;
+        this.camera.x = tileMapCenterX - window.innerWidth / 2;
+        this.camera.y = -tileMapCenterY - window.innerHeight / 2;
         this.camera.targetX = this.camera.x;
         this.camera.targetY = this.camera.y;
         
