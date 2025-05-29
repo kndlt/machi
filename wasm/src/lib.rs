@@ -248,9 +248,9 @@ impl GameState {
         }
         
         // Add some initial water tiles for testing water simulation
-        // First, create some dirt ground for water to settle on
+        // First, create some dirt ground at the bottom for water to settle on (y=0 is bottom)
         for x in 0..tile_width {
-            for y in (tile_height - 3)..tile_height {
+            for y in 0..3 {
                 state.tile_map.set_tile(x, y, Tile {
                     tile_type: TileType::Dirt,
                     water_amount: 0.0,
@@ -258,9 +258,9 @@ impl GameState {
             }
         }
         
-        // Place water in the top few rows to test gravity
+        // Place water higher up to test gravity (it should fall down to smaller y values)
         for x in 5..15 {
-            for y in 2..5 {
+            for y in (tile_height - 5)..(tile_height - 2) {
                 state.tile_map.set_tile(x, y, Tile {
                     tile_type: TileType::Water,
                     water_amount: 1.0,
@@ -421,8 +421,8 @@ impl GameState {
         // Create a copy of the current tile map to avoid borrowing issues
         let mut new_tiles = self.tile_map.tiles.clone();
         
-        // Process water physics from bottom to top, left to right
-        for y in (0..height).rev() {
+        // Process water physics from top to bottom, left to right
+        for y in 0..height {
             for x in 0..width {
                 let current_index = y * width + x;
                 let current_tile = &self.tile_map.tiles[current_index];
@@ -432,9 +432,9 @@ impl GameState {
                     let mut water_to_distribute = current_tile.water_amount;
                     let mut new_tile = current_tile.clone();
                     
-                    // Check if water can flow down
-                    if y + 1 < height {
-                        let below_index = (y + 1) * width + x;
+                    // Check if water can flow down (to smaller y values in world coordinates)
+                    if y > 0 {
+                        let below_index = (y - 1) * width + x;
                         let below_tile = &self.tile_map.tiles[below_index];
                         
                         // Water flows down if there's air below or if below tile has room for more water
