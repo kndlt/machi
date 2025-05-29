@@ -29,6 +29,9 @@ export class GameState {
   get_tile_at(x: number, y: number): string;
   get_pixel_id(): number;
   get_random_promiser_id(): number;
+  /**
+   * Order-independent cellular-automata water step.
+   */
   simulate_water(): void;
   readonly promiser_count: number;
   readonly tile_map: any;

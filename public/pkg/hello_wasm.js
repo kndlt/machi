@@ -415,6 +415,9 @@ export class GameState {
         const ret = wasm.gamestate_get_random_promiser_id(this.__wbg_ptr);
         return ret >>> 0;
     }
+    /**
+     * Order-independent cellular-automata water step.
+     */
     simulate_water() {
         wasm.gamestate_simulate_water(this.__wbg_ptr);
     }
