@@ -262,10 +262,10 @@ impl GameState {
         // Place water at the center for testing gravity (it should fall down to smaller y values)
         let center_x = tile_width / 2;
         let center_y = tile_height / 2;
-        let water_size = 5; // 5x3 water block
+        let water_size = 6; // 6x6 water block
         
         for x in (center_x.saturating_sub(water_size/2))..(center_x + water_size/2 + 1).min(tile_width) {
-            for y in (center_y)..(center_y + 3).min(tile_height) {
+            for y in (center_y)..(center_y + 6).min(tile_height) {
                 state.tile_map.set_tile(x, y, Tile {
                     tile_type: TileType::Water,
                     water_amount: MAX_WATER_AMOUNT,
