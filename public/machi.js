@@ -72,6 +72,7 @@ class Game {
         this.tileSelectionUI = null; // Container for tile selection panel
         this.selectedTileType = 'Dirt'; // Currently selected tile type
         this.tileTypes = ['Dirt', 'Stone', 'Water', 'Air']; // Available tile types
+        this.tileButtons = []; // Store tile selection buttons
         this.tileColors = {
             'Dirt': 0x8B4513,
             'Stone': 0x696969,
@@ -79,6 +80,11 @@ class Game {
             'Air': 0x87CEEB
         };
         this.tilePlacementMode = false; // Whether we're in tile placement mode
+        
+        // Tile hover preview
+        this.hoverPreviewTile = null; // Preview tile that follows mouse cursor
+        this.mouseWorldX = 0; // Current mouse world X position
+        this.mouseWorldY = 0; // Current mouse world Y position
         
         // Game settings
         this.worldWidthTiles = 25;   // Width in tiles 
@@ -188,6 +194,9 @@ class Game {
         // Create tile selection UI
         this.createTileSelectionUI();
         
+        // Create hover preview tile
+        this.createHoverPreviewTile();
+        
         // Set initial visibility for tile selection UI
         this.updateTileSelectionUIVisibility();
 
@@ -261,11 +270,18 @@ class Game {
         // Set up mouse controls for dragging
         this.app.canvas.addEventListener('mousedown', (event) => {
             if (event.button === 0) { // Left mouse button
-                this.mouseControls.isDragging = true;
-                this.mouseControls.lastMouseX = event.clientX;
-                this.mouseControls.lastMouseY = event.clientY;
-                this.app.canvas.style.cursor = 'grabbing';
-                event.preventDefault();
+                if (this.tilePlacementMode) {
+                    // Handle tile placement when in tile placement mode
+                    event.preventDefault();
+                    this.placeTileAtPosition(this.mouseWorldX, this.mouseWorldY);
+                } else {
+                    // Start camera dragging when not in tile placement mode
+                    this.mouseControls.isDragging = true;
+                    this.mouseControls.lastMouseX = event.clientX;
+                    this.mouseControls.lastMouseY = event.clientY;
+                    this.app.canvas.style.cursor = 'grabbing';
+                    event.preventDefault();
+                }
             }
         });
 
@@ -286,6 +302,9 @@ class Game {
                 this.mouseControls.lastMouseY = event.clientY;
                 event.preventDefault();
             }
+            
+            // Update mouse world coordinates for hover preview
+            this.updateMouseWorldPosition(event);
         });
 
         document.addEventListener('mouseup', (event) => {
@@ -328,7 +347,33 @@ class Game {
         // Set initial cursor style
         this.app.canvas.style.cursor = 'grab';
         
+        // Add mouse enter/leave handlers for hover preview
+        this.app.canvas.addEventListener('mouseenter', (event) => {
+            this.updateMouseWorldPosition(event);
+        });
+        
+        this.app.canvas.addEventListener('mouseleave', () => {
+            // Hide hover preview when mouse leaves canvas
+            if (this.hoverPreviewTile) {
+                this.hoverPreviewTile.visible = false;
+            }
+        });
+        
         console.log('🎥 Camera controls initialized (WASD to move, drag to pan, scroll to zoom)');
+    }
+    
+    updateMouseWorldPosition(event) {
+        // Get mouse position relative to canvas
+        const rect = this.app.canvas.getBoundingClientRect();
+        const mouseX = event.clientX - rect.left;
+        const mouseY = event.clientY - rect.top;
+        
+        // Convert screen coordinates to world coordinates
+        this.mouseWorldX = (mouseX + this.camera.x) / this.camera.zoom;
+        this.mouseWorldY = (mouseY + this.camera.y) / this.camera.zoom;
+        
+        // Update hover preview tile position
+        this.updateHoverPreviewTile();
     }
     
     startCameraUpdate() {
@@ -560,6 +605,72 @@ class Game {
         console.log('🎨 Tile selection UI created');
     }
     
+    createHoverPreviewTile() {
+        // Create hover preview tile that follows mouse cursor in tile placement mode
+        this.hoverPreviewTile = new window.PIXI.Graphics();
+        this.hoverPreviewTile.visible = false; // Hidden by default
+        
+        // Add to world container so it moves with camera
+        this.worldContainer.addChild(this.hoverPreviewTile);
+        
+        console.log('🎨 Hover preview tile created');
+    }
+    
+    updateHoverPreviewTile() {
+        if (!this.hoverPreviewTile) return;
+        
+        if (this.tilePlacementMode && this.selectedTileType) {
+            // Convert mouse world position to tile coordinates
+            const tileX = Math.floor(this.mouseWorldX / this.tileSize);
+            const tileY = Math.floor(-this.mouseWorldY / this.tileSize);
+            console.log(tileX, tileY);
+            
+            // Check if position is within tile map bounds
+            if (tileX >= 0 && tileX < this.worldWidthTiles && 
+                tileY >= 0 && tileY < this.worldHeightTiles) {
+                
+                // Show and update the preview tile
+                this.hoverPreviewTile.visible = true;
+                
+                // Clear and redraw preview tile
+                this.hoverPreviewTile.clear();
+                
+                if (this.selectedTileType !== 'Air') {
+                    // Get color for the selected tile type
+                    const previewColor = this.tileColors[this.selectedTileType];
+                    
+                    // Draw the preview tile with semi-transparent color
+                    this.hoverPreviewTile.rect(0, 0, this.tileSize, this.tileSize);
+                    this.hoverPreviewTile.fill({ color: previewColor, alpha: 0.6 });
+                    
+                    // Add a border to make it more visible
+                    this.hoverPreviewTile.stroke({ color: 0xFFFFFF, width: 2, alpha: 0.8 });
+                } else {
+                    // For Air tiles, show a dashed border outline
+                    this.hoverPreviewTile.rect(0, 0, this.tileSize, this.tileSize);
+                    this.hoverPreviewTile.stroke({ color: 0xFF0000, width: 2, alpha: 0.8 });
+                    
+                    // Draw diagonal lines to indicate "removal"
+                    this.hoverPreviewTile.moveTo(0, 0);
+                    this.hoverPreviewTile.lineTo(this.tileSize, this.tileSize);
+                    this.hoverPreviewTile.moveTo(this.tileSize, 0);
+                    this.hoverPreviewTile.lineTo(0, this.tileSize);
+                    this.hoverPreviewTile.stroke({ color: 0xFF0000, width: 1, alpha: 0.6 });
+                }
+                
+                // Position the preview tile at the correct world coordinates
+                this.hoverPreviewTile.x = tileX * this.tileSize;
+                this.hoverPreviewTile.y = -(tileY + 1) * this.tileSize;
+            } else {
+                // Hide preview if cursor is outside tile map bounds
+                this.hoverPreviewTile.visible = false;
+            }
+        } else {
+            // Hide preview if not in tile placement mode
+            this.hoverPreviewTile.visible = false;
+        }
+    }
+    
     selectTileType(tileType) {
         this.selectedTileType = tileType;
         console.log(`🎨 Selected tile type: ${tileType}`);
@@ -572,6 +683,9 @@ class Game {
                 width: isSelected ? 3 : 2 
             });
         });
+        
+        // Update hover preview tile with new selection
+        this.updateHoverPreviewTile();
     }
     
     updateTileSelectionUIVisibility() {
@@ -585,12 +699,17 @@ class Game {
                 document.body.style.cursor = 'default';
             }
         }
+        
+        // Update hover preview tile visibility
+        this.updateHoverPreviewTile();
     }
 
     placeTileAtPosition(worldX, worldY) {
+        console.log(`🎨 Placing tile at world position (${worldX}, ${worldY})`);
         // Convert world position to tile coordinates
         const tileX = Math.floor(worldX / this.tileSize);
-        const tileY = Math.floor(-worldY / this.tileSize) - 1;
+        const tileY = Math.floor(-worldY / this.tileSize);
+        console.log(`!!!Tile coordinates: (${tileX}, ${tileY})`);
         
         // Check if position is within tile map bounds
         if (tileX >= 0 && tileX < this.worldWidthTiles && 
@@ -658,14 +777,6 @@ class Game {
                     
                     newTileGraphic.on('pointerout', () => {
                         this.onTileHover(newTileGraphic, false);
-                    });
-                    
-                    // Add click event listener for tile placement
-                    newTileGraphic.on('pointerdown', (event) => {
-                        if (this.tilePlacementMode) {
-                            event.stopPropagation(); // Prevent camera panning
-                            this.placeTileAtPosition(tileX * this.tileSize, -(tileY + 1) * this.tileSize);
-                        }
                     });
                     
                     // Position the tile directly
@@ -1311,14 +1422,6 @@ class Game {
                         this.onTileHover(newTileGraphic, false);
                     });
                     
-                    // Add click event listener for tile placement
-                    newTileGraphic.on('pointerdown', (event) => {
-                        if (this.tilePlacementMode) {
-                            event.stopPropagation(); // Prevent camera panning
-                            this.placeTileAtPosition(x * this.tileSize, -(y + 1) * this.tileSize);
-                        }
-                    });
-                    
                     // Position the tile directly
                     newTileGraphic.x = x * this.tileSize;
                     newTileGraphic.y = -(y + 1) * this.tileSize;
@@ -1426,6 +1529,12 @@ class Game {
         this.tileGraphics.clear(); // Clear tile graphics map
         this.tileMapCreated = false;
         this.currentTileMap = null;
+        
+        // Clear hover preview tile
+        if (this.hoverPreviewTile) {
+            this.worldContainer.removeChild(this.hoverPreviewTile);
+            this.hoverPreviewTile = null;
+        }
     }
     
     destroy() {
