@@ -57,6 +57,7 @@ class Game {
         this.app = null;
         this.worker = null;
         this.promiserSprites = new Map();
+        this.promiserStates = new Map(); // Track previous states to avoid unnecessary redraws
         this.thoughtBubbles = new Map();
         this.container = null;
         this.uiContainer = null;
@@ -65,6 +66,7 @@ class Game {
         this.aiCoordinator = null;
         this.tileMapCreated = false; // Track if tile map has been created
         this.currentTileMap = null; // Store current tile map data for comparison
+        this.tileGraphics = new Map(); // Store tile graphics for hover effects
         
         // Game settings
         this.worldWidthTiles = 25;   // Width in tiles 
@@ -777,6 +779,63 @@ class Game {
         }
     }
     
+    shouldRedrawSprite(promiser) {
+        const previousState = this.promiserStates.get(promiser.id);
+        
+        // If no previous state, definitely need to draw
+        if (!previousState) {
+            return true;
+        }
+        
+        // Check if any visual properties have changed
+        return (
+            previousState.state !== promiser.state ||
+            previousState.color !== promiser.color ||
+            previousState.size !== promiser.size
+        );
+    }
+    
+    updateSpriteAppearance(sprite, promiser) {
+        // Clear and redraw the sprite with current state
+        sprite.clear();
+        
+        // Different visual effects based on promiser state
+        let effectColor = promiser.color & 0xFFFFFF;
+        let effectAlpha = 1.0;
+        
+        switch (promiser.state) {
+            case 1: // Thinking
+                effectColor = 0xFFFF00; // Yellow glow
+                effectAlpha = 0.8;
+                break;
+            case 2: // Speaking
+                effectColor = 0x00FF00; // Green glow
+                effectAlpha = 0.9;
+                break;
+            case 3: // Whispering
+                effectColor = 0x8888FF; // Purple glow
+                effectAlpha = 0.7;
+                break;
+            case 4: // Running
+                effectColor = 0xFF4444; // Red glow
+                effectAlpha = 1.0;
+                // Add motion blur effect
+                sprite.circle(0, 0, promiser.size + 2);
+                sprite.fill({ color: effectColor, alpha: 0.3 });
+                break;
+        }
+        
+        // Draw main sprite
+        sprite.circle(0, 0, promiser.size);
+        sprite.fill({ color: promiser.color & 0xFFFFFF, alpha: effectAlpha });
+        
+        // Add special effect glow for active states
+        if (promiser.state > 0) {
+            sprite.circle(0, 0, promiser.size + 3);
+            sprite.stroke({ color: effectColor, width: 2, alpha: 0.5 });
+        }
+    }
+    
     updateRender(gameState, timestamp) {
         // Draw tile map if present (only once or when changed)
         if (gameState.tile_map && !this.tileMapCreated) {
@@ -802,44 +861,18 @@ class Game {
                 this.container.addChild(sprite);
             }
             
-            // Update sprite appearance based on state
-            sprite.clear();
-            
-            // Different visual effects based on promiser state
-            let effectColor = promiser.color & 0xFFFFFF;
-            let effectAlpha = 1.0;
-            
-            switch (promiser.state) {
-                case 1: // Thinking
-                    effectColor = 0xFFFF00; // Yellow glow
-                    effectAlpha = 0.8;
-                    break;
-                case 2: // Speaking
-                    effectColor = 0x00FF00; // Green glow
-                    effectAlpha = 0.9;
-                    break;
-                case 3: // Whispering
-                    effectColor = 0x8888FF; // Purple glow
-                    effectAlpha = 0.7;
-                    break;
-                case 4: // Running
-                    effectColor = 0xFF4444; // Red glow
-                    effectAlpha = 1.0;
-                    // Add motion blur effect
-                    sprite.circle(0, 0, promiser.size + 2);
-                    sprite.fill({ color: effectColor, alpha: 0.3 });
-                    break;
+            // Check if sprite needs redrawing
+            if (this.shouldRedrawSprite(promiser)) {
+                // Update sprite appearance based on state
+                this.updateSpriteAppearance(sprite, promiser);
             }
             
-            // Draw main sprite
-            sprite.circle(0, 0, promiser.size);
-            sprite.fill({ color: promiser.color & 0xFFFFFF, alpha: effectAlpha });
-            
-            // Add special effect glow for active states
-            if (promiser.state > 0) {
-                sprite.circle(0, 0, promiser.size + 3);
-                sprite.stroke({ color: effectColor, width: 2, alpha: 0.5 });
-            }
+            // Store current state for next frame comparison
+            this.promiserStates.set(promiser.id, {
+                state: promiser.state,
+                color: promiser.color,
+                size: promiser.size
+            });
             
             sprite.x = promiser.x;
             sprite.y = -promiser.y;
@@ -859,6 +892,7 @@ class Game {
             if (!currentIds.has(id)) {
                 this.container.removeChild(sprite);
                 this.promiserSprites.delete(id);
+                this.promiserStates.delete(id); // Clean up stored state
                 this.removeThoughtBubble(id);
             }
         }
@@ -873,6 +907,7 @@ class Game {
         
         // Clear any existing tiles
         this.tileMapContainer.removeChildren();
+        this.tileGraphics.clear(); // Clear tile graphics map
         
         console.log(`🗺️ Creating tile map: ${tileMap.width}x${tileMap.height} tiles, total: ${tileMap.tiles.length}`);
         
@@ -883,46 +918,50 @@ class Game {
                 const tile = tileMap.tiles[idx];
                 let color = 0xCCCCCC;
                 
+                // Improved tile colors with better visual appearance
                 switch (tile.tile_type) {
-                    case 'Dirt': color = 0x8B5A2B; break;
-                    case 'Stone': color = 0x888888; break;
-                    case 'Water': color = 0x3399FF; break;
-                    case 'Air':
-                    default: color = 0xEEEEEE; break;
+                    case 'Dirt': color = 0x8B4513; break;  // Saddle brown - more natural dirt color
+                    case 'Stone': color = 0x696969; break; // Dim gray - more realistic stone
+                    case 'Water': color = 0x1E90FF; break; // Dodger blue - clearer water
+                    case 'Air': color = 0x87CEEB; break;   // Sky blue - light blue air
+                    default: color = 0x87CEEB; break;      // Default to sky blue
                 }
                 
-                // Create tile container for this position
-                const tileContainer = new window.PIXI.Container();
-                
-                // Draw tile background
+                // Create interactive tile graphic with hover effects
                 const tileGraphic = new window.PIXI.Graphics();
                 tileGraphic.rect(0, 0, this.tileSize, this.tileSize);
-                tileGraphic.fill({ color, alpha: 0.85 });
-                tileGraphic.stroke({ color: 0x222222, width: 1, alpha: 0.5 });
+                tileGraphic.fill({ color, alpha: 1.0 }); // Full opacity for cleaner look
                 
-                // Draw coordinate text showing x,y indices
-                const text = new window.PIXI.Text({
-                    text: `${x},${y}`,
-                    style: {
-                        fontSize: 12, // Larger font for bigger tiles
-                        fill: 0x222222,
-                        align: 'center'
-                    }
+                // Make tile interactive for hover effects
+                tileGraphic.eventMode = 'static';
+                tileGraphic.cursor = 'pointer';
+                
+                // Store tile data for hover effects
+                tileGraphic.tileData = {
+                    x: x,
+                    y: y,
+                    type: tile.tile_type,
+                    baseColor: color
+                };
+                
+                // Add hover event listeners
+                tileGraphic.on('pointerover', () => {
+                    this.onTileHover(tileGraphic, true);
                 });
-                text.anchor.set(0.5, 0.5);
-                text.x = this.tileSize / 2;
-                text.y = this.tileSize / 2;
                 
-                // Add to tile container
-                tileContainer.addChild(tileGraphic);
-                tileContainer.addChild(text);
+                tileGraphic.on('pointerout', () => {
+                    this.onTileHover(tileGraphic, false);
+                });
                 
-                // Position the tile container
-                tileContainer.x = x * this.tileSize;
-                tileContainer.y = -(y + 1) * this.tileSize;
+                // Position the tile directly
+                tileGraphic.x = x * this.tileSize;
+                tileGraphic.y = -(y + 1) * this.tileSize;
                 
-                // Add to tile map container
-                this.tileMapContainer.addChild(tileContainer);
+                // Store reference for hover management
+                this.tileGraphics.set(`${x},${y}`, tileGraphic);
+                
+                // Add directly to tile map container
+                this.tileMapContainer.addChild(tileGraphic);
             }
         }
         
@@ -936,14 +975,33 @@ class Game {
         // Add red line to tile map container
         this.tileMapContainer.addChild(redLine);
         
-        console.log(`🗺️ Tile map created with ${this.tileMapContainer.children.length} tile containers and red line at y=0`);
+        console.log(`🗺️ Tile map created with ${this.tileMapContainer.children.length} tiles and red line at y=0`);
     }
     
+    onTileHover(tileGraphic, isHovering) {
+        const { x, y, type, baseColor } = tileGraphic.tileData;
+        
+        // Clear and redraw the tile
+        tileGraphic.clear();
+        tileGraphic.rect(0, 0, this.tileSize, this.tileSize);
+        tileGraphic.fill({ color: baseColor, alpha: 1.0 });
+        
+        if (isHovering) {
+            // Add border when hovering
+            tileGraphic.stroke({ color: 0xFFFFFF, width: 2, alpha: 0.8 });
+            
+            // Optional: Show tile info in console (commented out to reduce spam)
+            // console.log(`🎯 Hovering over tile (${x}, ${y}) - Type: ${type}`);
+        }
+        // When not hovering, no border is drawn (clean appearance)
+    }
+
     clearSprites() {
         for (const sprite of this.promiserSprites.values()) {
             this.container.removeChild(sprite);
         }
         this.promiserSprites.clear();
+        this.promiserStates.clear(); // Clear sprite state tracking
         
         // Clear thought bubbles
         for (const bubble of this.thoughtBubbles.values()) {
@@ -953,6 +1011,7 @@ class Game {
         
         // Clear tile map
         this.tileMapContainer.removeChildren();
+        this.tileGraphics.clear(); // Clear tile graphics map
         this.tileMapCreated = false;
         this.currentTileMap = null;
     }
