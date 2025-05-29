@@ -69,6 +69,42 @@ class Game {
         // Game settings
         this.worldWidth = 800;
         this.worldHeight = 600;
+        
+        // Camera system
+        this.camera = {
+            x: 0,
+            y: 0,
+            targetX: 0,
+            targetY: 0,
+            zoom: 1,
+            targetZoom: 1,
+            minZoom: 0.5,
+            maxZoom: 3,
+            speed: 1, // Smooth movement factor (0-1)
+            zoomSpeed: 1 // Smooth zoom factor (0-1)
+        };
+        
+        // Camera controls
+        this.cameraKeys = {
+            w: false,
+            a: false,
+            s: false,
+            d: false
+        };
+        
+        // Mouse/drag controls
+        this.mouseControls = {
+            isDragging: false,
+            lastMouseX: 0,
+            lastMouseY: 0,
+            dragSensitivity: 1
+        };
+        
+        // Camera movement speed (pixels per frame when key is held)
+        this.cameraSpeed = 3;
+        
+        // World container that contains all game objects (affected by camera)
+        this.worldContainer = null;
     }
     
     async init() {
@@ -91,17 +127,36 @@ class Game {
         }
         gameContainer.appendChild(this.app.canvas);
         
-        // Create container for promisers
-        this.container = new window.PIXI.Container();
-        this.app.stage.addChild(this.container);
+        // Create world container that will be affected by camera movement
+        this.worldContainer = new window.PIXI.Container();
+        this.app.stage.addChild(this.worldContainer);
         
-        // Create container for UI elements (thought bubbles, etc.)
+        // Create container for tile map (in world space)
+        this.tileMapContainer = new window.PIXI.Container();
+        this.worldContainer.addChild(this.tileMapContainer);
+        
+        // Create container for promisers (in world space)
+        this.container = new window.PIXI.Container();
+        this.worldContainer.addChild(this.container);
+        
+        // Create container for UI elements (thought bubbles, etc.) - in screen space, not affected by camera
         this.uiContainer = new window.PIXI.Container();
         this.app.stage.addChild(this.uiContainer);
+
+        // Initialize camera controls
+        this.initCameraControls();
         
-        // Create container for tile map (below promisers)
-        this.tileMapContainer = new window.PIXI.Container();
-        this.app.stage.addChildAt(this.tileMapContainer, 0); // Add at bottom
+        // Center camera on the 8x8 tile map (128x128 pixels total)
+        // Camera should be centered on the tile map
+        const tileMapCenterX = (8 * 16) / 2; // 64 pixels from left edge
+        const tileMapCenterY = (8 * 16) / 2; // 64 pixels from top edge
+        this.camera.x = tileMapCenterX - this.worldWidth / 2;
+        this.camera.y = tileMapCenterY - this.worldHeight / 2;
+        this.camera.targetX = this.camera.x;
+        this.camera.targetY = this.camera.y;
+        
+        // Start camera update loop
+        this.startCameraUpdate();
 
         // Initialize worker
         this.worker = new GameWorker();
@@ -116,6 +171,139 @@ class Game {
         await this.startGame();
         
         console.log('🎮 Game initialized');
+    }
+    
+    initCameraControls() {
+        // Set up keyboard event listeners for camera controls
+        document.addEventListener('keydown', (event) => {
+            // Skip if HUD is visible and user might be typing
+            if (event.target.tagName === 'INPUT' || event.target.tagName === 'SELECT') {
+                return;
+            }
+            
+            const key = event.key.toLowerCase();
+            if (key in this.cameraKeys) {
+                event.preventDefault();
+                this.cameraKeys[key] = true;
+            }
+        });
+        
+        document.addEventListener('keyup', (event) => {
+            const key = event.key.toLowerCase();
+            if (key in this.cameraKeys) {
+                event.preventDefault();
+                this.cameraKeys[key] = false;
+            }
+        });
+
+        // Set up mouse controls for dragging
+        this.app.canvas.addEventListener('mousedown', (event) => {
+            if (event.button === 0) { // Left mouse button
+                this.mouseControls.isDragging = true;
+                this.mouseControls.lastMouseX = event.clientX;
+                this.mouseControls.lastMouseY = event.clientY;
+                this.app.canvas.style.cursor = 'grabbing';
+                event.preventDefault();
+            }
+        });
+
+        document.addEventListener('mousemove', (event) => {
+            if (this.mouseControls.isDragging) {
+                const deltaX = (event.clientX - this.mouseControls.lastMouseX) * this.mouseControls.dragSensitivity;
+                const deltaY = (event.clientY - this.mouseControls.lastMouseY) * this.mouseControls.dragSensitivity;
+                
+                // Move camera in opposite direction to create dragging effect
+                this.camera.targetX -= deltaX / this.camera.zoom;
+                this.camera.targetY -= deltaY / this.camera.zoom;
+                
+                this.mouseControls.lastMouseX = event.clientX;
+                this.mouseControls.lastMouseY = event.clientY;
+                event.preventDefault();
+            }
+        });
+
+        document.addEventListener('mouseup', (event) => {
+            if (event.button === 0) { // Left mouse button
+                this.mouseControls.isDragging = false;
+                this.app.canvas.style.cursor = 'grab';
+                event.preventDefault();
+            }
+        });
+
+        // Set up scroll wheel for zoom
+        this.app.canvas.addEventListener('wheel', (event) => {
+            event.preventDefault();
+            
+            const zoomDelta = event.deltaY > 0 ? 0.9 : 1.1;
+            const newZoom = this.camera.targetZoom * zoomDelta;
+            
+            // Clamp zoom within limits
+            this.camera.targetZoom = Math.max(this.camera.minZoom, Math.min(this.camera.maxZoom, newZoom));
+            
+            // Get mouse position relative to canvas
+            const rect = this.app.canvas.getBoundingClientRect();
+            const mouseX = event.clientX - rect.left;
+            const mouseY = event.clientY - rect.top;
+            
+            // Calculate world coordinates of mouse position before zoom
+            const worldMouseX = (mouseX + this.camera.x) / this.camera.zoom;
+            const worldMouseY = (mouseY + this.camera.y) / this.camera.zoom;
+            
+            // Adjust camera position to zoom towards mouse cursor
+            const zoomRatio = this.camera.targetZoom / this.camera.zoom;
+            this.camera.targetX = worldMouseX * this.camera.targetZoom - mouseX;
+            this.camera.targetY = worldMouseY * this.camera.targetZoom - mouseY;
+        });
+
+        // Set initial cursor style
+        this.app.canvas.style.cursor = 'grab';
+        
+        console.log('🎥 Camera controls initialized (WASD to move, drag to pan, scroll to zoom)');
+    }
+    
+    startCameraUpdate() {
+        // Camera update loop
+        const updateCamera = () => {
+            this.updateCameraMovement();
+            this.updateCameraPosition();
+            requestAnimationFrame(updateCamera);
+        };
+        updateCamera();
+    }
+    
+    updateCameraMovement() {
+        // Update target position based on key presses
+        // Adjust movement speed based on zoom level (move faster when zoomed out)
+        const adjustedSpeed = this.cameraSpeed / this.camera.zoom;
+        
+        if (this.cameraKeys.w) {
+            this.camera.targetY -= adjustedSpeed;
+        }
+        if (this.cameraKeys.s) {
+            this.camera.targetY += adjustedSpeed;
+        }
+        if (this.cameraKeys.a) {
+            this.camera.targetX -= adjustedSpeed;
+        }
+        if (this.cameraKeys.d) {
+            this.camera.targetX += adjustedSpeed;
+        }
+    }
+    
+    updateCameraPosition() {
+        // Smooth camera movement towards target
+        const deltaX = this.camera.targetX - this.camera.x;
+        const deltaY = this.camera.targetY - this.camera.y;
+        const deltaZoom = this.camera.targetZoom - this.camera.zoom;
+        
+        this.camera.x += deltaX * this.camera.speed;
+        this.camera.y += deltaY * this.camera.speed;
+        this.camera.zoom += deltaZoom * this.camera.zoomSpeed;
+        
+        // Apply camera position and zoom to world container
+        this.worldContainer.x = -this.camera.x;
+        this.worldContainer.y = -this.camera.y;
+        this.worldContainer.scale.set(this.camera.zoom);
     }
     
     createUI() {
@@ -146,6 +334,13 @@ class Game {
                     <option value="ollama">Ollama (Local)</option>
                     <option value="test">Test AI</option>
                 </select>
+            </div>
+            <div style="margin-top: 10px; font-size: 11px; color: #aaa;">
+                <strong>Controls:</strong><br>
+                ESC - Toggle HUD<br>
+                WASD - Move Camera<br>
+                Drag - Pan Camera<br>
+                Scroll - Zoom In/Out
             </div>
             <div id="status" style="margin-top: 10px; font-size: 12px;">Ready to start</div>
         `;
@@ -518,8 +713,13 @@ class Game {
         
         bubbleContainer.addChild(bubble);
         bubbleContainer.addChild(text);
-        bubbleContainer.x = sprite.x;
-        bubbleContainer.y = sprite.y - 40; // Position above the sprite
+        
+        // Convert world coordinates to screen coordinates for UI elements
+        const screenX = sprite.x - this.camera.x;
+        const screenY = sprite.y - this.camera.y - 40; // Position above the sprite
+        
+        bubbleContainer.x = screenX;
+        bubbleContainer.y = screenY;
         
         console.log(`💭 Bubble container position: x=${bubbleContainer.x}, y=${bubbleContainer.y}`);
         
@@ -615,11 +815,13 @@ class Game {
             sprite.x = promiser.x;
             sprite.y = promiser.y;
             
-            // Update thought bubble position if it exists
+            // Update thought bubble position if it exists (convert to screen coordinates)
             const bubble = this.thoughtBubbles.get(promiser.id);
             if (bubble) {
-                bubble.x = promiser.x;
-                bubble.y = promiser.y - promiser.size - 20;
+                const screenX = promiser.x - this.camera.x;
+                const screenY = promiser.y - this.camera.y - promiser.size - 20;
+                bubble.x = screenX;
+                bubble.y = screenY;
             }
         });
         
