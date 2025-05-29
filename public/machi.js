@@ -67,8 +67,11 @@ class Game {
         this.currentTileMap = null; // Store current tile map data for comparison
         
         // Game settings
-        this.worldWidth = 800;
-        this.worldHeight = 600;
+        this.worldWidthTiles = 25;   // Width in tiles 
+        this.worldHeightTiles = 19;  // Height in tiles
+        this.tileSize = 32;          // Size of each tile in pixels
+        this.worldWidth = this.worldWidthTiles * this.tileSize;   // Total width in pixels
+        this.worldHeight = this.worldHeightTiles * this.tileSize; // Total height in pixels
         
         // Camera system
         this.camera = {
@@ -146,12 +149,12 @@ class Game {
         // Initialize camera controls
         this.initCameraControls();
         
-        // Center camera on the 8x8 tile map (256x256 pixels total with 32x32 tiles)
-        // Camera should be centered on the tile map
-        const tileMapCenterX = (8 * 32) / 2; // 128 pixels from left edge
-        const tileMapCenterY = (8 * 32) / 2; // 128 pixels from top edge
+        // Center camera on the tile map
+        const tileMapCenterX = (this.worldWidthTiles * this.tileSize) / 2;
+        const tileMapCenterY = (this.worldHeightTiles * this.tileSize) / 2;
         this.camera.x = tileMapCenterX - this.worldWidth / 2;
         this.camera.y = tileMapCenterY - this.worldHeight / 2;
+        this.camera.y = - tileMapCenterY - this.worldHeight / 2;
         this.camera.targetX = this.camera.x;
         this.camera.targetY = this.camera.y;
         
@@ -406,8 +409,8 @@ class Game {
         
         try {
             const result = await this.worker.callFunction('start_game', {
-                worldWidth: this.worldWidth,
-                worldHeight: this.worldHeight
+                worldWidth: this.worldWidthTiles,
+                worldHeight: this.worldHeightTiles
             });
             
             this.isRunning = true;
@@ -813,7 +816,7 @@ class Game {
             }
             
             sprite.x = promiser.x;
-            sprite.y = promiser.y;
+            sprite.y = -promiser.y;
             
             // Update thought bubble position if it exists (convert to screen coordinates)
             const bubble = this.thoughtBubbles.get(promiser.id);
@@ -844,7 +847,6 @@ class Game {
         
         // Clear any existing tiles
         this.tileMapContainer.removeChildren();
-        const tileSize = 32; // 2x larger tiles
         
         console.log(`🗺️ Creating tile map: ${tileMap.width}x${tileMap.height} tiles, total: ${tileMap.tiles.length}`);
         
@@ -868,7 +870,7 @@ class Game {
                 
                 // Draw tile background
                 const tileGraphic = new window.PIXI.Graphics();
-                tileGraphic.rect(0, 0, tileSize, tileSize);
+                tileGraphic.rect(0, 0, this.tileSize, this.tileSize);
                 tileGraphic.fill({ color, alpha: 0.85 });
                 tileGraphic.stroke({ color: 0x222222, width: 1, alpha: 0.5 });
                 
@@ -882,23 +884,33 @@ class Game {
                     }
                 });
                 text.anchor.set(0.5, 0.5);
-                text.x = tileSize / 2;
-                text.y = tileSize / 2;
+                text.x = this.tileSize / 2;
+                text.y = this.tileSize / 2;
                 
                 // Add to tile container
                 tileContainer.addChild(tileGraphic);
                 tileContainer.addChild(text);
                 
                 // Position the tile container
-                tileContainer.x = x * tileSize;
-                tileContainer.y = y * tileSize;
+                tileContainer.x = x * this.tileSize;
+                tileContainer.y = -(y + 1) * this.tileSize;
                 
                 // Add to tile map container
                 this.tileMapContainer.addChild(tileContainer);
             }
         }
         
-        console.log(`🗺️ Tile map created with ${this.tileMapContainer.children.length} tile containers`);
+        // Create red line at y=0 (world coordinates)
+        const redLine = new window.PIXI.Graphics();
+        redLine.moveTo(0, 0);
+        redLine.lineTo(tileMap.width * this.tileSize, 0);
+        redLine.stroke({ color: 0xFF0000, width: 2, alpha: 1.0 });
+        redLine.y = 0; // Position at y=0 in world coordinates
+        
+        // Add red line to tile map container
+        this.tileMapContainer.addChild(redLine);
+        
+        console.log(`🗺️ Tile map created with ${this.tileMapContainer.children.length} tile containers and red line at y=0`);
     }
     
     clearSprites() {

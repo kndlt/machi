@@ -27,11 +27,11 @@ async function initWasm() {
     }
 }
 
-function startGameLoop(worldWidth, worldHeight) {
+function startGameLoop(worldWidthTiles, worldHeightTiles) {
     if (gameRunning) return;
     
     console.log('🎮 Worker: Starting game loop...');
-    init_game(worldWidth, worldHeight);
+    init_game(worldWidthTiles, worldHeightTiles);
     gameRunning = true;
     
     // Update game state every 16ms (approximately 60fps)
@@ -78,7 +78,7 @@ self.onmessage = async function(e) {
         
         switch (type) {
             case 'start_game':
-                startGameLoop(data.worldWidth || 800, data.worldHeight || 600);
+                startGameLoop(data.worldWidth || 25, data.worldHeight || 19);
                 result = { status: 'game_started' };
                 break;
                 

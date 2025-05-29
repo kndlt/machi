@@ -17,6 +17,9 @@ macro_rules! console_log {
     ($($t:tt)*) => (log(&format_args!($($t)*).to_string()))
 }
 
+// Constants
+const TILE_SIZE_PIXELS: f64 = 32.0;
+
 // Promiser entity that moves randomly on a 2D plane
 #[wasm_bindgen]
 #[derive(Clone)]
@@ -215,21 +218,26 @@ pub struct GameState {
 #[wasm_bindgen]
 impl GameState {
     #[wasm_bindgen(constructor)]
-    pub fn new(world_width: f64, world_height: f64) -> GameState {
-        console_log!("Creating new game state with world size: {}x{}", world_width, world_height);
+    pub fn new(world_width_tiles: f64, world_height_tiles: f64) -> GameState {
+        console_log!("Creating new game state with world size: {}x{} tiles", world_width_tiles, world_height_tiles);
         
-        // Create a fixed 8x8 tile grid - each tile is 32x32 pixels (2x larger)
-        let tile_width = 8;
-        let tile_height = 8;
+        // Convert tile dimensions to pixel dimensions
+        let world_width_pixels = world_width_tiles * TILE_SIZE_PIXELS;
+        let world_height_pixels = world_height_tiles * TILE_SIZE_PIXELS;
+        
+        console_log!("World size in pixels: {}x{}", world_width_pixels, world_height_pixels);
+        
+        let tile_width = world_width_tiles as usize;
+        let tile_height = world_height_tiles as usize;
         
         console_log!("Creating tile map with dimensions: {}x{} tiles ({}x{} pixels)", 
-                     tile_width, tile_height, tile_width * 32, tile_height * 32);
+                     tile_width, tile_height, world_width_pixels, world_height_pixels);
         
         let mut state = GameState {
             promisers: HashMap::new(),
             next_id: 0,
-            world_width,
-            world_height,
+            world_width: world_width_pixels,
+            world_height: world_height_pixels,
             last_update: 0.0,
             tile_map: TileMap::new(tile_width, tile_height),
         };
@@ -353,10 +361,10 @@ impl GameState {
 static mut GAME_STATE: Option<GameState> = None;
 
 #[wasm_bindgen]
-pub fn init_game(world_width: f64, world_height: f64) {
-    console_log!("Initializing game with world size: {}x{}", world_width, world_height);
+pub fn init_game(world_width_tiles: f64, world_height_tiles: f64) {
+    console_log!("Initializing game with world size: {}x{} tiles", world_width_tiles, world_height_tiles);
     unsafe {
-        GAME_STATE = Some(GameState::new(world_width, world_height));
+        GAME_STATE = Some(GameState::new(world_width_tiles, world_height_tiles));
     }
 }
 

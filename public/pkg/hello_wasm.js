@@ -148,11 +148,11 @@ function getDataViewMemory0() {
     return cachedDataViewMemory0;
 }
 /**
- * @param {number} world_width
- * @param {number} world_height
+ * @param {number} world_width_tiles
+ * @param {number} world_height_tiles
  */
-export function init_game(world_width, world_height) {
-    wasm.init_game(world_width, world_height);
+export function init_game(world_width_tiles, world_height_tiles) {
+    wasm.init_game(world_width_tiles, world_height_tiles);
 }
 
 /**
@@ -257,11 +257,11 @@ export class GameState {
         wasm.__wbg_gamestate_free(ptr, 0);
     }
     /**
-     * @param {number} world_width
-     * @param {number} world_height
+     * @param {number} world_width_tiles
+     * @param {number} world_height_tiles
      */
-    constructor(world_width, world_height) {
-        const ret = wasm.gamestate_new(world_width, world_height);
+    constructor(world_width_tiles, world_height_tiles) {
+        const ret = wasm.gamestate_new(world_width_tiles, world_height_tiles);
         this.__wbg_ptr = ret >>> 0;
         GameStateFinalization.register(this, this.__wbg_ptr, this);
         return this;

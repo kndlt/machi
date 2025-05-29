@@ -1,6 +1,6 @@
 /* tslint:disable */
 /* eslint-disable */
-export function init_game(world_width: number, world_height: number): void;
+export function init_game(world_width_tiles: number, world_height_tiles: number): void;
 export function update_game(current_time: number): string;
 export function add_promiser(): void;
 export function get_promiser_count(): number;
@@ -13,7 +13,7 @@ export function get_random_promiser_id(): number;
 export function main(): void;
 export class GameState {
   free(): void;
-  constructor(world_width: number, world_height: number);
+  constructor(world_width_tiles: number, world_height_tiles: number);
   add_promiser(): void;
   remove_promiser(id: number): void;
   update(current_time: number): void;
