@@ -9,7 +9,9 @@ import init, {
     make_promiser_whisper,
     make_promiser_run,
     get_pixel_id,
-    get_random_promiser_id
+    get_random_promiser_id,
+    place_tile,
+    get_tile_at
 } from './pkg/hello_wasm.js';
 
 console.log('🎮 Worker: Starting WASM game worker...');
@@ -131,6 +133,15 @@ self.onmessage = async function(e) {
                 
             case 'get_random_promiser_id':
                 result = { promiserId: get_random_promiser_id() };
+                break;
+                
+            case 'place_tile':
+                place_tile(data.x, data.y, data.tileType);
+                result = { status: 'tile_placed', x: data.x, y: data.y, tileType: data.tileType };
+                break;
+                
+            case 'get_tile_at':
+                result = { tileType: get_tile_at(data.x, data.y) };
                 break;
                 
             default:

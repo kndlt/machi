@@ -335,25 +335,61 @@ impl GameState {
     
     pub fn make_promiser_run(&mut self, id: u32) {
         if let Some(promiser) = self.promisers.get_mut(&id) {
-            promiser.start_running();
+            promiser.state = 3; // Running
+            promiser.state_timer = 0.0;
         }
     }
-    
+
+    // Tile manipulation methods
+    pub fn place_tile(&mut self, x: usize, y: usize, tile_type: String) {
+        let tile_type_enum = match tile_type.as_str() {
+            "Dirt" => TileType::Dirt,
+            "Stone" => TileType::Stone,
+            "Water" => TileType::Water,
+            "Air" => TileType::Air,
+            _ => TileType::Air, // Default to Air for unknown types
+        };
+        
+        let new_tile = Tile {
+            tile_type: tile_type_enum,
+            water_amount: if matches!(tile_type_enum, TileType::Water) { 1.0 } else { 0.0 },
+        };
+        
+        self.tile_map.set_tile(x, y, new_tile);
+        console_log!("Placed {} tile at ({}, {})", tile_type, x, y);
+    }
+
+    pub fn get_tile_at(&self, x: usize, y: usize) -> String {
+        if let Some(tile) = self.tile_map.get_tile(x, y) {
+            match tile.tile_type {
+                TileType::Dirt => "Dirt".to_string(),
+                TileType::Stone => "Stone".to_string(),
+                TileType::Water => "Water".to_string(),
+                TileType::Air => "Air".to_string(),
+            }
+        } else {
+            "Air".to_string() // Default to Air for out-of-bounds
+        }
+    }
+
     pub fn get_pixel_id(&self) -> u32 {
+        // Return the ID of the first promiser with is_pixel=true, or 0 if none found
         for promiser in self.promisers.values() {
             if promiser.is_pixel {
                 return promiser.id;
             }
         }
-        0 // Return 0 if no Pixel found
+        0 // No pixel found
     }
-    
+
     pub fn get_random_promiser_id(&self) -> u32 {
         if self.promisers.is_empty() {
             return 0;
         }
-        let index = (random() * self.promisers.len() as f64) as usize;
-        self.promisers.keys().nth(index).copied().unwrap_or(0)
+        
+        let promiser_ids: Vec<u32> = self.promisers.keys().cloned().collect();
+        let random_index = (random() * promiser_ids.len() as f64) as usize;
+        promiser_ids.get(random_index).copied().unwrap_or(0)
     }
 }
 
@@ -458,6 +494,26 @@ pub fn get_random_promiser_id() -> u32 {
     }
 }
 
+#[wasm_bindgen]
+pub fn place_tile(x: usize, y: usize, tile_type: String) {
+    unsafe {
+        if let Some(ref mut state) = GAME_STATE {
+            state.place_tile(x, y, tile_type);
+        }
+    }
+}
+
+#[wasm_bindgen]
+pub fn get_tile_at(x: usize, y: usize) -> String {
+    unsafe {
+        if let Some(ref state) = GAME_STATE {
+            state.get_tile_at(x, y)
+        } else {
+            "Air".to_string()
+        }
+    }
+}
+
 // Called when the wasm module is instantiated
 #[wasm_bindgen(start)]
 pub fn main() {
@@ -467,7 +523,7 @@ pub fn main() {
 
 /// MARK - Start of Tile Map Section
 /// Inspirations will be taken from Minecraft
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum TileType {
     Air,
     Dirt,

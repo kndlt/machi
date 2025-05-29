@@ -27,6 +27,8 @@ export const gamestate_make_promiser_think: (a: number, b: number) => void;
 export const gamestate_make_promiser_speak: (a: number, b: number, c: number, d: number) => void;
 export const gamestate_make_promiser_whisper: (a: number, b: number, c: number, d: number, e: number) => void;
 export const gamestate_make_promiser_run: (a: number, b: number) => void;
+export const gamestate_place_tile: (a: number, b: number, c: number, d: number, e: number) => void;
+export const gamestate_get_tile_at: (a: number, b: number, c: number) => [number, number];
 export const gamestate_get_pixel_id: (a: number) => number;
 export const gamestate_get_random_promiser_id: (a: number) => number;
 export const init_game: (a: number, b: number) => void;
@@ -39,6 +41,8 @@ export const make_promiser_whisper: (a: number, b: number, c: number, d: number)
 export const make_promiser_run: (a: number) => void;
 export const get_pixel_id: () => number;
 export const get_random_promiser_id: () => number;
+export const place_tile: (a: number, b: number, c: number, d: number) => void;
+export const get_tile_at: (a: number, b: number) => [number, number];
 export const main: () => void;
 export const __wbindgen_malloc: (a: number, b: number) => number;
 export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

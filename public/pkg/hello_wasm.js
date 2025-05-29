@@ -235,6 +235,35 @@ export function get_random_promiser_id() {
     return ret >>> 0;
 }
 
+/**
+ * @param {number} x
+ * @param {number} y
+ * @param {string} tile_type
+ */
+export function place_tile(x, y, tile_type) {
+    const ptr0 = passStringToWasm0(tile_type, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    wasm.place_tile(x, y, ptr0, len0);
+}
+
+/**
+ * @param {number} x
+ * @param {number} y
+ * @returns {string}
+ */
+export function get_tile_at(x, y) {
+    let deferred1_0;
+    let deferred1_1;
+    try {
+        const ret = wasm.get_tile_at(x, y);
+        deferred1_0 = ret[0];
+        deferred1_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+    }
+}
+
 export function main() {
     wasm.main();
 }
@@ -340,6 +369,33 @@ export class GameState {
      */
     make_promiser_run(id) {
         wasm.gamestate_make_promiser_run(this.__wbg_ptr, id);
+    }
+    /**
+     * @param {number} x
+     * @param {number} y
+     * @param {string} tile_type
+     */
+    place_tile(x, y, tile_type) {
+        const ptr0 = passStringToWasm0(tile_type, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.gamestate_place_tile(this.__wbg_ptr, x, y, ptr0, len0);
+    }
+    /**
+     * @param {number} x
+     * @param {number} y
+     * @returns {string}
+     */
+    get_tile_at(x, y) {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.gamestate_get_tile_at(this.__wbg_ptr, x, y);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
     }
     /**
      * @returns {number}

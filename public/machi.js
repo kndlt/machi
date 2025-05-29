@@ -68,6 +68,18 @@ class Game {
         this.currentTileMap = null; // Store current tile map data for comparison
         this.tileGraphics = new Map(); // Store tile graphics for hover effects
         
+        // Tile selection UI
+        this.tileSelectionUI = null; // Container for tile selection panel
+        this.selectedTileType = 'Dirt'; // Currently selected tile type
+        this.tileTypes = ['Dirt', 'Stone', 'Water', 'Air']; // Available tile types
+        this.tileColors = {
+            'Dirt': 0x8B4513,
+            'Stone': 0x696969,
+            'Water': 0x1E90FF,
+            'Air': 0x87CEEB
+        };
+        this.tilePlacementMode = false; // Whether we're in tile placement mode
+        
         // Game settings
         this.worldWidthTiles = 25;   // Width in tiles 
         this.worldHeightTiles = 19;  // Height in tiles
@@ -173,6 +185,12 @@ class Game {
         this.uiContainer = new window.PIXI.Container();
         this.app.stage.addChild(this.uiContainer);
 
+        // Create tile selection UI
+        this.createTileSelectionUI();
+        
+        // Set initial visibility for tile selection UI
+        this.updateTileSelectionUIVisibility();
+
         // Initialize camera controls
         this.initCameraControls();
         
@@ -216,6 +234,16 @@ class Game {
             }
             
             const key = event.key.toLowerCase();
+            
+            // Toggle tile placement mode with 'T' key
+            if (key === 't') {
+                event.preventDefault();
+                this.tilePlacementMode = !this.tilePlacementMode;
+                console.log(`🎨 Tile placement mode: ${this.tilePlacementMode ? 'ON' : 'OFF'}`);
+                this.updateTileSelectionUIVisibility();
+                return;
+            }
+            
             if (key in this.cameraKeys) {
                 event.preventDefault();
                 this.cameraKeys[key] = true;
@@ -390,7 +418,9 @@ class Game {
                 ESC - Toggle HUD<br>
                 WASD - Move Camera<br>
                 Drag - Pan Camera<br>
-                Scroll - Zoom In/Out
+                Scroll - Zoom In/Out<br>
+                T - Toggle Tile Placement Mode<br>
+                <span style="color: #ff6;">Click tiles to place selected type</span>
             </div>
             <div id="status" style="margin-top: 10px; font-size: 12px;">Ready to start</div>
         `;
@@ -440,6 +470,164 @@ class Game {
         aiSelector.value = this.getSelectedAIType();
         aiSelector.onchange = (e) => this.setAIType(e.target.value);
     }
+    
+    createTileSelectionUI() {
+        // Create tile selection panel container
+        this.tileSelectionUI = new window.PIXI.Container();
+        
+        // Panel background
+        const panelBg = new window.PIXI.Graphics();
+        panelBg.roundRect(0, 0, 300, 60, 8);
+        panelBg.fill({ color: 0x000000, alpha: 0.8 });
+        panelBg.stroke({ color: 0x555555, width: 2 });
+        this.tileSelectionUI.addChild(panelBg);
+        
+        // Panel title
+        const titleText = new window.PIXI.Text({
+            text: 'Tile Selection (Press T to toggle placement)',
+            style: {
+                fontSize: 12,
+                fill: 0xFFFFFF,
+                fontFamily: 'Arial'
+            }
+        });
+        titleText.x = 10;
+        titleText.y = 8;
+        this.tileSelectionUI.addChild(titleText);
+        
+        // Create tile buttons
+        this.tileButtons = [];
+        this.tileTypes.forEach((tileType, index) => {
+            const buttonContainer = new window.PIXI.Container();
+            buttonContainer.x = 10 + (index * 65);
+            buttonContainer.y = 25;
+            
+            // Button background
+            const buttonBg = new window.PIXI.Graphics();
+            buttonBg.roundRect(0, 0, 60, 30, 4);
+            buttonBg.fill({ color: this.tileColors[tileType], alpha: 0.8 });
+            buttonBg.stroke({ color: tileType === this.selectedTileType ? 0xFFFFFF : 0x888888, width: 2 });
+            
+            // Button text
+            const buttonText = new window.PIXI.Text({
+                text: tileType,
+                style: {
+                    fontSize: 10,
+                    fill: 0xFFFFFF,
+                    fontFamily: 'Arial',
+                    align: 'center'
+                }
+            });
+            buttonText.anchor.set(0.5, 0.5);
+            buttonText.x = 30;
+            buttonText.y = 15;
+            
+            // Make button interactive
+            buttonContainer.eventMode = 'static';
+            buttonContainer.cursor = 'pointer';
+            
+            // Store tile type reference
+            buttonContainer.tileType = tileType;
+            buttonContainer.buttonBg = buttonBg;
+            
+            // Button click handler
+            buttonContainer.on('pointerdown', () => {
+                this.selectTileType(tileType);
+            });
+            
+            // Hover effects
+            buttonContainer.on('pointerover', () => {
+                buttonBg.tint = 0xCCCCCC;
+            });
+            
+            buttonContainer.on('pointerout', () => {
+                buttonBg.tint = 0xFFFFFF;
+            });
+            
+            buttonContainer.addChild(buttonBg);
+            buttonContainer.addChild(buttonText);
+            this.tileSelectionUI.addChild(buttonContainer);
+            this.tileButtons.push(buttonContainer);
+        });
+        
+        // Position panel at top center of screen
+        this.tileSelectionUI.x = (window.innerWidth - 300) / 2;
+        this.tileSelectionUI.y = 10;
+        
+        // Add to UI container
+        this.uiContainer.addChild(this.tileSelectionUI);
+        
+        console.log('🎨 Tile selection UI created');
+    }
+    
+    selectTileType(tileType) {
+        this.selectedTileType = tileType;
+        console.log(`🎨 Selected tile type: ${tileType}`);
+        
+        // Update button appearances
+        this.tileButtons.forEach(button => {
+            const isSelected = button.tileType === tileType;
+            button.buttonBg.stroke({ 
+                color: isSelected ? 0xFFFFFF : 0x888888, 
+                width: isSelected ? 3 : 2 
+            });
+        });
+    }
+    
+    updateTileSelectionUIVisibility() {
+        if (this.tileSelectionUI) {
+            this.tileSelectionUI.visible = this.tilePlacementMode;
+            
+            // Update cursor style based on placement mode
+            if (this.tilePlacementMode) {
+                document.body.style.cursor = 'crosshair';
+            } else {
+                document.body.style.cursor = 'default';
+            }
+        }
+    }
+
+    placeTileAtPosition(worldX, worldY) {
+        // Convert world position to tile coordinates
+        const tileX = Math.floor(worldX / this.tileSize);
+        const tileY = Math.floor(-worldY / this.tileSize) - 1;
+        
+        // Check if position is within tile map bounds
+        if (tileX >= 0 && tileX < this.worldWidthTiles && 
+            tileY >= 0 && tileY < this.worldHeightTiles) {
+            
+            console.log(`🎨 Placing ${this.selectedTileType} tile at (${tileX}, ${tileY})`);
+            
+            // Send tile placement to worker
+            if (this.worker) {
+                this.worker.callFunction('place_tile', {
+                    x: tileX,
+                    y: tileY,
+                    tileType: this.selectedTileType
+                }).then(() => {
+                    console.log(`🎨 Successfully placed ${this.selectedTileType} tile at (${tileX}, ${tileY})`);
+                }).catch(error => {
+                    console.error('🎨 Error placing tile:', error);
+                });
+            }
+            
+            // For immediate visual feedback, update the tile graphic if it exists
+            const tileKey = `${tileX},${tileY}`;
+            const tileGraphic = this.tileGraphics.get(tileKey);
+            if (tileGraphic) {
+                const newColor = this.tileColors[this.selectedTileType];
+                tileGraphic.tileData.type = this.selectedTileType;
+                tileGraphic.tileData.baseColor = newColor;
+                
+                // Redraw the tile with new color
+                tileGraphic.clear();
+                tileGraphic.rect(0, 0, this.tileSize, this.tileSize);
+                tileGraphic.fill({ color: newColor, alpha: 1.0 });
+            }
+        }
+    }
+
+    // ...existing code...
     
     updateStatus(message) {
         const statusEl = document.getElementById('status');
@@ -970,6 +1158,14 @@ class Game {
                 
                 tileGraphic.on('pointerout', () => {
                     this.onTileHover(tileGraphic, false);
+                });
+                
+                // Add click event listener for tile placement
+                tileGraphic.on('pointerdown', (event) => {
+                    if (this.tilePlacementMode) {
+                        event.stopPropagation(); // Prevent camera panning
+                        this.placeTileAtPosition(x * this.tileSize, -(y + 1) * this.tileSize);
+                    }
                 });
                 
                 // Position the tile directly
