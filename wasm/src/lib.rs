@@ -278,7 +278,7 @@ impl GameState {
     
     pub fn add_promiser(&mut self) {
         let x = random() * self.world_width;
-        let y = random() * (self.world_height * 0.3); // Spawn in upper 30% of screen
+        let y = self.world_height; // Start from world's pixel height (top of world)
         let promiser = Promiser::new(self.next_id, x, y);
         self.promisers.insert(self.next_id, promiser);
         self.next_id += 1;
