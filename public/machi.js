@@ -121,7 +121,10 @@ class Game {
             width: window.innerWidth,
             height: window.innerHeight,
             backgroundColor: 0x1a1a2e,
-            antialias: true,
+            antialias: false,              // Turn off antialiasing for pixel perfect rendering
+            resolution: window.devicePixelRatio || 1,  // Use device pixel ratio for crisp rendering
+            autoDensity: true,             // Automatically adjust for high DPI displays
+            roundPixels: true,             // Round pixel positions to integers
             resizeTo: window
         });
         
