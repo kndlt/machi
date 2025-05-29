@@ -132,9 +132,9 @@ class Game {
         await this.app.init({
             width: window.innerWidth,
             height: window.innerHeight,
-            backgroundColor: 0x1a1a2e,
+            backgroundColor: 0x87CEEB, // Sky blue background for air tiles
             antialias: false,              // Turn off antialiasing for pixel perfect rendering
-            resolution: window.devicePixelRatio || 1,  // Use device pixel ratio for crisp rendering
+            resolution: 1,  // Use device pixel ratio for crisp rendering
             autoDensity: true,             // Automatically adjust for high DPI displays
             roundPixels: true,             // Round pixel positions to integers
             resizeTo: window
@@ -614,15 +614,70 @@ class Game {
             // For immediate visual feedback, update the tile graphic if it exists
             const tileKey = `${tileX},${tileY}`;
             const tileGraphic = this.tileGraphics.get(tileKey);
-            if (tileGraphic) {
-                const newColor = this.tileColors[this.selectedTileType];
-                tileGraphic.tileData.type = this.selectedTileType;
-                tileGraphic.tileData.baseColor = newColor;
-                
-                // Redraw the tile with new color
-                tileGraphic.clear();
-                tileGraphic.rect(0, 0, this.tileSize, this.tileSize);
-                tileGraphic.fill({ color: newColor, alpha: 1.0 });
+            
+            if (this.selectedTileType === 'Air') {
+                // If placing air, remove the existing graphic
+                if (tileGraphic) {
+                    this.tileMapContainer.removeChild(tileGraphic);
+                    this.tileGraphics.delete(tileKey);
+                }
+            } else {
+                // For non-air tiles, update or create the graphic
+                if (tileGraphic) {
+                    const newColor = this.tileColors[this.selectedTileType];
+                    tileGraphic.tileData.type = this.selectedTileType;
+                    tileGraphic.tileData.baseColor = newColor;
+                    
+                    // Redraw the tile with new color
+                    tileGraphic.clear();
+                    tileGraphic.rect(0, 0, this.tileSize, this.tileSize);
+                    tileGraphic.fill({ color: newColor, alpha: 1.0 });
+                } else {
+                    // Create new graphic for non-air tile placed on air
+                    const newColor = this.tileColors[this.selectedTileType];
+                    const newTileGraphic = new window.PIXI.Graphics();
+                    newTileGraphic.rect(0, 0, this.tileSize, this.tileSize);
+                    newTileGraphic.fill({ color: newColor, alpha: 1.0 });
+                    
+                    // Make tile interactive for hover effects
+                    newTileGraphic.eventMode = 'static';
+                    newTileGraphic.cursor = 'pointer';
+                    
+                    // Store tile data for hover effects
+                    newTileGraphic.tileData = {
+                        x: tileX,
+                        y: tileY,
+                        type: this.selectedTileType,
+                        baseColor: newColor
+                    };
+                    
+                    // Add hover event listeners
+                    newTileGraphic.on('pointerover', () => {
+                        this.onTileHover(newTileGraphic, true);
+                    });
+                    
+                    newTileGraphic.on('pointerout', () => {
+                        this.onTileHover(newTileGraphic, false);
+                    });
+                    
+                    // Add click event listener for tile placement
+                    newTileGraphic.on('pointerdown', (event) => {
+                        if (this.tilePlacementMode) {
+                            event.stopPropagation(); // Prevent camera panning
+                            this.placeTileAtPosition(tileX * this.tileSize, -(tileY + 1) * this.tileSize);
+                        }
+                    });
+                    
+                    // Position the tile directly
+                    newTileGraphic.x = tileX * this.tileSize;
+                    newTileGraphic.y = -(tileY + 1) * this.tileSize;
+                    
+                    // Store reference for hover management
+                    this.tileGraphics.set(tileKey, newTileGraphic);
+                    
+                    // Add to tile map container
+                    this.tileMapContainer.addChild(newTileGraphic);
+                }
             }
         }
     }
@@ -1051,6 +1106,11 @@ class Game {
             this.currentTileMap = gameState.tile_map;
         }
         
+        // Update tile map for water simulation
+        if (gameState.tile_map && this.tileMapCreated) {
+            this.updateTileMap(gameState.tile_map);
+        }
+        
         if (!gameState.promisers) return;
         
         // Update existing sprites and create new ones
@@ -1123,6 +1183,12 @@ class Game {
             for (let x = 0; x < tileMap.width; x++) {
                 const idx = y * tileMap.width + x;
                 const tile = tileMap.tiles[idx];
+                
+                // Skip rendering air tiles - they will show the sky background color
+                if (tile.tile_type === 'Air') {
+                    continue;
+                }
+                
                 let color = 0xCCCCCC;
                 
                 // Improved tile colors with better visual appearance
@@ -1130,8 +1196,7 @@ class Game {
                     case 'Dirt': color = 0x8B4513; break;  // Saddle brown - more natural dirt color
                     case 'Stone': color = 0x696969; break; // Dim gray - more realistic stone
                     case 'Water': color = 0x1E90FF; break; // Dodger blue - clearer water
-                    case 'Air': color = 0x87CEEB; break;   // Sky blue - light blue air
-                    default: color = 0x87CEEB; break;      // Default to sky blue
+                    default: color = 0xCCCCCC; break;      // Default gray for unknown types
                 }
                 
                 // Create interactive tile graphic with hover effects
@@ -1193,6 +1258,116 @@ class Game {
         console.log(`🗺️ Tile map created with ${this.tileMapContainer.children.length} tiles and red line at y=0`);
     }
     
+    updateTileMap(tileMap) {
+        // Update tiles if water simulation is active
+        for (let y = 0; y < tileMap.height; y++) {
+            for (let x = 0; x < tileMap.width; x++) {
+                const idx = y * tileMap.width + x;
+                const tile = tileMap.tiles[idx];
+                const tileKey = `${x},${y}`;
+                const tileGraphic = this.tileGraphics.get(tileKey);
+                
+                if (tile.tile_type === 'Air') {
+                    // If tile became air, remove its graphic
+                    if (tileGraphic) {
+                        this.tileMapContainer.removeChild(tileGraphic);
+                        this.tileGraphics.delete(tileKey);
+                    }
+                } else if (tileGraphic && tile.tile_type === 'Water') {
+                    // Update water tile appearance based on water amount
+                    this.updateWaterTile(tileGraphic, tile);
+                } else if (!tileGraphic && tile.tile_type !== 'Air') {
+                    // Create graphic for non-air tile that didn't exist before
+                    let color = 0xCCCCCC;
+                    switch (tile.tile_type) {
+                        case 'Dirt': color = 0x8B4513; break;
+                        case 'Stone': color = 0x696969; break;
+                        case 'Water': color = 0x1E90FF; break;
+                        default: color = 0xCCCCCC; break;
+                    }
+                    
+                    const newTileGraphic = new window.PIXI.Graphics();
+                    newTileGraphic.rect(0, 0, this.tileSize, this.tileSize);
+                    newTileGraphic.fill({ color, alpha: 1.0 });
+                    
+                    // Make tile interactive for hover effects
+                    newTileGraphic.eventMode = 'static';
+                    newTileGraphic.cursor = 'pointer';
+                    
+                    // Store tile data for hover effects
+                    newTileGraphic.tileData = {
+                        x: x,
+                        y: y,
+                        type: tile.tile_type,
+                        baseColor: color
+                    };
+                    
+                    // Add hover event listeners
+                    newTileGraphic.on('pointerover', () => {
+                        this.onTileHover(newTileGraphic, true);
+                    });
+                    
+                    newTileGraphic.on('pointerout', () => {
+                        this.onTileHover(newTileGraphic, false);
+                    });
+                    
+                    // Add click event listener for tile placement
+                    newTileGraphic.on('pointerdown', (event) => {
+                        if (this.tilePlacementMode) {
+                            event.stopPropagation(); // Prevent camera panning
+                            this.placeTileAtPosition(x * this.tileSize, -(y + 1) * this.tileSize);
+                        }
+                    });
+                    
+                    // Position the tile directly
+                    newTileGraphic.x = x * this.tileSize;
+                    newTileGraphic.y = -(y + 1) * this.tileSize;
+                    
+                    // Store reference for hover management
+                    this.tileGraphics.set(tileKey, newTileGraphic);
+                    
+                    // Add to tile map container
+                    this.tileMapContainer.addChild(newTileGraphic);
+                    
+                    // If it's a water tile, update its appearance
+                    if (tile.tile_type === 'Water') {
+                        this.updateWaterTile(newTileGraphic, tile);
+                    }
+                }
+            }
+        }
+    }
+    
+    updateWaterTile(tileGraphic, tile) {
+        // Calculate water color based on amount (0.0 = transparent, 1.0 = full blue)
+        const waterAmount = tile.water_amount || 0.0;
+        const baseColor = 0x1E90FF; // Dodger blue
+        const alpha = Math.max(0.2, waterAmount); // Minimum alpha for visibility
+        
+        // Create a darker blue for fuller water
+        let color = baseColor;
+        if (waterAmount > 0.5) {
+            color = 0x0066CC; // Darker blue for more water
+        }
+        
+        // Clear and redraw the tile
+        tileGraphic.clear();
+        
+        if (waterAmount > 0.0 && waterAmount < 1.0) {
+            // For partial water, only fill the bottom portion
+            const waterHeight = waterAmount * this.tileSize;
+            const airHeight = this.tileSize - waterHeight;
+            
+            // Draw only the water portion at the bottom, leaving air space transparent
+            tileGraphic.rect(0, airHeight, this.tileSize, waterHeight);
+            tileGraphic.fill({ color, alpha });
+        } else {
+            // Full water tile
+            tileGraphic.rect(0, 0, this.tileSize, this.tileSize);
+            tileGraphic.fill({ color, alpha });
+        }
+    }
+
     onTileHover(tileGraphic, isHovering) {
         const { x, y, type, baseColor } = tileGraphic.tileData;
         

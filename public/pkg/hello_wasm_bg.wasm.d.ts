@@ -31,6 +31,7 @@ export const gamestate_place_tile: (a: number, b: number, c: number, d: number, 
 export const gamestate_get_tile_at: (a: number, b: number, c: number) => [number, number];
 export const gamestate_get_pixel_id: (a: number) => number;
 export const gamestate_get_random_promiser_id: (a: number) => number;
+export const gamestate_simulate_water: (a: number) => void;
 export const init_game: (a: number, b: number) => void;
 export const update_game: (a: number) => [number, number];
 export const add_promiser: () => void;
@@ -43,6 +44,7 @@ export const get_pixel_id: () => number;
 export const get_random_promiser_id: () => number;
 export const place_tile: (a: number, b: number, c: number, d: number) => void;
 export const get_tile_at: (a: number, b: number) => [number, number];
+export const simulate_water: () => void;
 export const main: () => void;
 export const __wbindgen_malloc: (a: number, b: number) => number;
 export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

@@ -247,6 +247,27 @@ impl GameState {
             state.add_promiser();
         }
         
+        // Add some initial water tiles for testing water simulation
+        // First, create some dirt ground for water to settle on
+        for x in 0..tile_width {
+            for y in (tile_height - 3)..tile_height {
+                state.tile_map.set_tile(x, y, Tile {
+                    tile_type: TileType::Dirt,
+                    water_amount: 0.0,
+                });
+            }
+        }
+        
+        // Place water in the top few rows to test gravity
+        for x in 5..15 {
+            for y in 2..5 {
+                state.tile_map.set_tile(x, y, Tile {
+                    tile_type: TileType::Water,
+                    water_amount: 1.0,
+                });
+            }
+        }
+
         state
     }
     
@@ -391,6 +412,129 @@ impl GameState {
         let random_index = (random() * promiser_ids.len() as f64) as usize;
         promiser_ids.get(random_index).copied().unwrap_or(0)
     }
+
+    // Water simulation method
+    pub fn simulate_water(&mut self) {
+        let width = self.tile_map.width;
+        let height = self.tile_map.height;
+        
+        // Create a copy of the current tile map to avoid borrowing issues
+        let mut new_tiles = self.tile_map.tiles.clone();
+        
+        // Process water physics from bottom to top, left to right
+        for y in (0..height).rev() {
+            for x in 0..width {
+                let current_index = y * width + x;
+                let current_tile = &self.tile_map.tiles[current_index];
+                
+                // Only process tiles with water
+                if current_tile.water_amount > 0.0 {
+                    let mut water_to_distribute = current_tile.water_amount;
+                    let mut new_tile = current_tile.clone();
+                    
+                    // Check if water can flow down
+                    if y + 1 < height {
+                        let below_index = (y + 1) * width + x;
+                        let below_tile = &self.tile_map.tiles[below_index];
+                        
+                        // Water flows down if there's air below or if below tile has room for more water
+                        if below_tile.tile_type == TileType::Air || 
+                           (below_tile.tile_type == TileType::Water && below_tile.water_amount < 1.0) {
+                            
+                            let flow_amount = if below_tile.tile_type == TileType::Air {
+                                // Flow all water down if there's air below
+                                water_to_distribute
+                            } else {
+                                // Flow water to fill up the below tile
+                                (1.0 - below_tile.water_amount).min(water_to_distribute)
+                            };
+                            
+                            // Move water down
+                            new_tiles[below_index] = Tile {
+                                tile_type: TileType::Water,
+                                water_amount: below_tile.water_amount + flow_amount,
+                            };
+                            
+                            water_to_distribute -= flow_amount;
+                        }
+                    }
+                    
+                    // If water can't flow down (or still has water after flowing down), try to flow sideways
+                    if water_to_distribute > 0.0 {
+                        let mut left_flow = 0.0;
+                        let mut right_flow = 0.0;
+                        
+                        // Check left
+                        if x > 0 {
+                            let left_index = y * width + (x - 1);
+                            let left_tile = &self.tile_map.tiles[left_index];
+                            
+                            if left_tile.tile_type == TileType::Air || 
+                               (left_tile.tile_type == TileType::Water && left_tile.water_amount < water_to_distribute) {
+                                left_flow = if left_tile.tile_type == TileType::Air {
+                                    water_to_distribute * 0.25 // 25% flows left if air
+                                } else {
+                                    ((water_to_distribute - left_tile.water_amount) * 0.25).max(0.0)
+                                };
+                            }
+                        }
+                        
+                        // Check right
+                        if x + 1 < width {
+                            let right_index = y * width + (x + 1);
+                            let right_tile = &self.tile_map.tiles[right_index];
+                            
+                            if right_tile.tile_type == TileType::Air || 
+                               (right_tile.tile_type == TileType::Water && right_tile.water_amount < water_to_distribute) {
+                                right_flow = if right_tile.tile_type == TileType::Air {
+                                    water_to_distribute * 0.25 // 25% flows right if air
+                                } else {
+                                    ((water_to_distribute - right_tile.water_amount) * 0.25).max(0.0)
+                                };
+                            }
+                        }
+                        
+                        // Apply sideways flow
+                        if left_flow > 0.0 && x > 0 {
+                            let left_index = y * width + (x - 1);
+                            let left_tile = &self.tile_map.tiles[left_index];
+                            new_tiles[left_index] = Tile {
+                                tile_type: TileType::Water,
+                                water_amount: (left_tile.water_amount + left_flow).min(1.0),
+                            };
+                            water_to_distribute -= left_flow;
+                        }
+                        
+                        if right_flow > 0.0 && x + 1 < width {
+                            let right_index = y * width + (x + 1);
+                            let right_tile = &self.tile_map.tiles[right_index];
+                            new_tiles[right_index] = Tile {
+                                tile_type: TileType::Water,
+                                water_amount: (right_tile.water_amount + right_flow).min(1.0),
+                            };
+                            water_to_distribute -= right_flow;
+                        }
+                    }
+                    
+                    // Update the current tile with remaining water
+                    if water_to_distribute <= 0.01 {
+                        // If very little water remains, convert back to air
+                        new_tile = Tile {
+                            tile_type: TileType::Air,
+                            water_amount: 0.0,
+                        };
+                    } else {
+                        new_tile.water_amount = water_to_distribute;
+                    }
+                    
+                    new_tiles[current_index] = new_tile;
+                }
+            }
+        }
+        
+        // Apply the new tile state
+        self.tile_map.tiles = new_tiles;
+    }
 }
 
 // Global game state instance
@@ -510,6 +654,15 @@ pub fn get_tile_at(x: usize, y: usize) -> String {
             state.get_tile_at(x, y)
         } else {
             "Air".to_string()
+        }
+    }
+}
+
+#[wasm_bindgen]
+pub fn simulate_water() {
+    unsafe {
+        if let Some(ref mut state) = GAME_STATE {
+            state.simulate_water();
         }
     }
 }
