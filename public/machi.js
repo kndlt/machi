@@ -146,10 +146,10 @@ class Game {
         // Initialize camera controls
         this.initCameraControls();
         
-        // Center camera on the 8x8 tile map (128x128 pixels total)
+        // Center camera on the 8x8 tile map (256x256 pixels total with 32x32 tiles)
         // Camera should be centered on the tile map
-        const tileMapCenterX = (8 * 16) / 2; // 64 pixels from left edge
-        const tileMapCenterY = (8 * 16) / 2; // 64 pixels from top edge
+        const tileMapCenterX = (8 * 32) / 2; // 128 pixels from left edge
+        const tileMapCenterY = (8 * 32) / 2; // 128 pixels from top edge
         this.camera.x = tileMapCenterX - this.worldWidth / 2;
         this.camera.y = tileMapCenterY - this.worldHeight / 2;
         this.camera.targetX = this.camera.x;
@@ -844,7 +844,7 @@ class Game {
         
         // Clear any existing tiles
         this.tileMapContainer.removeChildren();
-        const tileSize = 16;
+        const tileSize = 32; // 2x larger tiles
         
         console.log(`🗺️ Creating tile map: ${tileMap.width}x${tileMap.height} tiles, total: ${tileMap.tiles.length}`);
         
@@ -854,14 +854,13 @@ class Game {
                 const idx = y * tileMap.width + x;
                 const tile = tileMap.tiles[idx];
                 let color = 0xCCCCCC;
-                let label = 'Air';
                 
                 switch (tile.tile_type) {
-                    case 'Dirt': color = 0x8B5A2B; label = 'D'; break;
-                    case 'Stone': color = 0x888888; label = 'S'; break;
-                    case 'Water': color = 0x3399FF; label = 'W'; break;
+                    case 'Dirt': color = 0x8B5A2B; break;
+                    case 'Stone': color = 0x888888; break;
+                    case 'Water': color = 0x3399FF; break;
                     case 'Air':
-                    default: color = 0xEEEEEE; label = 'A'; break;
+                    default: color = 0xEEEEEE; break;
                 }
                 
                 // Create tile container for this position
@@ -873,11 +872,11 @@ class Game {
                 tileGraphic.fill({ color, alpha: 0.85 });
                 tileGraphic.stroke({ color: 0x222222, width: 1, alpha: 0.5 });
                 
-                // Draw type text (use shorter labels for performance)
+                // Draw coordinate text showing x,y indices
                 const text = new window.PIXI.Text({
-                    text: label,
+                    text: `${x},${y}`,
                     style: {
-                        fontSize: 8,
+                        fontSize: 12, // Larger font for bigger tiles
                         fill: 0x222222,
                         align: 'center'
                     }

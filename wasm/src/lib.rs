@@ -153,7 +153,7 @@ impl Promiser {
         
         // Apply gravity to vertical velocity
         const GRAVITY: f64 = 300.0; // Pixels per second squared
-        self.vy += GRAVITY * dt;
+        self.vy -= GRAVITY * dt;
         
         // Adjust movement speed based on state
         let speed_multiplier = match self.state {
@@ -218,12 +218,12 @@ impl GameState {
     pub fn new(world_width: f64, world_height: f64) -> GameState {
         console_log!("Creating new game state with world size: {}x{}", world_width, world_height);
         
-        // Create a fixed 8x8 tile grid - each tile is 16x16 pixels
+        // Create a fixed 8x8 tile grid - each tile is 32x32 pixels (2x larger)
         let tile_width = 8;
         let tile_height = 8;
         
         console_log!("Creating tile map with dimensions: {}x{} tiles ({}x{} pixels)", 
-                     tile_width, tile_height, tile_width * 16, tile_height * 16);
+                     tile_width, tile_height, tile_width * 32, tile_height * 32);
         
         let mut state = GameState {
             promisers: HashMap::new(),

@@ -7,6 +7,8 @@
   },
   "scripts": {
     "dev": "next dev --turbopack",
+    "dev:wasm": "node scripts/watch-wasm.js",
+    "dev:full": "concurrently \"npm run dev\" \"npm run dev:wasm\"",
     "build": "next build",
     "build:next": "next build",
     "start": "next start",
@@ -25,6 +27,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "concurrently": "^9.1.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   },
