@@ -987,8 +987,28 @@ class Game {
         tileGraphic.fill({ color: baseColor, alpha: 1.0 });
         
         if (isHovering) {
-            // Add border when hovering
-            tileGraphic.stroke({ color: 0xFFFFFF, width: 2, alpha: 0.8 });
+            // Create inset border effect with darker top/left and lighter bottom/right
+            const borderWidth = 2;
+            
+            // Darker shadow on top and left (inset effect)
+            tileGraphic.moveTo(0, 0);
+            tileGraphic.lineTo(this.tileSize, 0);
+            tileGraphic.lineTo(this.tileSize - borderWidth, borderWidth);
+            tileGraphic.lineTo(borderWidth, borderWidth);
+            tileGraphic.lineTo(borderWidth, this.tileSize - borderWidth);
+            tileGraphic.lineTo(0, this.tileSize);
+            tileGraphic.closePath();
+            tileGraphic.fill({ color: 0xFFFFFF, alpha: 1 });
+            
+            // Lighter highlight on bottom and right (inset effect)
+            tileGraphic.moveTo(this.tileSize, this.tileSize);
+            tileGraphic.lineTo(0, this.tileSize);
+            tileGraphic.lineTo(borderWidth, this.tileSize - borderWidth);
+            tileGraphic.lineTo(this.tileSize - borderWidth, this.tileSize - borderWidth);
+            tileGraphic.lineTo(this.tileSize - borderWidth, borderWidth);
+            tileGraphic.lineTo(this.tileSize, 0);
+            tileGraphic.closePath();
+            tileGraphic.fill({ color: 0xFFFFFF, alpha: 1 });
             
             // Optional: Show tile info in console (commented out to reduce spam)
             // console.log(`🎯 Hovering over tile (${x}, ${y}) - Type: ${type}`);
