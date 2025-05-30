@@ -1,7 +1,7 @@
 // Web Worker script for running WASM game state in background thread
 import init, { 
     init_game, 
-    update_game, 
+    tick,
     add_promiser, 
     get_promiser_count,
     make_promiser_think,
@@ -11,9 +11,7 @@ import init, {
     get_pixel_id,
     get_random_promiser_id,
     place_tile,
-    get_tile_at,
-    simulate_water,
-    simulate_foliage
+    get_tile_at
 } from './pkg/hello_wasm.js';
 
 console.log('🎮 Worker: Starting WASM game worker...');
@@ -22,10 +20,6 @@ console.log('🎮 Worker: Starting WASM game worker...');
 let wasmInitialized = false;
 let gameRunning = false;
 let updateInterval = null;
-let lastWaterSimulation = 0;
-let lastFoliageSimulation = 0;
-const waterSimulationInterval = 100; // Run water simulation every 100ms
-const foliageSimulationInterval = 1000; // Run foliage simulation every 1000ms (1 second)
 
 async function initWasm() {
     if (!wasmInitialized) {
@@ -42,29 +36,15 @@ function startGameLoop(worldWidthTiles, worldHeightTiles) {
     init_game(worldWidthTiles, worldHeightTiles);
     gameRunning = true;
     
-    // Update game state every 16ms (approximately 60fps)
+    // Simple game loop - just call tick() every 16ms (≈60fps)
     updateInterval = setInterval(() => {
-        const currentTime = performance.now();
-        
-        // Run water simulation at a slower rate than game updates
-        if (currentTime - lastWaterSimulation > waterSimulationInterval) {
-            simulate_water();
-            lastWaterSimulation = currentTime;
-        }
-        
-        // Run foliage simulation at an even slower rate
-        if (currentTime - lastFoliageSimulation > foliageSimulationInterval) {
-            simulate_foliage();
-            lastFoliageSimulation = currentTime;
-        }
-        
-        const stateData = update_game(currentTime);
+        const stateData = tick();
         
         // Send compact state to main thread for rendering
         self.postMessage({
             type: 'game_state_update',
             data: JSON.parse(stateData),
-            timestamp: currentTime
+            timestamp: performance.now()
         });
     }, 16);
     

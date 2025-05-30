@@ -2,6 +2,7 @@
 /* eslint-disable */
 export function init_game(world_width_tiles: number, world_height_tiles: number): void;
 export function update_game(current_time: number): string;
+export function tick(): string;
 export function add_promiser(): void;
 export function get_promiser_count(): number;
 export function make_promiser_think(id: number): void;
@@ -21,6 +22,10 @@ export class GameState {
   add_promiser(): void;
   remove_promiser(id: number): void;
   update(current_time: number): void;
+  /**
+   * Simple tick function that handles all internal updates
+   */
+  tick(): void;
   get_state_data(): string;
   make_promiser_think(id: number): void;
   make_promiser_speak(id: number, thought: string): void;
@@ -81,6 +86,7 @@ export interface InitOutput {
   readonly gamestate_add_promiser: (a: number) => void;
   readonly gamestate_remove_promiser: (a: number, b: number) => void;
   readonly gamestate_update: (a: number, b: number) => void;
+  readonly gamestate_tick: (a: number) => void;
   readonly gamestate_get_state_data: (a: number) => [number, number];
   readonly gamestate_promiser_count: (a: number) => number;
   readonly gamestate_tile_map: (a: number) => any;
@@ -96,6 +102,7 @@ export interface InitOutput {
   readonly gamestate_simulate_foliage: (a: number) => void;
   readonly init_game: (a: number, b: number) => void;
   readonly update_game: (a: number) => [number, number];
+  readonly tick: () => [number, number];
   readonly add_promiser: () => void;
   readonly get_promiser_count: () => number;
   readonly make_promiser_think: (a: number) => void;

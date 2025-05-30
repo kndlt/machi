@@ -290,6 +290,7 @@ pub struct GameState {
     world_width: f64,
     world_height: f64,
     last_update: f64,
+    tick_count: u64,
     tile_map: TileMap, // Add tile map to game state
 }
 
@@ -317,6 +318,7 @@ impl GameState {
             world_width: world_width_pixels,
             world_height: world_height_pixels,
             last_update: 0.0,
+            tick_count: 0,
             tile_map: TileMap::new(tile_width, tile_height),
         };
         
@@ -378,6 +380,29 @@ impl GameState {
         for promiser in self.promisers.values_mut() {
             promiser.update(self.world_width, self.world_height, dt, &self.tile_map);
         }
+    }
+
+    /// Simple tick function that handles all internal updates
+    pub fn tick(&mut self) {
+        // Use a fixed timestep for consistent simulation
+        let dt = 1.0 / 60.0; // 60fps
+        
+        // Update all promisers
+        for promiser in self.promisers.values_mut() {
+            promiser.update(self.world_width, self.world_height, dt, &self.tile_map);
+        }
+        
+        // Internal timing for water simulation (every 6 ticks ≈ 100ms at 60fps)
+        if self.tick_count % 6 == 0 {
+            self.simulate_water();
+        }
+        
+        // Internal timing for foliage simulation (every 60 ticks ≈ 1 second at 60fps)
+        if self.tick_count % 60 == 0 {
+            self.simulate_foliage();
+        }
+        
+        self.tick_count = self.tick_count.wrapping_add(1);
     }
     
     // Get compact representation for rendering
@@ -726,6 +751,18 @@ pub fn update_game(current_time: f64) -> String {
     unsafe {
         if let Some(ref mut state) = GAME_STATE {
             state.update(current_time);
+            state.get_state_data()
+        } else {
+            "{}".to_string()
+        }
+    }
+}
+
+#[wasm_bindgen]
+pub fn tick() -> String {
+    unsafe {
+        if let Some(ref mut state) = GAME_STATE {
+            state.tick();
             state.get_state_data()
         } else {
             "{}".to_string()
