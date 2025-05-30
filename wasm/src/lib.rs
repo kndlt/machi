@@ -55,14 +55,14 @@ fn create_light_source(world_width: Float, world_height: Float) -> LightSource {
     let source_length = world_width * 1.5;
 
     LightSource {
-        start_x: -world_width * 0.3,
-        start_y: world_height + world_height * 0.2,
-        end_x: -world_width * 0.3 + source_length * angle.cos(),
-        end_y: world_height + world_height * 0.2 + source_length * angle.sin(),
+        start_x: 0.0,  // Start from left edge
+        start_y: world_height,  // Start from top
+        end_x: source_length * angle.cos(),  // End at angle
+        end_y: world_height - source_length * angle.sin(),  // End at angle
         direction_x: angle.sin(),
         direction_y: -angle.cos(),
         intensity: 1.0,
-        photon_spawn_rate: 10.0,
+        photon_spawn_rate: 100.0,  // Increased spawn rate
     }
 }
 
@@ -184,6 +184,8 @@ impl GameState {
     fn simulate_light(&mut self) {
         // 1. Spawn new photons
         let photons_per_frame = (self.light_source.photon_spawn_rate / 60.0) as u32;
+        console_log!("Spawning {} photons per frame", photons_per_frame);
+        
         for _ in 0..photons_per_frame {
             let t = random() as Float; // 0.0 - 1.0
             let spawn_x = self.light_source.start_x +
@@ -200,6 +202,8 @@ impl GameState {
                 age: 0,
             });
         }
+        
+        console_log!("Total photons after spawn: {}", self.photons.len());
 
         // 2. Update photon positions & remove old/out-of-bounds later
         for p in &mut self.photons {
@@ -210,9 +214,11 @@ impl GameState {
 
         let world_w = self.world_width as Float;
         let world_h = self.world_height as Float;
+        let before_retain = self.photons.len();
         self.photons.retain(|p| {
             p.age < 1000 && p.x >= 0.0 && p.y >= 0.0 && p.x < world_w && p.y < world_h && p.intensity > 0.05
         });
+        console_log!("Photons after retain: {} (removed {})", self.photons.len(), before_retain - self.photons.len());
 
         // 3. Handle collisions / energy deposition
         let mut removals = Vec::new();
@@ -293,13 +299,18 @@ impl GameState {
         let tile_map_json = serde_json::to_string(&self.tile_map)
             .unwrap_or_else(|_| "null".to_string());
         
-        format!("{{\"promisers\":[{}],\"tile_map\":{}}}", data.join(","), tile_map_json)
+        // Get photon data
+        let photons_json = self.get_photons_data();
+        
+        format!("{{\"promisers\":[{}],\"tile_map\":{},\"photons\":{}}}", data.join(","), tile_map_json, photons_json)
     }
     
     pub fn get_photons_data(&self) -> String {
         let mut data = Vec::new();
         for p in &self.photons {
-            data.push(format!("{{\"x\":{:.1},\"y\":{:.1},\"intensity\":{:.3}}}", p.x, p.y, p.intensity));
+            data.push(format!(
+                "{{\"x\":{:.1},\"y\":{:.1},\"vx\":{:.1},\"vy\":{:.1},\"intensity\":{:.3}}}",
+                p.x, p.y, p.vx, p.vy, p.intensity));
         }
         format!("[{}]", data.join(","))
     }

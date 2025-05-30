@@ -1601,11 +1601,14 @@ class Game {
                 container.addChild(g);
             }
             g.clear();
-            g.moveTo(0, 0);
-            g.lineTo(-p.vx * 3, p.vy * 3); // small line segment
+            
+            // Draw photon as a small circle
+            g.circle(0, 0, 2);
             const intensity = Math.min(1.0, p.intensity);
             const col = 0xFFFFCC;
-            g.stroke({ color: col, width: 1, alpha: intensity });
+            g.fill({ color: col, alpha: intensity });
+            
+            // Position the photon
             g.x = p.x;
             g.y = -p.y;
         });
