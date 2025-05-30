@@ -21,6 +21,48 @@ macro_rules! console_log {
 const TILE_SIZE_PIXELS: f64 = 32.0;
 const MAX_WATER_AMOUNT: u16 = 1024; // Maximum water amount (1024 = full)
 
+// --- NEW: common scalar alias preferred by simulation ---------------
+pub type Float = f32;
+
+// --- NEW: Light-system core data structures -------------------------
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Photon {
+    pub x: Float,
+    pub y: Float,
+    pub vx: Float,
+    pub vy: Float,
+    pub intensity: Float,
+    pub age: u32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct LightSource {
+    pub start_x: Float,
+    pub start_y: Float,
+    pub end_x: Float,
+    pub end_y: Float,
+    pub direction_x: Float,
+    pub direction_y: Float,
+    pub intensity: Float,
+    pub photon_spawn_rate: Float,
+}
+
+fn create_light_source(world_width: Float, world_height: Float) -> LightSource {
+    let angle = 30.0_f32.to_radians();
+    let source_length = world_width * 1.5;
+
+    LightSource {
+        start_x: -world_width * 0.3,
+        start_y: world_height + world_height * 0.2,
+        end_x: -world_width * 0.3 + source_length * angle.cos(),
+        end_y: world_height + world_height * 0.2 + source_length * angle.sin(),
+        direction_x: angle.sin(),
+        direction_y: -angle.cos(),
+        intensity: 1.0,
+        photon_spawn_rate: 10.0,
+    }
+}
+
 // Promiser entity that moves randomly on a 2D plane
 #[wasm_bindgen]
 #[derive(Clone)]
@@ -286,6 +328,9 @@ pub struct GameState {
     world_width: f64,
     world_height: f64,
     last_update: f64,
+    last_light_step_ms: f64,
+    photons: Vec<Photon>,
+    light_source: LightSource,
     tile_map: TileMap, // Add tile map to game state
 }
 
@@ -313,6 +358,9 @@ impl GameState {
             world_width: world_width_pixels,
             world_height: world_height_pixels,
             last_update: 0.0,
+            last_light_step_ms: 0.0,
+            photons: Vec::new(),
+            light_source: create_light_source(world_width_pixels as Float, world_height_pixels as Float),
             tile_map: TileMap::new(tile_width, tile_height),
         };
         
@@ -328,6 +376,9 @@ impl GameState {
                 state.tile_map.set_tile(x, y, Tile {
                     tile_type: TileType::Dirt,
                     water_amount: 0,
+                    light_energy: 0.0,
+                    brightness: 0.0,
+                    temperature: 0.0,
                 });
             }
         }
@@ -342,6 +393,9 @@ impl GameState {
                 state.tile_map.set_tile(x, y, Tile {
                     tile_type: TileType::Water,
                     water_amount: MAX_WATER_AMOUNT,
+                    light_energy: 0.0,
+                    brightness: 0.0,
+                    temperature: 0.0,
                 });
             }
         }
@@ -402,6 +456,15 @@ impl GameState {
         format!("{{\"promisers\":[{}],\"tile_map\":{}}}", data.join(","), tile_map_json)
     }
     
+    // --- NEW: light-system data export stubs ---------------------------
+    pub fn get_photons_data(&self) -> String {
+        "[]".to_string() // placeholder until light simulation is implemented
+    }
+
+    pub fn get_light_map_data(&self) -> String {
+        "[]".to_string() // placeholder until light simulation is implemented
+    }
+    
     #[wasm_bindgen(getter)]
     pub fn promiser_count(&self) -> usize {
         self.promisers.len()
@@ -452,6 +515,9 @@ impl GameState {
         let new_tile = Tile {
             tile_type: tile_type_enum,
             water_amount: if matches!(tile_type_enum, TileType::Water) { MAX_WATER_AMOUNT } else { 0 },
+            light_energy: 0.0,
+            brightness: 0.0,
+            temperature: 0.0,
         };
         
         self.tile_map.set_tile(x, y, new_tile);
@@ -537,7 +603,7 @@ impl GameState {
                 }
 
                 // ── b) Horizontal – equalise with neighbours
-                // Only move half the height difference to avoid “teleporting”
+                // Only move half the height difference to avoid "teleporting"
                 let neighbours = [
                     (x.wrapping_sub(1), y),      // left  (wraps harmlessly for x=0)
                     (x + 1,             y),      // right
@@ -739,6 +805,10 @@ pub enum TileType {
 pub struct Tile {
     pub tile_type: TileType,
     pub water_amount: u16, // 0 = dry, 1024 = full
+    // --- NEW: lighting-related fields ---------------------------------
+    pub light_energy: Float,
+    pub brightness: Float,
+    pub temperature: Float,
 }
 
 // Tile map structure
@@ -753,6 +823,9 @@ impl TileMap {
         let tiles = vec![Tile {
             tile_type: TileType::Air,
             water_amount: 0,
+            light_energy: 0.0,
+            brightness: 0.0,
+            temperature: 0.0,
         }; width * height];
         TileMap { width, height, tiles }
     }
@@ -760,6 +833,14 @@ impl TileMap {
     pub fn get_tile(&self, x: usize, y: usize) -> Option<&Tile> {
         if x < self.width && y < self.height {
             Some(&self.tiles[y * self.width + x])
+        } else {
+            None
+        }
+    }
+
+    pub fn get_tile_mut(&mut self, x: usize, y: usize) -> Option<&mut Tile> {
+        if x < self.width && y < self.height {
+            Some(&mut self.tiles[y * self.width + x])
         } else {
             None
         }

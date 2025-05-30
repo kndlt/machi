@@ -330,6 +330,36 @@ export class GameState {
         }
     }
     /**
+     * @returns {string}
+     */
+    get_photons_data() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.gamestate_get_photons_data(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * @returns {string}
+     */
+    get_light_map_data() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.gamestate_get_light_map_data(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
      * @returns {number}
      */
     get promiser_count() {
