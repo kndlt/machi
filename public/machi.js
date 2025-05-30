@@ -1304,7 +1304,19 @@ class Game {
                 
                 // Improved tile colors with better visual appearance
                 switch (tile.tile_type) {
-                    case 'Dirt': color = 0x8B4513; break;  // Saddle brown - more natural dirt color
+                    case 'Dirt': 
+                        // Calculate dirt color based on moisture content
+                        const maxMoisture = 256; // MAX_DIRT_MOISTURE from Rust
+                        const moisture = tile.water_amount || 0;
+                        const moistureRatio = moisture / maxMoisture;
+                        // Darken dirt based on moisture: dry dirt (0x8B4513) to dark moist dirt (0x4A2508)
+                        const baseR = 0x8B, baseG = 0x45, baseB = 0x13;
+                        const darkR = 0x4A, darkG = 0x25, darkB = 0x08;
+                        const r = Math.floor(baseR - (baseR - darkR) * moistureRatio);
+                        const g = Math.floor(baseG - (baseG - darkG) * moistureRatio);
+                        const b = Math.floor(baseB - (baseB - darkB) * moistureRatio);
+                        color = (r << 16) | (g << 8) | b;
+                        break;
                     case 'Stone': color = 0x696969; break; // Dim gray - more realistic stone
                     case 'Water': color = 0x1E90FF; break; // Dodger blue - clearer water
                     default: color = 0xCCCCCC; break;      // Default gray for unknown types
@@ -1387,11 +1399,26 @@ class Game {
                 } else if (tileGraphic && tile.tile_type === 'Water') {
                     // Update water tile appearance based on water amount
                     this.updateWaterTile(tileGraphic, tile);
+                } else if (tileGraphic && tile.tile_type === 'Dirt') {
+                    // Update dirt tile appearance based on moisture amount
+                    this.updateDirtTile(tileGraphic, tile);
                 } else if (!tileGraphic && tile.tile_type !== 'Air') {
                     // Create graphic for non-air tile that didn't exist before
                     let color = 0xCCCCCC;
                     switch (tile.tile_type) {
-                        case 'Dirt': color = 0x8B4513; break;
+                        case 'Dirt': 
+                            // Calculate dirt color based on moisture content
+                            const maxMoisture = 256; // MAX_DIRT_MOISTURE from Rust
+                            const moisture = tile.water_amount || 0;
+                            const moistureRatio = moisture / maxMoisture;
+                            // Darken dirt based on moisture: dry dirt (0x8B4513) to dark moist dirt (0x4A2508)
+                            const baseR = 0x8B, baseG = 0x45, baseB = 0x13;
+                            const darkR = 0x4A, darkG = 0x25, darkB = 0x08;
+                            const r = Math.floor(baseR - (baseR - darkR) * moistureRatio);
+                            const g = Math.floor(baseG - (baseG - darkG) * moistureRatio);
+                            const b = Math.floor(baseB - (baseB - darkB) * moistureRatio);
+                            color = (r << 16) | (g << 8) | b;
+                            break;
                         case 'Stone': color = 0x696969; break;
                         case 'Water': color = 0x1E90FF; break;
                         default: color = 0xCCCCCC; break;
@@ -1470,6 +1497,49 @@ class Game {
             // Full water tile
             tileGraphic.rect(0, 0, this.tileSize, this.tileSize);
             tileGraphic.fill({ color, alpha });
+        }
+    }
+    
+    updateDirtTile(tileGraphic, tile) {
+        // Calculate moisture level (max 256 for dirt)
+        const maxMoistureAmount = 256;
+        const moistureAmount = tile.water_amount || 0;
+        const moistureRatio = moistureAmount / maxMoistureAmount; // Convert to 0.0-1.0 range
+        
+        // Base dirt color and wet dirt color
+        const dryDirtColor = 0x8B4513; // Regular dirt color
+        const wetDirtColor = 0x4A2C17; // Very dark brown for saturated dirt
+        
+        // Interpolate between dry and wet colors based on moisture
+        const r_dry = (dryDirtColor >> 16) & 0xFF;
+        const g_dry = (dryDirtColor >> 8) & 0xFF;
+        const b_dry = dryDirtColor & 0xFF;
+        
+        const r_wet = (wetDirtColor >> 16) & 0xFF;
+        const g_wet = (wetDirtColor >> 8) & 0xFF;
+        const b_wet = wetDirtColor & 0xFF;
+        
+        const r = Math.round(r_dry + (r_wet - r_dry) * moistureRatio);
+        const g = Math.round(g_dry + (g_wet - g_dry) * moistureRatio);
+        const b = Math.round(b_dry + (b_wet - b_dry) * moistureRatio);
+        
+        const color = (r << 16) | (g << 8) | b;
+        
+        // Clear and redraw the tile
+        tileGraphic.clear();
+        tileGraphic.rect(0, 0, this.tileSize, this.tileSize);
+        tileGraphic.fill({ color, alpha: 1.0 });
+        
+        // Add subtle moisture indication with small darker spots
+        if (moistureAmount > 0) {
+            const spotCount = Math.min(3, Math.floor(moistureRatio * 4)); // 0-3 spots
+            for (let i = 0; i < spotCount; i++) {
+                const spotX = (i + 1) * (this.tileSize / (spotCount + 1));
+                const spotY = this.tileSize * 0.7; // Near bottom
+                const spotSize = 2;
+                tileGraphic.circle(spotX, spotY, spotSize);
+                tileGraphic.fill({ color: wetDirtColor, alpha: 0.5 });
+            }
         }
     }
 
