@@ -49,6 +49,7 @@ export interface InitOutput {
   readonly gamestate_remove_promiser: (a: number, b: number) => void;
   readonly gamestate_update: (a: number, b: number) => void;
   readonly gamestate_get_state_data: (a: number) => [number, number];
+  readonly gamestate_get_photons_data: (a: number) => [number, number];
   readonly gamestate_get_light_map_data: (a: number) => [number, number];
   readonly gamestate_promiser_count: (a: number) => number;
   readonly gamestate_tile_map: (a: number) => any;
@@ -75,7 +76,6 @@ export interface InitOutput {
   readonly get_tile_at: (a: number, b: number) => [number, number];
   readonly simulate_water: () => void;
   readonly main: () => void;
-  readonly gamestate_get_photons_data: (a: number) => [number, number];
   readonly __wbindgen_malloc: (a: number, b: number) => number;
   readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
   readonly __wbindgen_export_2: WebAssembly.Table;

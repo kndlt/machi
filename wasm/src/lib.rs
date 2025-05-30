@@ -174,6 +174,100 @@ impl GameState {
         for promiser in self.promisers.values_mut() {
             promiser.update(self.world_width, self.world_height, dt, &self.tile_map);
         }
+
+        // Light system step (run every frame for now)
+        self.simulate_light();
+    }
+    
+    // ---------------------------------------------------------------------
+    // LIGHT SYSTEM ---------------------------------------------------------
+    fn simulate_light(&mut self) {
+        // 1. Spawn new photons
+        let photons_per_frame = (self.light_source.photon_spawn_rate / 60.0) as u32;
+        for _ in 0..photons_per_frame {
+            let t = random() as Float; // 0.0 - 1.0
+            let spawn_x = self.light_source.start_x +
+                (self.light_source.end_x - self.light_source.start_x) * t;
+            let spawn_y = self.light_source.start_y +
+                (self.light_source.end_y - self.light_source.start_y) * t;
+
+            self.photons.push(Photon {
+                x: spawn_x,
+                y: spawn_y,
+                vx: self.light_source.direction_x,
+                vy: self.light_source.direction_y,
+                intensity: self.light_source.intensity,
+                age: 0,
+            });
+        }
+
+        // 2. Update photon positions & remove old/out-of-bounds later
+        for p in &mut self.photons {
+            p.x += p.vx;
+            p.y += p.vy;
+            p.age += 1;
+        }
+
+        let world_w = self.world_width as Float;
+        let world_h = self.world_height as Float;
+        self.photons.retain(|p| {
+            p.age < 1000 && p.x >= 0.0 && p.y >= 0.0 && p.x < world_w && p.y < world_h && p.intensity > 0.05
+        });
+
+        // 3. Handle collisions / energy deposition
+        let mut removals = Vec::new();
+        for (idx, photon) in self.photons.iter_mut().enumerate() {
+            let tile_x = (photon.x as f64 / TILE_SIZE_PIXELS) as usize;
+            let tile_y = (photon.y as f64 / TILE_SIZE_PIXELS) as usize;
+
+            if let Some(tile) = self.tile_map.get_tile_mut(tile_x, tile_y) {
+                match tile.tile_type {
+                    TileType::Air => {},
+                    TileType::Water => {
+                        // simple refraction/slowdown
+                        photon.vx *= 0.8;
+                        photon.vy *= 0.8;
+                        photon.intensity *= 0.95;
+                    },
+                    TileType::Dirt | TileType::Stone => {
+                        let absorbed = photon.intensity * 0.7;
+                        let reflected = photon.intensity * 0.3;
+                        tile.light_energy += absorbed as Float;
+
+                        if reflected > 0.1 {
+                            photon.intensity = reflected;
+                            // diffuse reflection random dir
+                            let angle = (random() as Float) * std::f32::consts::TAU;
+                            let speed = (photon.vx * photon.vx + photon.vy * photon.vy).sqrt();
+                            photon.vx = speed * angle.cos();
+                            photon.vy = speed * angle.sin();
+                        } else {
+                            removals.push(idx);
+                        }
+                    },
+                }
+            } else {
+                // out of map (should be caught earlier but just in case)
+                removals.push(idx);
+            }
+        }
+
+        // remove photons marked absorbed (reverse to keep indices valid)
+        for i in removals.iter().rev() {
+            self.photons.remove(*i);
+        }
+
+        // 4. Update tile brightness & temperature
+        for tile in &mut self.tile_map.tiles {
+            if tile.light_energy == 0.0 {
+                tile.brightness = 0.1;
+            } else {
+                tile.brightness = (tile.light_energy * 0.5).min(1.0);
+            }
+            tile.temperature = tile.light_energy * 0.3;
+            // slowly decay energy for next frame to allow convergence
+            tile.light_energy *= 0.95;
+        }
     }
     
     // Get compact representation for rendering
@@ -189,7 +283,7 @@ impl GameState {
                 promiser.size,
                 promiser.color,
                 promiser.state,
-                promiser.thought.replace("\"", "\\\""), // Escape quotes
+                promiser.thought.replace("\"", "\\\""),
                 promiser.target_id,
                 promiser.is_pixel
             ));
@@ -202,13 +296,24 @@ impl GameState {
         format!("{{\"promisers\":[{}],\"tile_map\":{}}}", data.join(","), tile_map_json)
     }
     
-    // --- NEW: light-system data export stubs ---------------------------
     pub fn get_photons_data(&self) -> String {
-        "[]".to_string() // placeholder until light simulation is implemented
+        let mut data = Vec::new();
+        for p in &self.photons {
+            data.push(format!("{{\"x\":{:.1},\"y\":{:.1},\"intensity\":{:.3}}}", p.x, p.y, p.intensity));
+        }
+        format!("[{}]", data.join(","))
     }
 
     pub fn get_light_map_data(&self) -> String {
-        "[]".to_string() // placeholder until light simulation is implemented
+        let mut data = Vec::new();
+        for (idx, tile) in self.tile_map.tiles.iter().enumerate() {
+            if tile.brightness > 0.1 {
+                data.push(format!(
+                    "{{\"index\":{},\"brightness\":{:.3},\"temperature\":{:.3}}}",
+                    idx, tile.brightness, tile.temperature));
+            }
+        }
+        format!("[{}]", data.join(","))
     }
     
     #[wasm_bindgen(getter)]
