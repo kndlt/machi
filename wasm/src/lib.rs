@@ -110,7 +110,51 @@ impl Promiser {
 }
 
 impl Promiser {
-    fn update(&mut self, world_width: f64, world_height: f64, dt: f64) {
+    // Helper method to convert pixel coordinates to tile coordinates
+    fn pixel_to_tile(pixel_coord: f64) -> usize {
+        (pixel_coord / TILE_SIZE_PIXELS).floor() as usize
+    }
+    
+    // Helper method to check if a tile is solid (blocks movement)
+    fn is_solid_tile(tile_type: TileType) -> bool {
+        match tile_type {
+            TileType::Dirt | TileType::Stone => true,
+            TileType::Air | TileType::Water => false,
+        }
+    }
+    
+    // Check if the promiser would collide with solid tiles at given position
+    fn check_tile_collision(&self, x: f64, y: f64, tile_map: &TileMap) -> bool {
+        // Check the four corners of the promiser's bounding box
+        let left = x - self.size;
+        let right = x + self.size;
+        let bottom = y - self.size;
+        let top = y + self.size;
+        
+        let positions = [
+            (left, bottom),   // bottom-left
+            (right, bottom),  // bottom-right
+            (left, top),      // top-left
+            (right, top),     // top-right
+        ];
+        
+        for (px, py) in positions {
+            if px < 0.0 || py < 0.0 { continue; }
+            
+            let tile_x = Self::pixel_to_tile(px);
+            let tile_y = Self::pixel_to_tile(py);
+            
+            if let Some(tile) = tile_map.get_tile(tile_x, tile_y) {
+                if Self::is_solid_tile(tile.tile_type) {
+                    return true;
+                }
+            }
+        }
+        
+        false
+    }
+
+    fn update(&mut self, world_width: f64, world_height: f64, dt: f64, tile_map: &TileMap) {
         // Update state timer
         self.state_timer += dt;
         
@@ -167,9 +211,38 @@ impl Promiser {
             _ => 1.0, // Normal speed
         };
         
-        // Update position based on velocity
-        self.x += self.vx * dt * 50.0 * speed_multiplier; 
-        self.y += self.vy * dt * 50.0 * speed_multiplier;
+        // Store old position for collision resolution
+        let old_x = self.x;
+        let old_y = self.y;
+        
+        // Calculate new position based on velocity
+        let new_x = self.x + self.vx * dt * 50.0 * speed_multiplier;
+        let new_y = self.y + self.vy * dt * 50.0 * speed_multiplier;
+        
+        // Check horizontal movement first
+        self.x = new_x;
+        if self.check_tile_collision(self.x, self.y, tile_map) {
+            // Collision on horizontal movement - bounce and reset x
+            self.vx = -self.vx * 0.5; // Bounce with energy loss
+            self.x = old_x;
+        }
+        
+        // Check vertical movement
+        self.y = new_y;
+        if self.check_tile_collision(self.x, self.y, tile_map) {
+            // Collision on vertical movement
+            if self.vy < 0.0 {
+                // Falling down and hit something - land on tile
+                self.vy = 0.0;
+                self.y = old_y;
+                // Add horizontal friction when landing on tiles
+                self.vx *= 0.85;
+            } else {
+                // Moving up and hit something - bounce down
+                self.vy = -self.vy * 0.3;
+                self.y = old_y;
+            }
+        }
         
         // Bounce off world boundaries
         if self.x <= self.size || self.x >= world_width - self.size {
@@ -177,7 +250,7 @@ impl Promiser {
             self.x = self.x.clamp(self.size, world_width - self.size);
         }
         
-        // Ground collision with bounce
+        // Ground collision with bounce (world bottom)
         if self.y >= world_height - self.size {
             self.vy = -self.vy * 0.7; // Bounce with energy loss
             self.y = world_height - self.size;
@@ -186,7 +259,7 @@ impl Promiser {
             self.vx *= 0.95;
         }
         
-        // Ceiling collision
+        // Ceiling collision (world top)
         if self.y <= self.size {
             self.vy = -self.vy * 0.5;
             self.y = self.size;
@@ -299,7 +372,7 @@ impl GameState {
         
         // Update all promisers
         for promiser in self.promisers.values_mut() {
-            promiser.update(self.world_width, self.world_height, dt);
+            promiser.update(self.world_width, self.world_height, dt, &self.tile_map);
         }
     }
     
