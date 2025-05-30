@@ -20,6 +20,7 @@ macro_rules! console_log {
 // Constants
 const TILE_SIZE_PIXELS: f64 = 32.0;
 const MAX_WATER_AMOUNT: u16 = 1024; // Maximum water amount (1024 = full)
+const MAX_DIRT_MOISTURE: u16 = 256; // Maximum moisture content for dirt (1/4 of water)
 
 // Promiser entity that moves randomly on a 2D plane
 #[wasm_bindgen]
@@ -369,7 +370,7 @@ impl GameState {
         };
         
         self.last_update = current_time;
-        
+
         // Update all promisers
         for promiser in self.promisers.values_mut() {
             promiser.update(self.world_width, self.world_height, dt, &self.tile_map);
@@ -533,6 +534,18 @@ impl GameState {
                         let flow   = remaining.min(room);
                         remaining -= flow;
                         push(i, j, flow);
+                    } else if below.tile_type == TileType::Dirt {
+                        // Water can seep into dirt below due to gravity
+                        let current_moisture = below.water_amount;
+                        if current_moisture < MAX_DIRT_MOISTURE && remaining > 0 {
+                            // Vertical seepage can be faster than horizontal due to gravity
+                            let seepage_rate = 4; // Higher rate for downward seepage
+                            let max_seepage = (MAX_DIRT_MOISTURE - current_moisture).min(seepage_rate).min(remaining);
+                            if max_seepage > 0 {
+                                remaining -= max_seepage;
+                                push(i, j, max_seepage);
+                            }
+                        }
                     }
                 }
 
@@ -548,10 +561,29 @@ impl GameState {
                     let j = ny * w + nx;
                     let n_tile = &self.tile_map.tiles[j];
 
-                    if n_tile.tile_type == TileType::Stone || n_tile.tile_type == TileType::Dirt {
-                        continue; // solid wall
+                    // Stone blocks water completely
+                    if n_tile.tile_type == TileType::Stone {
+                        continue;
                     }
 
+                    // Handle water seepage into dirt
+                    if n_tile.tile_type == TileType::Dirt {
+                        
+                        // Water can seep into dirt slowly
+                        let current_moisture = n_tile.water_amount; 
+                        if current_moisture < MAX_DIRT_MOISTURE && remaining > 0 {
+                            // Slow seepage - only small amounts at a time
+                            let seepage_rate = 2; // Units per simulation step
+                            let max_seepage = (MAX_DIRT_MOISTURE - current_moisture).min(seepage_rate).min(remaining);
+                            if max_seepage > 0 {
+                                remaining -= max_seepage;
+                                push(i, j, max_seepage);
+                            }
+                        }
+                        continue; 
+                    }
+
+                    // Regular water flow for air and water tiles
                     let target = (remaining as i32 + n_tile.water_amount as i32) / 2;
                     if remaining as i32 > target {
                         let flow = (remaining as i32 - target) as u16;
@@ -574,13 +606,25 @@ impl GameState {
             let new_amt = (t.water_amount as i32 + change)
                 .clamp(0, MAX_WATER_AMOUNT as i32) as u16;
 
-            // Flip tile_type depending on new water level
-            if new_amt == 0 {
-                if t.tile_type == TileType::Water {
-                    t.tile_type = TileType::Air;
-                }
-            } else {
-                t.tile_type = TileType::Water;
+            // Handle tile type transitions based on water content
+            match t.tile_type {
+                TileType::Water => {
+                    if new_amt == 0 {
+                        t.tile_type = TileType::Air;
+                    }
+                },
+                TileType::Dirt => {
+                    // Dirt can absorb water but stays dirt (just becomes moist)
+                    // No tile type change needed
+                },
+                TileType::Air => {
+                    if new_amt > 0 {
+                        t.tile_type = TileType::Water;
+                    }
+                },
+                TileType::Stone => {
+                    // Stone doesn't change type
+                },
             }
 
             t.water_amount = new_amt;
