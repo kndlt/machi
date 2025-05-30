@@ -128,6 +128,13 @@ class Game {
         
         // World container that contains all game objects (affected by camera)
         this.worldContainer = null;
+        
+        this.lightSystem = {
+            enabled: true,
+            debugMode: true,
+            photonSprites: new Map(),
+            lightContainer: null
+        };
     }
     
     async init() {
@@ -231,6 +238,9 @@ class Game {
         // Auto-start the game
         await this.startGame();
         
+        // Create light system container
+        this.createLightSystem();
+        
         console.log('🎮 Game initialized');
     }
     
@@ -256,6 +266,21 @@ class Game {
             if (key in this.cameraKeys) {
                 event.preventDefault();
                 this.cameraKeys[key] = true;
+            }
+            
+            // Toggle light system (L) and photon debug (P)
+            if (key === 'l') {
+                event.preventDefault();
+                this.lightSystem.enabled = !this.lightSystem.enabled;
+                console.log(`💡 Light system ${this.lightSystem.enabled ? 'ENABLED' : 'DISABLED'}`);
+                return;
+            }
+
+            if (key === 'p') {
+                event.preventDefault();
+                this.lightSystem.debugMode = !this.lightSystem.debugMode;
+                console.log(`🔦 Photon debug ${this.lightSystem.debugMode ? 'ON' : 'OFF'}`);
+                return;
             }
         });
         
@@ -1222,6 +1247,17 @@ class Game {
             this.updateTileMap(gameState.tile_map);
         }
         
+        // handle light system rendering
+        if (this.lightSystem.enabled) {
+            if (gameState.photons && this.lightSystem.debugMode) {
+                this.renderPhotons(gameState.photons);
+            }
+            if (gameState.lightMap) {
+                // Temporarily disabled brightness modulation until tuning values
+                // this.updateTileBrightness(gameState.lightMap, gameState.tile_map.width);
+            }
+        }
+        
         if (!gameState.promisers) return;
         
         // Update existing sprites and create new ones
@@ -1544,6 +1580,57 @@ class Game {
         if (this.app) {
             this.app.destroy(true);
         }
+    }
+
+    createLightSystem() {
+        this.lightSystem.lightContainer = new window.PIXI.Container();
+        this.worldContainer.addChild(this.lightSystem.lightContainer);
+    }
+
+    renderPhotons(photons) {
+        const spritePool = this.lightSystem.photonSprites;
+        const container = this.lightSystem.lightContainer;
+
+        const activeIds = new Set();
+        photons.forEach((p, idx) => {
+            activeIds.add(idx);
+            let g = spritePool.get(idx);
+            if (!g) {
+                g = new window.PIXI.Graphics();
+                spritePool.set(idx, g);
+                container.addChild(g);
+            }
+            g.clear();
+            g.moveTo(0, 0);
+            g.lineTo(-p.vx * 3, p.vy * 3); // small line segment
+            const intensity = Math.min(1.0, p.intensity);
+            const col = 0xFFFFCC;
+            g.stroke({ color: col, width: 1, alpha: intensity });
+            g.x = p.x;
+            g.y = -p.y;
+        });
+
+        // Remove unused sprites
+        for (const [idx, g] of spritePool.entries()) {
+            if (!activeIds.has(idx)) {
+                container.removeChild(g);
+                spritePool.delete(idx);
+            }
+        }
+    }
+
+    updateTileBrightness(lightMap, tileMapWidth) {
+        lightMap.forEach(entry => {
+            const idx = entry.index;
+            const brightness = entry.brightness;
+            const x = idx % tileMapWidth;
+            const y = Math.floor(idx / tileMapWidth);
+            const key = `${x},${y}`;
+            const tileGraphic = this.tileGraphics.get(key);
+            if (tileGraphic) {
+                tileGraphic.alpha = brightness;
+            }
+        });
     }
 }
 

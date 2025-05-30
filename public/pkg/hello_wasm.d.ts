@@ -13,6 +13,8 @@ export function get_random_promiser_id(): number;
 export function place_tile(x: number, y: number, tile_type: string): void;
 export function get_tile_at(x: number, y: number): string;
 export function simulate_water(): void;
+export function get_photons_data(): string;
+export function get_light_map_data(): string;
 export function main(): void;
 export class GameState {
   free(): void;
@@ -75,6 +77,8 @@ export interface InitOutput {
   readonly place_tile: (a: number, b: number, c: number, d: number) => void;
   readonly get_tile_at: (a: number, b: number) => [number, number];
   readonly simulate_water: () => void;
+  readonly get_photons_data: () => [number, number];
+  readonly get_light_map_data: () => [number, number];
   readonly main: () => void;
   readonly __wbindgen_malloc: (a: number, b: number) => number;
   readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

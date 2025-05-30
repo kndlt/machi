@@ -544,6 +544,28 @@ pub fn simulate_water() {
     }
 }
 
+#[wasm_bindgen]
+pub fn get_photons_data() -> String {
+    unsafe {
+        if let Some(ref state) = GAME_STATE {
+            state.get_photons_data()
+        } else {
+            "[]".to_string()
+        }
+    }
+}
+
+#[wasm_bindgen]
+pub fn get_light_map_data() -> String {
+    unsafe {
+        if let Some(ref state) = GAME_STATE {
+            state.get_light_map_data()
+        } else {
+            "[]".to_string()
+        }
+    }
+}
+
 // Called when the wasm module is instantiated
 #[wasm_bindgen(start)]
 pub fn main() {
