@@ -116,7 +116,7 @@ The Sun Light System is a photon-based lighting simulation that will serve as th
 Based on the existing WASM + Pixi.js architecture, the light system will be implemented as follows:
 
 #### WASM Core (Rust) - `wasm/src/lib.rs`
-**New Data Structures:**
+**Simple Data Structures (Start Here):**
 ```rust
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Photon {
@@ -126,7 +126,6 @@ pub struct Photon {
     pub vy: f32,          // velocity y in pixels per tick
     pub intensity: f32,   // energy level (0.0-1.0)
     pub age: u32,         // ticks since creation
-    pub max_age: u32,     // max lifetime before decay
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -151,9 +150,21 @@ pub struct Tile {
 }
 ```
 
-**New Methods in GameState:**
+**Simple GameState Methods:**
 ```rust
 impl GameState {
+    pub fn new(world_width_tiles: f64, world_height_tiles: f64) -> GameState {
+        // ... existing initialization ...
+        
+        let mut state = GameState {
+            // ... existing fields ...
+            photons: Vec::new(),     // Simple vector of photons
+            light_source: create_light_source(world_width_pixels, world_height_pixels),
+        };
+        
+        state
+    }
+    
     pub fn simulate_light(&mut self) {
         // 1. Spawn new photons from light source
         self.spawn_photons();
@@ -186,7 +197,6 @@ impl GameState {
                 vy: self.light_source.direction_y,
                 intensity: self.light_source.intensity,
                 age: 0,
-                max_age: 1000,
             };
             
             self.photons.push(photon);
@@ -203,7 +213,7 @@ impl GameState {
         
         // Remove expired or out-of-bounds photons
         self.photons.retain(|p| {
-            p.age < p.max_age && 
+            p.age < 1000 &&  // max age
             p.x >= 0.0 && p.y >= 0.0 &&
             p.x < self.world_width && p.y < self.world_height
         });
@@ -220,51 +230,39 @@ impl GameState {
                 match tile.tile_type {
                     TileType::Air => continue, // Pass through
                     TileType::Water => {
-                        if self.handle_water_refraction(photon, tile) {
-                            photons_to_remove.push(i);
-                        }
+                        // Simple water interaction - just slow down
+                        photon.vx *= 0.8;
+                        photon.vy *= 0.8;
+                        photon.intensity *= 0.95; // Small energy loss
                     },
                     TileType::Dirt | TileType::Stone => {
-                        if self.handle_solid_collision(photon, tile) {
-                            photons_to_remove.push(i);
+                        // Energy absorption
+                        let absorbed_energy = photon.intensity * 0.7; // 70% absorbed
+                        let reflected_energy = photon.intensity * 0.3; // 30% reflected
+                        
+                        // Add absorbed energy to tile
+                        tile.light_energy += absorbed_energy;
+                        
+                        // Check if enough energy to reflect
+                        if reflected_energy > 0.1 {
+                            photon.intensity = reflected_energy;
+                            // Simple random reflection
+                            let angle = random() as f32 * 2.0 * std::f32::consts::PI;
+                            let speed = (photon.vx * photon.vx + photon.vy * photon.vy).sqrt();
+                            photon.vx = speed * angle.cos();
+                            photon.vy = speed * angle.sin();
+                        } else {
+                            photons_to_remove.push(i); // Remove photon (absorbed)
                         }
                     },
                 }
             }
         }
         
-        // Remove absorbed photons
+        // Remove absorbed photons (in reverse order to maintain indices)
         for &i in photons_to_remove.iter().rev() {
             self.photons.remove(i);
         }
-    }
-    
-    fn handle_solid_collision(&mut self, photon: &mut Photon, tile: &mut Tile) -> bool {
-        // Simple energy absorption
-        let absorbed_energy = photon.intensity * 0.7; // 70% absorbed
-        let reflected_energy = photon.intensity * 0.3; // 30% reflected
-        
-        // Add absorbed energy to tile
-        tile.light_energy += absorbed_energy;
-        
-        // Check if enough energy to reflect
-        if reflected_energy > 0.1 {
-            photon.intensity = reflected_energy;
-            self.apply_diffuse_reflection(photon);
-            false // Don't remove photon
-        } else {
-            true // Remove photon (absorbed)
-        }
-    }
-    
-    fn apply_diffuse_reflection(&mut self, photon: &mut Photon) {
-        // Random reflection angle
-        let angle = random() as f32 * 2.0 * std::f32::consts::PI;
-        let speed = (photon.vx * photon.vx + photon.vy * photon.vy).sqrt();
-        
-        // Apply new random direction
-        photon.vx = speed * angle.cos();
-        photon.vy = speed * angle.sin();
     }
     
     fn calculate_tile_brightness(&mut self) {
@@ -307,6 +305,25 @@ impl GameState {
         format!("[{}]", brightness_data.join(","))
     }
 }
+```
+
+**SIMD Migration Path (Week 3+ Optimization):**
+```rust
+// When performance becomes important, migrate to this structure:
+pub struct PhotonSystemSIMD {
+    // Structure of Arrays for SIMD
+    x: Vec<f32>,         // All x positions
+    y: Vec<f32>,         // All y positions  
+    vx: Vec<f32>,        // All x velocities
+    vy: Vec<f32>,        // All y velocities
+    intensity: Vec<f32>, // All intensities
+    active_count: usize,
+}
+
+// The migration is straightforward:
+// 1. Change Vec<Photon> → PhotonSystemSIMD
+// 2. Replace loops with SIMD operations
+// 3. Core algorithms stay the same
 ```
 
 #### Frontend Integration - `public/machi.js`
