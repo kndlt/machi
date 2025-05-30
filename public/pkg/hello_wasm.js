@@ -172,6 +172,22 @@ export function update_game(current_time) {
     }
 }
 
+/**
+ * @returns {string}
+ */
+export function tick() {
+    let deferred1_0;
+    let deferred1_1;
+    try {
+        const ret = wasm.tick();
+        deferred1_0 = ret[0];
+        deferred1_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+    }
+}
+
 export function add_promiser() {
     wasm.add_promiser();
 }
@@ -317,6 +333,12 @@ export class GameState {
      */
     update(current_time) {
         wasm.gamestate_update(this.__wbg_ptr, current_time);
+    }
+    /**
+     * Simple tick function that handles all internal updates
+     */
+    tick() {
+        wasm.gamestate_tick(this.__wbg_ptr);
     }
     /**
      * @returns {string}
