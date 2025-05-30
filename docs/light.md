@@ -31,8 +31,8 @@ The Sun Light System is a photon-based lighting simulation that will serve as th
 |-----------|----------|
 | **Air** | Complete transparency - photons pass through |
 | **Water** | Partial transmission with refraction |
-| **Dirt** | Complete absorption |
-| **Stone** | Complete absorption with diffuse reflection |
+| **Dirt** | Partial absorption with diffuse reflection |
+| **Stone** | Partial absorption with diffuse reflection |
 
 #### Light Absorption
 - Tiles accumulate heat/energy when absorbing photons
@@ -463,7 +463,7 @@ impl Photon {
                 TileType::Water => self.handle_water_interaction(tile),
                 TileType::Dirt | TileType::Stone => self.handle_solid_collision(tile),
             }
-        } else if self.age > self.max_age {
+        } else if self.age > 1000 { // max age
             PhotonState::Expired
         } else {
             PhotonState::Continue
@@ -487,6 +487,31 @@ impl Photon {
             PhotonState::Absorbed
         }
     }
+    
+    fn apply_diffuse_reflection(&mut self) {
+        // Random reflection angle
+        let angle = random() as f32 * 2.0 * std::f32::consts::PI;
+        let speed = (self.vx * self.vx + self.vy * self.vy).sqrt();
+        self.vx = speed * angle.cos();
+        self.vy = speed * angle.sin();
+    }
+    
+    fn handle_water_interaction(&mut self, tile: &mut Tile) -> PhotonState {
+        // Simple water interaction - slow down and lose some energy
+        self.vx *= 0.8;
+        self.vy *= 0.8;
+        self.intensity *= 0.95;
+        PhotonState::Continue
+    }
+}
+
+// Required enum for photon state management
+#[derive(Debug, PartialEq)]
+enum PhotonState {
+    Continue,
+    Absorbed,
+    Reflected,
+    Expired,
 }
 ```
 
