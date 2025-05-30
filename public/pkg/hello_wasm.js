@@ -268,6 +268,10 @@ export function simulate_water() {
     wasm.simulate_water();
 }
 
+export function simulate_foliage() {
+    wasm.simulate_foliage();
+}
+
 export function main() {
     wasm.main();
 }
@@ -420,6 +424,12 @@ export class GameState {
      */
     simulate_water() {
         wasm.gamestate_simulate_water(this.__wbg_ptr);
+    }
+    /**
+     * Simulate foliage growth and death based on dirt moisture levels
+     */
+    simulate_foliage() {
+        wasm.gamestate_simulate_foliage(this.__wbg_ptr);
     }
 }
 

@@ -21,6 +21,9 @@ macro_rules! console_log {
 const TILE_SIZE_PIXELS: f64 = 32.0;
 const MAX_WATER_AMOUNT: u16 = 1024; // Maximum water amount (1024 = full)
 const MAX_DIRT_MOISTURE: u16 = 256; // Maximum moisture content for dirt (1/4 of water)
+const MIN_FOLIAGE_MOISTURE: u16 = 128; // Minimum moisture needed for foliage growth (half of max)
+const FOLIAGE_GROWTH_CHANCE: f64 = 1.0; // Chance per simulation step for foliage to grow
+const FOLIAGE_DEATH_MOISTURE: u16 = 64; // Below this moisture, foliage will die
 
 // Promiser entity that moves randomly on a 2D plane
 #[wasm_bindgen]
@@ -119,7 +122,7 @@ impl Promiser {
     // Helper method to check if a tile is solid (blocks movement)
     fn is_solid_tile(tile_type: TileType) -> bool {
         match tile_type {
-            TileType::Dirt | TileType::Stone => true,
+            TileType::Dirt | TileType::Stone | TileType::Foliage => true,
             TileType::Air | TileType::Water => false,
         }
     }
@@ -447,6 +450,7 @@ impl GameState {
             "Stone" => TileType::Stone,
             "Water" => TileType::Water,
             "Air" => TileType::Air,
+            "Foliage" => TileType::Foliage,
             _ => TileType::Air, // Default to Air for unknown types
         };
         
@@ -466,6 +470,7 @@ impl GameState {
                 TileType::Stone => "Stone".to_string(),
                 TileType::Water => "Water".to_string(),
                 TileType::Air => "Air".to_string(),
+                TileType::Foliage => "Foliage".to_string(),
             }
         } else {
             "Air".to_string() // Default to Air for out-of-bounds
@@ -625,14 +630,87 @@ impl GameState {
                 TileType::Stone => {
                     // Stone doesn't change type
                 },
+                TileType::Foliage => {
+                    // Foliage doesn't absorb water but can be destroyed if dry
+                    // For now, foliage is stable
+                },
             }
 
             t.water_amount = new_amt;
         }
     }
+
+    /// Simulate foliage growth and death based on dirt moisture levels
+    pub fn simulate_foliage(&mut self) {
+        let w = self.tile_map.width;
+        let h = self.tile_map.height;
+        
+        // Collect changes to apply after scanning
+        let mut changes: Vec<(usize, usize, TileType)> = Vec::new();
+        
+        for y in 0..h {
+            for x in 0..w {
+                let i = y * w + x;
+                let tile = &self.tile_map.tiles[i];
+                
+                match tile.tile_type {
+                    TileType::Dirt => {
+                        // Check if dirt has enough moisture to grow foliage
+                        if tile.water_amount >= MIN_FOLIAGE_MOISTURE {
+                            // Check if there's space above for foliage (if not at top edge)
+                            if y + 1 < h {
+                                let above_idx = (y + 1) * w + x;
+                                let above_tile = &self.tile_map.tiles[above_idx];
+                                
+                                // Only grow foliage on air tiles above dirt
+                                if above_tile.tile_type == TileType::Air && random() < FOLIAGE_GROWTH_CHANCE {
+                                    // Schedule foliage growth above the dirt
+                                    changes.push((x, y + 1, TileType::Foliage));
+                                }
+                            }
+                        }
+                    },
+                    TileType::Foliage => {
+                        // Check if foliage should die due to lack of moisture in dirt below
+                        if y > 0 {
+                            let below_idx = (y - 1) * w + x;
+                            let below_tile = &self.tile_map.tiles[below_idx];
+                            
+                            // Foliage dies if the dirt below doesn't have enough moisture
+                            if below_tile.tile_type == TileType::Dirt && 
+                               below_tile.water_amount < FOLIAGE_DEATH_MOISTURE {
+                                changes.push((x, y, TileType::Air));
+                            }
+                        } else {
+                            // Foliage at ground level (y=0) dies immediately (no soil support)
+                            changes.push((x, y, TileType::Air));
+                        }
+                    },
+                    _ => {
+                        // Other tile types don't participate in foliage simulation
+                    }
+                }
+            }
+        }
+        
+        // Apply all changes
+        for (x, y, new_type) in changes {
+            let new_tile = Tile {
+                tile_type: new_type,
+                water_amount: 0, // Foliage and air don't store water
+            };
+            self.tile_map.set_tile(x, y, new_tile);
+            
+            match new_type {
+                TileType::Foliage => console_log!("🌱 Foliage grew at ({}, {})", x, y),
+                TileType::Air => console_log!("🍂 Foliage died at ({}, {})", x, y),
+                _ => {}
+            }
+        }
+    }
 }
 
-// Global game state instance
+/// Global game state instance
 static mut GAME_STATE: Option<GameState> = None;
 
 #[wasm_bindgen]
@@ -762,6 +840,15 @@ pub fn simulate_water() {
     }
 }
 
+#[wasm_bindgen]
+pub fn simulate_foliage() {
+    unsafe {
+        if let Some(ref mut state) = GAME_STATE {
+            state.simulate_foliage();
+        }
+    }
+}
+
 // Called when the wasm module is instantiated
 #[wasm_bindgen(start)]
 pub fn main() {
@@ -777,6 +864,7 @@ pub enum TileType {
     Dirt,
     Stone,
     Water,
+    Foliage,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

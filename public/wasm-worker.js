@@ -12,7 +12,8 @@ import init, {
     get_random_promiser_id,
     place_tile,
     get_tile_at,
-    simulate_water
+    simulate_water,
+    simulate_foliage
 } from './pkg/hello_wasm.js';
 
 console.log('🎮 Worker: Starting WASM game worker...');
@@ -22,7 +23,9 @@ let wasmInitialized = false;
 let gameRunning = false;
 let updateInterval = null;
 let lastWaterSimulation = 0;
+let lastFoliageSimulation = 0;
 const waterSimulationInterval = 100; // Run water simulation every 100ms
+const foliageSimulationInterval = 1000; // Run foliage simulation every 1000ms (1 second)
 
 async function initWasm() {
     if (!wasmInitialized) {
@@ -47,6 +50,12 @@ function startGameLoop(worldWidthTiles, worldHeightTiles) {
         if (currentTime - lastWaterSimulation > waterSimulationInterval) {
             simulate_water();
             lastWaterSimulation = currentTime;
+        }
+        
+        // Run foliage simulation at an even slower rate
+        if (currentTime - lastFoliageSimulation > foliageSimulationInterval) {
+            simulate_foliage();
+            lastFoliageSimulation = currentTime;
         }
         
         const stateData = update_game(currentTime);

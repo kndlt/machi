@@ -71,13 +71,14 @@ class Game {
         // Tile selection UI
         this.tileSelectionUI = null; // Container for tile selection panel
         this.selectedTileType = 'Dirt'; // Currently selected tile type
-        this.tileTypes = ['Dirt', 'Stone', 'Water', 'Air']; // Available tile types
+        this.tileTypes = ['Dirt', 'Stone', 'Water', 'Air', 'Foliage']; // Available tile types
         this.tileButtons = []; // Store tile selection buttons
         this.tileColors = {
             'Dirt': 0x8B4513,
             'Stone': 0x696969,
             'Water': 0x1E90FF,
-            'Air': 0x87CEEB
+            'Air': 0x87CEEB,
+            'Foliage': 0x228B22  // Forest green
         };
         this.tilePlacementMode = false; // Whether we're in tile placement mode
         
@@ -1319,6 +1320,7 @@ class Game {
                         break;
                     case 'Stone': color = 0x696969; break; // Dim gray - more realistic stone
                     case 'Water': color = 0x1E90FF; break; // Dodger blue - clearer water
+                    case 'Foliage': color = 0x228B22; break; // Forest green
                     default: color = 0xCCCCCC; break;      // Default gray for unknown types
                 }
                 
@@ -1402,6 +1404,9 @@ class Game {
                 } else if (tileGraphic && tile.tile_type === 'Dirt') {
                     // Update dirt tile appearance based on moisture amount
                     this.updateDirtTile(tileGraphic, tile);
+                } else if (tileGraphic && tile.tile_type === 'Foliage') {
+                    // Foliage tiles don't need dynamic updates - they maintain their color
+                    // But we could add subtle effects here in the future (swaying, etc.)
                 } else if (!tileGraphic && tile.tile_type !== 'Air') {
                     // Create graphic for non-air tile that didn't exist before
                     let color = 0xCCCCCC;
@@ -1421,6 +1426,7 @@ class Game {
                             break;
                         case 'Stone': color = 0x696969; break;
                         case 'Water': color = 0x1E90FF; break;
+                        case 'Foliage': color = 0x228B22; break;
                         default: color = 0xCCCCCC; break;
                     }
                     
