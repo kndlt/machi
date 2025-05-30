@@ -13,6 +13,7 @@ export function get_random_promiser_id(): number;
 export function place_tile(x: number, y: number, tile_type: string): void;
 export function get_tile_at(x: number, y: number): string;
 export function simulate_water(): void;
+export function simulate_foliage(): void;
 export function main(): void;
 export class GameState {
   free(): void;
@@ -33,6 +34,10 @@ export class GameState {
    * Order-independent cellular-automata water step.
    */
   simulate_water(): void;
+  /**
+   * Simulate foliage growth and death based on dirt moisture levels
+   */
+  simulate_foliage(): void;
   readonly promiser_count: number;
   readonly tile_map: any;
 }
@@ -88,6 +93,7 @@ export interface InitOutput {
   readonly gamestate_get_pixel_id: (a: number) => number;
   readonly gamestate_get_random_promiser_id: (a: number) => number;
   readonly gamestate_simulate_water: (a: number) => void;
+  readonly gamestate_simulate_foliage: (a: number) => void;
   readonly init_game: (a: number, b: number) => void;
   readonly update_game: (a: number) => [number, number];
   readonly add_promiser: () => void;
@@ -101,6 +107,7 @@ export interface InitOutput {
   readonly place_tile: (a: number, b: number, c: number, d: number) => void;
   readonly get_tile_at: (a: number, b: number) => [number, number];
   readonly simulate_water: () => void;
+  readonly simulate_foliage: () => void;
   readonly main: () => void;
   readonly __wbindgen_malloc: (a: number, b: number) => number;
   readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
