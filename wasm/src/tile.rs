@@ -21,10 +21,6 @@ pub enum TileType {
 pub struct Tile {
     pub tile_type: TileType,
     pub water_amount: u16, // 0 = dry, MAX_WATER_AMOUNT = full
-    // Lighting fields
-    pub light_energy: Float,
-    pub brightness: Float,
-    pub temperature: Float,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -39,9 +35,6 @@ impl TileMap {
         let tiles = vec![Tile {
             tile_type: TileType::Air,
             water_amount: 0,
-            light_energy: 0.0,
-            brightness: 0.0,
-            temperature: 0.0,
         }; width * height];
         TileMap { width, height, tiles }
     }

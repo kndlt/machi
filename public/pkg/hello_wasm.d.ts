@@ -13,8 +13,6 @@ export function get_random_promiser_id(): number;
 export function place_tile(x: number, y: number, tile_type: string): void;
 export function get_tile_at(x: number, y: number): string;
 export function simulate_water(): void;
-export function get_photons_data(): string;
-export function get_light_map_data(): string;
 export function main(): void;
 export class GameState {
   free(): void;
@@ -23,8 +21,6 @@ export class GameState {
   remove_promiser(id: number): void;
   update(current_time: number): void;
   get_state_data(): string;
-  get_photons_data(): string;
-  get_light_map_data(): string;
   make_promiser_think(id: number): void;
   make_promiser_speak(id: number, thought: string): void;
   make_promiser_whisper(id: number, thought: string, target_id: number): void;
@@ -51,8 +47,6 @@ export interface InitOutput {
   readonly gamestate_remove_promiser: (a: number, b: number) => void;
   readonly gamestate_update: (a: number, b: number) => void;
   readonly gamestate_get_state_data: (a: number) => [number, number];
-  readonly gamestate_get_photons_data: (a: number) => [number, number];
-  readonly gamestate_get_light_map_data: (a: number) => [number, number];
   readonly gamestate_promiser_count: (a: number) => number;
   readonly gamestate_tile_map: (a: number) => any;
   readonly gamestate_make_promiser_think: (a: number, b: number) => void;
@@ -77,8 +71,6 @@ export interface InitOutput {
   readonly place_tile: (a: number, b: number, c: number, d: number) => void;
   readonly get_tile_at: (a: number, b: number) => [number, number];
   readonly simulate_water: () => void;
-  readonly get_photons_data: () => [number, number];
-  readonly get_light_map_data: () => [number, number];
   readonly main: () => void;
   readonly __wbindgen_malloc: (a: number, b: number) => number;
   readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

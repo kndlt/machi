@@ -128,13 +128,6 @@ class Game {
         
         // World container that contains all game objects (affected by camera)
         this.worldContainer = null;
-        
-        this.lightSystem = {
-            enabled: true,
-            debugMode: true,
-            photonSprites: new Map(),
-            lightContainer: null
-        };
     }
     
     async init() {
@@ -237,9 +230,6 @@ class Game {
         
         // Auto-start the game
         await this.startGame();
-        
-        // Create light system container
-        this.createLightSystem();
         
         console.log('🎮 Game initialized');
     }
@@ -1235,79 +1225,45 @@ class Game {
     }
     
     updateRender(gameState, timestamp) {
-        // Draw tile map if present (only once or when changed)
-        if (gameState.tile_map && !this.tileMapCreated) {
-            this.drawTileMap(gameState.tile_map);
-            this.tileMapCreated = true;
-            this.currentTileMap = gameState.tile_map;
-        }
-        
-        // Update tile map for water simulation
-        if (gameState.tile_map && this.tileMapCreated) {
-            this.updateTileMap(gameState.tile_map);
-        }
-        
-        // handle light system rendering
-        if (this.lightSystem.enabled) {
-            if (gameState.photons && this.lightSystem.debugMode) {
-                this.renderPhotons(gameState.photons);
-            }
-            if (gameState.lightMap) {
-                // Temporarily disabled brightness modulation until tuning values
-                // this.updateTileBrightness(gameState.lightMap, gameState.tile_map.width);
-            }
-        }
-        
-        if (!gameState.promisers) return;
-        
-        // Update existing sprites and create new ones
-        const currentIds = new Set();
-        
-        gameState.promisers.forEach(promiser => {
-            currentIds.add(promiser.id);
-            
-            let sprite = this.promiserSprites.get(promiser.id);
-            
-            if (!sprite) {
+        // Update promisers
+        for (const promiser of gameState.promisers) {
+            const sprite = this.promiserSprites.get(promiser.id);
+            if (sprite) {
+                // Update existing sprite
+                if (this.shouldRedrawSprite(promiser)) {
+                    this.updateSpriteAppearance(sprite, promiser);
+                    this.promiserStates.set(promiser.id, { ...promiser });
+                }
+                sprite.x = promiser.x;
+                sprite.y = -promiser.y; // Negate Y coordinate to match coordinate systems
+            } else {
                 // Create new sprite
-                sprite = new window.PIXI.Graphics();
-                this.promiserSprites.set(promiser.id, sprite);
-                this.container.addChild(sprite);
+                const newSprite = new window.PIXI.Graphics();
+                this.updateSpriteAppearance(newSprite, promiser);
+                newSprite.x = promiser.x;
+                newSprite.y = -promiser.y; // Negate Y coordinate to match coordinate systems
+                this.container.addChild(newSprite);
+                this.promiserSprites.set(promiser.id, newSprite);
+                this.promiserStates.set(promiser.id, { ...promiser });
             }
-            
-            // Check if sprite needs redrawing
-            if (this.shouldRedrawSprite(promiser)) {
-                // Update sprite appearance based on state
-                this.updateSpriteAppearance(sprite, promiser);
-            }
-            
-            // Store current state for next frame comparison
-            this.promiserStates.set(promiser.id, {
-                state: promiser.state,
-                color: promiser.color,
-                size: promiser.size
-            });
-            
-            sprite.x = promiser.x;
-            sprite.y = -promiser.y;
-            
-            // Update thought bubble position if it exists (convert to screen coordinates)
-            const bubble = this.thoughtBubbles.get(promiser.id);
-            if (bubble) {
-                const screenX = promiser.x - this.camera.x;
-                const screenY = promiser.y - this.camera.y - promiser.size - 20;
-                bubble.x = screenX;
-                bubble.y = screenY;
-            }
-        });
+        }
         
         // Remove sprites for promisers that no longer exist
-        for (const [id, sprite] of this.promiserSprites.entries()) {
-            if (!currentIds.has(id)) {
+        for (const [id, sprite] of this.promiserSprites) {
+            if (!gameState.promisers.find(p => p.id === id)) {
                 this.container.removeChild(sprite);
                 this.promiserSprites.delete(id);
-                this.promiserStates.delete(id); // Clean up stored state
-                this.removeThoughtBubble(id);
+                this.promiserStates.delete(id);
+            }
+        }
+        
+        // Update tile map
+        if (gameState.tile_map) {
+            if (!this.tileMapCreated) {
+                this.drawTileMap(gameState.tile_map);
+                this.tileMapCreated = true;
+            } else {
+                this.updateTileMap(gameState.tile_map);
             }
         }
     }
@@ -1580,60 +1536,6 @@ class Game {
         if (this.app) {
             this.app.destroy(true);
         }
-    }
-
-    createLightSystem() {
-        this.lightSystem.lightContainer = new window.PIXI.Container();
-        this.worldContainer.addChild(this.lightSystem.lightContainer);
-    }
-
-    renderPhotons(photons) {
-        const spritePool = this.lightSystem.photonSprites;
-        const container = this.lightSystem.lightContainer;
-
-        const activeIds = new Set();
-        photons.forEach((p, idx) => {
-            activeIds.add(idx);
-            let g = spritePool.get(idx);
-            if (!g) {
-                g = new window.PIXI.Graphics();
-                spritePool.set(idx, g);
-                container.addChild(g);
-            }
-            g.clear();
-            
-            // Draw photon as a small circle
-            g.circle(0, 0, 2);
-            const intensity = Math.min(1.0, p.intensity);
-            const col = 0xFFFFCC;
-            g.fill({ color: col, alpha: intensity });
-            
-            // Position the photon
-            g.x = p.x;
-            g.y = -p.y;
-        });
-
-        // Remove unused sprites
-        for (const [idx, g] of spritePool.entries()) {
-            if (!activeIds.has(idx)) {
-                container.removeChild(g);
-                spritePool.delete(idx);
-            }
-        }
-    }
-
-    updateTileBrightness(lightMap, tileMapWidth) {
-        lightMap.forEach(entry => {
-            const idx = entry.index;
-            const brightness = entry.brightness;
-            const x = idx % tileMapWidth;
-            const y = Math.floor(idx / tileMapWidth);
-            const key = `${x},${y}`;
-            const tileGraphic = this.tileGraphics.get(key);
-            if (tileGraphic) {
-                tileGraphic.alpha = brightness;
-            }
-        });
     }
 }
 

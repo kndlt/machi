@@ -27,45 +27,6 @@ macro_rules! console_log {
 // Constants
 use crate::tile::{TILE_SIZE_PIXELS, MAX_WATER_AMOUNT};
 
-// --- NEW: Light-system core data structures -------------------------
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Photon {
-    pub x: Float,
-    pub y: Float,
-    pub vx: Float,
-    pub vy: Float,
-    pub intensity: Float,
-    pub age: u32,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct LightSource {
-    pub start_x: Float,
-    pub start_y: Float,
-    pub end_x: Float,
-    pub end_y: Float,
-    pub direction_x: Float,
-    pub direction_y: Float,
-    pub intensity: Float,
-    pub photon_spawn_rate: Float,
-}
-
-fn create_light_source(world_width: Float, world_height: Float) -> LightSource {
-    let angle = 30.0_f32.to_radians();
-    let source_length = world_width * 1.5;
-
-    LightSource {
-        start_x: 0.0,  // Start from left edge
-        start_y: world_height,  // Start from top
-        end_x: source_length * angle.cos(),  // End at angle
-        end_y: world_height - source_length * angle.sin(),  // End at angle
-        direction_x: angle.sin(),
-        direction_y: -angle.cos(),
-        intensity: 1.0,
-        photon_spawn_rate: 100.0,  // Increased spawn rate
-    }
-}
-
 // Game state containing all promisers
 #[wasm_bindgen]
 pub struct GameState {
@@ -74,9 +35,6 @@ pub struct GameState {
     world_width: f64,
     world_height: f64,
     last_update: f64,
-    last_light_step_ms: f64,
-    photons: Vec<Photon>,
-    light_source: LightSource,
     tile_map: TileMap, // Add tile map to game state
 }
 
@@ -104,9 +62,6 @@ impl GameState {
             world_width: world_width_pixels,
             world_height: world_height_pixels,
             last_update: 0.0,
-            last_light_step_ms: 0.0,
-            photons: Vec::new(),
-            light_source: create_light_source(world_width_pixels as Float, world_height_pixels as Float),
             tile_map: TileMap::new(tile_width, tile_height),
         };
         
@@ -122,9 +77,6 @@ impl GameState {
                 state.tile_map.set_tile(x, y, Tile {
                     tile_type: TileType::Dirt,
                     water_amount: 0,
-                    light_energy: 0.0,
-                    brightness: 0.0,
-                    temperature: 0.0,
                 });
             }
         }
@@ -139,9 +91,6 @@ impl GameState {
                 state.tile_map.set_tile(x, y, Tile {
                     tile_type: TileType::Water,
                     water_amount: MAX_WATER_AMOUNT,
-                    light_energy: 0.0,
-                    brightness: 0.0,
-                    temperature: 0.0,
                 });
             }
         }
@@ -174,106 +123,6 @@ impl GameState {
         for promiser in self.promisers.values_mut() {
             promiser.update(self.world_width, self.world_height, dt, &self.tile_map);
         }
-
-        // Light system step (run every frame for now)
-        self.simulate_light();
-    }
-    
-    // ---------------------------------------------------------------------
-    // LIGHT SYSTEM ---------------------------------------------------------
-    fn simulate_light(&mut self) {
-        // 1. Spawn new photons
-        let photons_per_frame = (self.light_source.photon_spawn_rate / 60.0) as u32;
-        console_log!("Spawning {} photons per frame", photons_per_frame);
-        
-        for _ in 0..photons_per_frame {
-            let t = random() as Float; // 0.0 - 1.0
-            let spawn_x = self.light_source.start_x +
-                (self.light_source.end_x - self.light_source.start_x) * t;
-            let spawn_y = self.light_source.start_y +
-                (self.light_source.end_y - self.light_source.start_y) * t;
-
-            self.photons.push(Photon {
-                x: spawn_x,
-                y: spawn_y,
-                vx: self.light_source.direction_x,
-                vy: self.light_source.direction_y,
-                intensity: self.light_source.intensity,
-                age: 0,
-            });
-        }
-        
-        console_log!("Total photons after spawn: {}", self.photons.len());
-
-        // 2. Update photon positions & remove old/out-of-bounds later
-        for p in &mut self.photons {
-            p.x += p.vx;
-            p.y += p.vy;
-            p.age += 1;
-        }
-
-        let world_w = self.world_width as Float;
-        let world_h = self.world_height as Float;
-        let before_retain = self.photons.len();
-        self.photons.retain(|p| {
-            p.age < 1000 && p.x >= 0.0 && p.y >= 0.0 && p.x < world_w && p.y < world_h && p.intensity > 0.05
-        });
-        console_log!("Photons after retain: {} (removed {})", self.photons.len(), before_retain - self.photons.len());
-
-        // 3. Handle collisions / energy deposition
-        let mut removals = Vec::new();
-        for (idx, photon) in self.photons.iter_mut().enumerate() {
-            let tile_x = (photon.x as f64 / TILE_SIZE_PIXELS) as usize;
-            let tile_y = (photon.y as f64 / TILE_SIZE_PIXELS) as usize;
-
-            if let Some(tile) = self.tile_map.get_tile_mut(tile_x, tile_y) {
-                match tile.tile_type {
-                    TileType::Air => {},
-                    TileType::Water => {
-                        // simple refraction/slowdown
-                        photon.vx *= 0.8;
-                        photon.vy *= 0.8;
-                        photon.intensity *= 0.95;
-                    },
-                    TileType::Dirt | TileType::Stone => {
-                        let absorbed = photon.intensity * 0.7;
-                        let reflected = photon.intensity * 0.3;
-                        tile.light_energy += absorbed as Float;
-
-                        if reflected > 0.1 {
-                            photon.intensity = reflected;
-                            // diffuse reflection random dir
-                            let angle = (random() as Float) * std::f32::consts::TAU;
-                            let speed = (photon.vx * photon.vx + photon.vy * photon.vy).sqrt();
-                            photon.vx = speed * angle.cos();
-                            photon.vy = speed * angle.sin();
-                        } else {
-                            removals.push(idx);
-                        }
-                    },
-                }
-            } else {
-                // out of map (should be caught earlier but just in case)
-                removals.push(idx);
-            }
-        }
-
-        // remove photons marked absorbed (reverse to keep indices valid)
-        for i in removals.iter().rev() {
-            self.photons.remove(*i);
-        }
-
-        // 4. Update tile brightness & temperature
-        for tile in &mut self.tile_map.tiles {
-            if tile.light_energy == 0.0 {
-                tile.brightness = 0.1;
-            } else {
-                tile.brightness = (tile.light_energy * 0.5).min(1.0);
-            }
-            tile.temperature = tile.light_energy * 0.3;
-            // slowly decay energy for next frame to allow convergence
-            tile.light_energy *= 0.95;
-        }
     }
     
     // Get compact representation for rendering
@@ -299,32 +148,7 @@ impl GameState {
         let tile_map_json = serde_json::to_string(&self.tile_map)
             .unwrap_or_else(|_| "null".to_string());
         
-        // Get photon data
-        let photons_json = self.get_photons_data();
-        
-        format!("{{\"promisers\":[{}],\"tile_map\":{},\"photons\":{}}}", data.join(","), tile_map_json, photons_json)
-    }
-    
-    pub fn get_photons_data(&self) -> String {
-        let mut data = Vec::new();
-        for p in &self.photons {
-            data.push(format!(
-                "{{\"x\":{:.1},\"y\":{:.1},\"vx\":{:.1},\"vy\":{:.1},\"intensity\":{:.3}}}",
-                p.x, p.y, p.vx, p.vy, p.intensity));
-        }
-        format!("[{}]", data.join(","))
-    }
-
-    pub fn get_light_map_data(&self) -> String {
-        let mut data = Vec::new();
-        for (idx, tile) in self.tile_map.tiles.iter().enumerate() {
-            if tile.brightness > 0.1 {
-                data.push(format!(
-                    "{{\"index\":{},\"brightness\":{:.3},\"temperature\":{:.3}}}",
-                    idx, tile.brightness, tile.temperature));
-            }
-        }
-        format!("[{}]", data.join(","))
+        format!("{{\"promisers\":[{}],\"tile_map\":{}}}", data.join(","), tile_map_json)
     }
     
     #[wasm_bindgen(getter)]
@@ -377,9 +201,6 @@ impl GameState {
         let new_tile = Tile {
             tile_type: tile_type_enum,
             water_amount: if matches!(tile_type_enum, TileType::Water) { MAX_WATER_AMOUNT } else { 0 },
-            light_energy: 0.0,
-            brightness: 0.0,
-            temperature: 0.0,
         };
         
         self.tile_map.set_tile(x, y, new_tile);
@@ -551,28 +372,6 @@ pub fn simulate_water() {
     unsafe {
         if let Some(ref mut state) = GAME_STATE {
             state.simulate_water();
-        }
-    }
-}
-
-#[wasm_bindgen]
-pub fn get_photons_data() -> String {
-    unsafe {
-        if let Some(ref state) = GAME_STATE {
-            state.get_photons_data()
-        } else {
-            "[]".to_string()
-        }
-    }
-}
-
-#[wasm_bindgen]
-pub fn get_light_map_data() -> String {
-    unsafe {
-        if let Some(ref state) = GAME_STATE {
-            state.get_light_map_data()
-        } else {
-            "[]".to_string()
         }
     }
 }

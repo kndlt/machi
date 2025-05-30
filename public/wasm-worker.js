@@ -12,9 +12,7 @@ import init, {
     get_random_promiser_id,
     place_tile,
     get_tile_at,
-    simulate_water,
-    get_photons_data,
-    get_light_map_data
+    simulate_water
 } from './pkg/hello_wasm.js';
 
 console.log('🎮 Worker: Starting WASM game worker...');
@@ -53,21 +51,10 @@ function startGameLoop(worldWidthTiles, worldHeightTiles) {
         
         const stateData = update_game(currentTime);
         
-        // Fetch light system data
-        const photonsJson = get_photons_data();
-        const lightMapJson = get_light_map_data();
-
-        const photons = JSON.parse(photonsJson);
-        const lightMap = JSON.parse(lightMapJson);
-        
         // Send compact state to main thread for rendering
         self.postMessage({
             type: 'game_state_update',
-            data: {
-                ...JSON.parse(stateData),
-                photons,
-                lightMap
-            },
+            data: JSON.parse(stateData),
             timestamp: currentTime
         });
     }, 16);
