@@ -1,20 +1,6 @@
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
-export const __wbg_promiser_free: (a: number, b: number) => void;
-export const promiser_new: (a: number, b: number, c: number) => number;
-export const promiser_id: (a: number) => number;
-export const promiser_x: (a: number) => number;
-export const promiser_y: (a: number) => number;
-export const promiser_size: (a: number) => number;
-export const promiser_color: (a: number) => number;
-export const promiser_state: (a: number) => number;
-export const promiser_thought: (a: number) => [number, number];
-export const promiser_target_id: (a: number) => number;
-export const promiser_is_pixel: (a: number) => number;
-export const promiser_set_thought: (a: number, b: number, c: number) => void;
-export const promiser_set_whisper: (a: number, b: number, c: number, d: number) => void;
-export const promiser_start_running: (a: number) => void;
 export const __wbg_gamestate_free: (a: number, b: number) => void;
 export const gamestate_new: (a: number, b: number) => number;
 export const gamestate_add_promiser: (a: number) => void;

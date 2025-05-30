@@ -38,41 +38,11 @@ export class GameState {
   readonly promiser_count: number;
   readonly tile_map: any;
 }
-export class Promiser {
-  free(): void;
-  constructor(id: number, x: number, y: number);
-  set_thought(thought: string): void;
-  set_whisper(thought: string, target_id: number): void;
-  start_running(): void;
-  readonly id: number;
-  readonly x: number;
-  readonly y: number;
-  readonly size: number;
-  readonly color: number;
-  readonly state: number;
-  readonly thought: string;
-  readonly target_id: number;
-  readonly is_pixel: boolean;
-}
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
   readonly memory: WebAssembly.Memory;
-  readonly __wbg_promiser_free: (a: number, b: number) => void;
-  readonly promiser_new: (a: number, b: number, c: number) => number;
-  readonly promiser_id: (a: number) => number;
-  readonly promiser_x: (a: number) => number;
-  readonly promiser_y: (a: number) => number;
-  readonly promiser_size: (a: number) => number;
-  readonly promiser_color: (a: number) => number;
-  readonly promiser_state: (a: number) => number;
-  readonly promiser_thought: (a: number) => [number, number];
-  readonly promiser_target_id: (a: number) => number;
-  readonly promiser_is_pixel: (a: number) => number;
-  readonly promiser_set_thought: (a: number, b: number, c: number) => void;
-  readonly promiser_set_whisper: (a: number, b: number, c: number, d: number) => void;
-  readonly promiser_start_running: (a: number) => void;
   readonly __wbg_gamestate_free: (a: number, b: number) => void;
   readonly gamestate_new: (a: number, b: number) => number;
   readonly gamestate_add_promiser: (a: number) => void;
