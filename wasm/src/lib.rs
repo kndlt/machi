@@ -464,56 +464,50 @@ impl GameState {
         
         let rays_to_generate = (MAX_LIGHT_RAYS - current_count).min(100); // Generate at most 100 per call
         
-        for _ in 0..rays_to_generate {
-            // Choose a random boundary location to spawn from
-            let boundary_side = (random() * 4.0) as u32; // 0=top, 1=right, 2=bottom, 3=left
+        // Calculate total perimeter for uniform distribution
+        let perimeter = 2.0 * (self.world_width + self.world_height);
+        
+        let mut rays_created = 0;
+        let mut attempts = 0;
+        let max_attempts = rays_to_generate; // Allow some retries for invalid positions
+        
+        while rays_created < rays_to_generate && attempts < max_attempts {
+            attempts += 1;
             
-            let (start_x, start_y, direction_x, direction_y) = match boundary_side {
-                0 => {
-                    // Top boundary - spawn from top, pointing down
-                    let x = random() * self.world_width;
-                    let y = self.world_height;
-                    (x, y, 0.0, -1.0)
-                },
-                1 => {
-                    // Right boundary - spawn from right, pointing left
-                    let x = self.world_width;
-                    let y = random() * self.world_height;
-                    (x, y, -1.0, 0.0)
-                },
-                2 => {
-                    // Bottom boundary - spawn from bottom, pointing up
-                    let x = random() * self.world_width;
-                    let y = 0.0;
-                    (x, y, 0.0, 1.0)
-                },
-                _ => {
-                    // Left boundary - spawn from left, pointing right
-                    let x = 0.0;
-                    let y = random() * self.world_height;
-                    (x, y, 1.0, 0.0)
-                }
+            // Choose a random position along the entire perimeter for uniform distribution
+            let perimeter_position = random() * perimeter;
+            
+            let (start_x, start_y) = if perimeter_position < self.world_width {
+                // Top edge
+                (perimeter_position, self.world_height)
+            } else if perimeter_position < self.world_width + self.world_height {
+                // Right edge
+                (self.world_width, self.world_height - (perimeter_position - self.world_width))
+            } else if perimeter_position < 2.0 * self.world_width + self.world_height {
+                // Bottom edge
+                (self.world_width - (perimeter_position - self.world_width - self.world_height), 0.0)
+            } else {
+                // Left edge
+                (0.0, perimeter_position - 2.0 * self.world_width - self.world_height)
             };
             
+            // Generate a truly random direction (360 degrees) for realistic light behavior
+            let angle = random() * 2.0 * std::f64::consts::PI;
+            let direction_x = angle.cos();
+            let direction_y = angle.sin();
+            
             // Move spawn position slightly inward from boundary
-            let actual_start_x = start_x + direction_x * RAY_START_EPSILON;
-            let actual_start_y = start_y + direction_y * RAY_START_EPSILON;
+            let actual_start_x = start_x + direction_x.signum() * RAY_START_EPSILON;
+            let actual_start_y = start_y + direction_y.signum() * RAY_START_EPSILON;
             
             // Check if spawn position is valid (within bounds and not in solid tile)
             if !self.is_valid_spawn_position(actual_start_x, actual_start_y) {
                 continue; // Skip this ray and try again
             }
             
-            // Add full 360 degree randomness to direction
-            let angle_variation = random() * 2.0 * 3.14159; // 0 to 2π radians (360 degrees)
-            let cos_var = angle_variation.cos();
-            let sin_var = angle_variation.sin();
-            
-            let final_dx = cos_var;
-            let final_dy = sin_var;
-            
-            let light_ray = LightRay::new(actual_start_x, actual_start_y, final_dx, final_dy);
+            let light_ray = LightRay::new(actual_start_x, actual_start_y, direction_x, direction_y);
             self.light_rays.push(light_ray);
+            rays_created += 1;
         }
     }
 
