@@ -68,6 +68,10 @@ class Game {
         this.currentTileMap = null; // Store current tile map data for comparison
         this.tileGraphics = new Map(); // Store tile graphics for hover effects
         
+        // Light ray rendering
+        this.lightRayContainer = null; // Container for light ray rendering
+        this.lightRayGraphics = null; // Graphics object for rendering all light rays
+        
         // Tile selection UI
         this.tileSelectionUI = null; // Container for tile selection panel
         this.selectedTileType = 'Dirt'; // Currently selected tile type
@@ -187,6 +191,14 @@ class Game {
         // Create container for promisers (in world space)
         this.container = new window.PIXI.Container();
         this.worldContainer.addChild(this.container);
+        
+        // Create container for light rays (in world space)
+        this.lightRayContainer = new window.PIXI.Container();
+        this.worldContainer.addChild(this.lightRayContainer);
+        
+        // Create graphics object for efficient light ray rendering
+        this.lightRayGraphics = new window.PIXI.Graphics();
+        this.lightRayContainer.addChild(this.lightRayGraphics);
         
         // Create container for UI elements (thought bubbles, etc.) - in screen space, not affected by camera
         this.uiContainer = new window.PIXI.Container();
@@ -1210,6 +1222,61 @@ class Game {
         }
     }
     
+    renderLightRays(lightRays) {
+        // Clear previous light ray graphics
+        this.lightRayGraphics.clear();
+        
+        if (!lightRays || lightRays.length === 0) {
+            return;
+        }
+        
+        // Debug logging (remove in production)
+        if (lightRays.length > 0) {
+            console.log(`✨ Rendering ${lightRays.length} light rays`);
+        }
+        
+        // Render each light ray as a tiny line oriented in its direction
+        for (const ray of lightRays) {
+            // Calculate alpha based on intensity (0.1 to 1.0)
+            const alpha = Math.max(0.1, Math.min(1.0, ray.intensity));
+            
+            // Calculate line length based on intensity (2 to 8 pixels)
+            const lineLength = Math.max(2, Math.min(8, ray.intensity * 6));
+            
+            // Calculate line thickness based on intensity (0.5 to 2 pixels)
+            const lineWidth = Math.max(0.5, Math.min(2, ray.intensity * 2));
+            
+            // Use a warm white/yellow color for light rays
+            const lightColor = 0xFFFF99; // Warm light color
+            
+            // Calculate the direction of the light ray
+            const speed = Math.sqrt(ray.vx * ray.vx + ray.vy * ray.vy);
+            if (speed > 0) {
+                const dirX = ray.vx / speed;
+                const dirY = ray.vy / speed;
+                
+                // Calculate start and end points of the line
+                const halfLength = lineLength / 2;
+                const startX = ray.x - dirX * halfLength;
+                const startY = -ray.y + dirY * halfLength; // Note: Y is inverted for screen coordinates
+                const endX = ray.x + dirX * halfLength;
+                const endY = -ray.y - dirY * halfLength;
+                
+                // Draw the light ray as a line
+                this.lightRayGraphics.moveTo(startX, startY);
+                this.lightRayGraphics.lineTo(endX, endY);
+                this.lightRayGraphics.stroke({ color: lightColor, width: lineWidth, alpha: alpha });
+                
+                // Add a subtle glow effect for brighter rays
+                if (ray.intensity > 0.5) {
+                    this.lightRayGraphics.moveTo(startX, startY);
+                    this.lightRayGraphics.lineTo(endX, endY);
+                    this.lightRayGraphics.stroke({ color: lightColor, width: lineWidth + 1, alpha: alpha * 0.3 });
+                }
+            }
+        }
+    }
+    
     updateRender(gameState, timestamp) {
         // Draw tile map if present (only once or when changed)
         if (gameState.tile_map && !this.tileMapCreated) {
@@ -1275,6 +1342,9 @@ class Game {
                 this.removeThoughtBubble(id);
             }
         }
+        
+        // Render light rays
+        this.renderLightRays(gameState.light_rays || []);
     }
     
     drawTileMap(tileMap) {
@@ -1512,41 +1582,67 @@ class Game {
         const moistureAmount = tile.water_amount || 0;
         const moistureRatio = moistureAmount / maxMoistureAmount; // Convert to 0.0-1.0 range
         
-        // Base dirt color and wet dirt color
-        const dryDirtColor = 0x8B4513; // Regular dirt color
-        const wetDirtColor = 0x4A2C17; // Very dark brown for saturated dirt
-        
-        // Interpolate between dry and wet colors based on moisture
-        const r_dry = (dryDirtColor >> 16) & 0xFF;
-        const g_dry = (dryDirtColor >> 8) & 0xFF;
-        const b_dry = dryDirtColor & 0xFF;
-        
-        const r_wet = (wetDirtColor >> 16) & 0xFF;
-        const g_wet = (wetDirtColor >> 8) & 0xFF;
-        const b_wet = wetDirtColor & 0xFF;
-        
-        const r = Math.round(r_dry + (r_wet - r_dry) * moistureRatio);
-        const g = Math.round(g_dry + (g_wet - g_dry) * moistureRatio);
-        const b = Math.round(b_dry + (b_wet - b_dry) * moistureRatio);
-        
-        const color = (r << 16) | (g << 8) | b;
+        // Keep dirt color constant - no color change based on moisture
+        const dirtColor = 0x8B4513; // Regular dirt color (always the same)
+        const moistureColor = 0x4A2C17; // Darker color for moisture dithering
         
         // Clear and redraw the tile
         tileGraphic.clear();
         tileGraphic.rect(0, 0, this.tileSize, this.tileSize);
-        tileGraphic.fill({ color, alpha: 1.0 });
+        tileGraphic.fill({ color: dirtColor, alpha: 1.0 });
         
-        // Add subtle moisture indication with small darker spots
+        // Add moisture indication using dithering patterns instead of color changes
         if (moistureAmount > 0) {
-            const spotCount = Math.min(3, Math.floor(moistureRatio * 4)); // 0-3 spots
-            for (let i = 0; i < spotCount; i++) {
-                const spotX = (i + 1) * (this.tileSize / (spotCount + 1));
-                const spotY = this.tileSize * 0.7; // Near bottom
-                const spotSize = 2;
-                tileGraphic.circle(spotX, spotY, spotSize);
-                tileGraphic.fill({ color: wetDirtColor, alpha: 0.5 });
+            this.drawMoistureDithering(tileGraphic, moistureRatio, moistureColor);
+        }
+    }
+
+    drawMoistureDithering(tileGraphic, moistureRatio, moistureColor) {
+        const tileSize = this.tileSize;
+        const pixelSize = 2; // Size of each dither "pixel"
+        const gridSize = Math.floor(tileSize / pixelSize);
+        
+        // Scale moisture ratio to max 50% dithering
+        const scaledMoistureRatio = moistureRatio * 0.5;
+        
+        // Create dithering pattern based on moisture level
+        // Higher moisture = more dense dithering pattern (capped at 50%)
+        for (let x = 0; x < gridSize; x++) {
+            for (let y = 0; y < gridSize; y++) {
+                // Calculate dithering threshold using a Bayer-like pattern
+                const threshold = this.getDitheringThreshold(x, y, gridSize);
+                
+                // Draw moisture pixel if scaled moisture ratio exceeds threshold
+                if (scaledMoistureRatio > threshold) {
+                    const pixelX = x * pixelSize;
+                    const pixelY = y * pixelSize;
+                    
+                    tileGraphic.rect(pixelX, pixelY, pixelSize, pixelSize);
+                    tileGraphic.fill({ color: moistureColor, alpha: 0.6 });
+                }
             }
         }
+    }
+
+    getDitheringThreshold(x, y, gridSize) {
+        // Create a simple ordered dithering pattern (Bayer-like)
+        // This creates a distributed pattern that looks more natural than random dots
+        
+        // Use a 4x4 Bayer matrix pattern, scaled for our grid
+        const bayerMatrix = [
+            [0,  8,  2,  10],
+            [12, 4,  14, 6 ],
+            [3,  11, 1,  9 ],
+            [15, 7,  13, 5 ]
+        ];
+        
+        const matrixSize = 4;
+        const matrixX = x % matrixSize;
+        const matrixY = y % matrixSize;
+        const bayerValue = bayerMatrix[matrixY][matrixX];
+        
+        // Normalize to 0-1 range and add some variation
+        return (bayerValue / 15.0) * 0.8 + 0.1; // Scale to 0.1-0.9 range
     }
 
     onTileHover(tileGraphic, isHovering) {

@@ -25,6 +25,47 @@ const MIN_FOLIAGE_MOISTURE: u16 = 128; // Minimum moisture needed for foliage gr
 const FOLIAGE_GROWTH_CHANCE: f64 = 1.0; // Chance per simulation step for foliage to grow
 const FOLIAGE_DEATH_MOISTURE: u16 = 64; // Below this moisture, foliage will die
 
+// Light ray constants
+const MAX_LIGHT_RAYS: usize = 10000; // Maximum number of active light rays
+const RAY_SPEED: f64 = 100.0; // Pixels per second
+const RAY_START_EPSILON: f64 = 2.0; // Distance to start ray from boundary
+
+// Light ray structure
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct LightRay {
+    pub x: f64,        // Current position x
+    pub y: f64,        // Current position y  
+    pub vx: f64,       // Velocity x (normalized direction * speed)
+    pub vy: f64,       // Velocity y (normalized direction * speed)
+    pub intensity: f64, // Light intensity (0.0 to 1.0)
+}
+
+impl LightRay {
+    pub fn new(start_x: f64, start_y: f64, direction_x: f64, direction_y: f64) -> Self {
+        // Normalize direction and apply speed
+        let length = (direction_x * direction_x + direction_y * direction_y).sqrt();
+        let norm_x = if length > 0.0 { direction_x / length } else { 0.0 };
+        let norm_y = if length > 0.0 { direction_y / length } else { 1.0 };
+        
+        LightRay {
+            x: start_x, // Use the provided position directly (epsilon already applied)
+            y: start_y,
+            vx: norm_x * RAY_SPEED,
+            vy: norm_y * RAY_SPEED,
+            intensity: 1.0,
+        }
+    }
+    
+    pub fn update(&mut self, dt: f64) {
+        self.x += self.vx * dt;
+        self.y += self.vy * dt;
+    }
+    
+    pub fn is_out_of_bounds(&self, world_width: f64, world_height: f64) -> bool {
+        self.x < 0.0 || self.x >= world_width || self.y < 0.0 || self.y >= world_height
+    }
+}
+
 // Promiser entity that moves randomly on a 2D plane
 #[wasm_bindgen]
 #[derive(Clone)]
@@ -292,6 +333,7 @@ pub struct GameState {
     last_update: f64,
     tick_count: u64,
     tile_map: TileMap, // Add tile map to game state
+    light_rays: Vec<LightRay>, // Light rays for rendering
 }
 
 #[wasm_bindgen]
@@ -320,6 +362,7 @@ impl GameState {
             last_update: 0.0,
             tick_count: 0,
             tile_map: TileMap::new(tile_width, tile_height),
+            light_rays: Vec::new(),
         };
         
         // Create initial promisers
@@ -396,13 +439,303 @@ impl GameState {
         if self.tick_count % 6 == 0 {
             self.simulate_water();
         }
-        
-        // Internal timing for foliage simulation (every 60 ticks ≈ 1 second at 60fps)
+         // Internal timing for foliage simulation (every 60 ticks ≈ 1 second at 60fps)
         if self.tick_count % 60 == 0 {
             self.simulate_foliage();
         }
         
+        // Update light rays every tick (for smooth movement)
+        self.update_light_rays(dt);
+        
+        // Generate new light rays (maintain 10000 rays)
+        if self.tick_count % 6 == 0 { // Generate new rays every 6 ticks (≈ 100ms at 60fps)
+            self.generate_light_rays();
+        }
+
         self.tick_count = self.tick_count.wrapping_add(1);
+    }
+
+    /// Generate new light rays from boundary locations to maintain target count
+    fn generate_light_rays(&mut self) {
+        let current_count = self.light_rays.len();
+        if current_count >= MAX_LIGHT_RAYS {
+            return;
+        }
+        
+        let rays_to_generate = (MAX_LIGHT_RAYS - current_count).min(100); // Generate at most 100 per call
+        
+        // Calculate total perimeter for uniform distribution
+        let perimeter = 2.0 * (self.world_width + self.world_height);
+        
+        let mut rays_created = 0;
+        let mut attempts = 0;
+        let max_attempts = rays_to_generate; // Allow some retries for invalid positions
+        
+        while rays_created < rays_to_generate && attempts < max_attempts {
+            attempts += 1;
+            
+            // Choose a random position along the entire perimeter for uniform distribution
+            let perimeter_position = random() * perimeter;
+            
+            let (start_x, start_y) = if perimeter_position < self.world_width {
+                // Top edge
+                (perimeter_position, self.world_height)
+            } else if perimeter_position < self.world_width + self.world_height {
+                // Right edge
+                (self.world_width, self.world_height - (perimeter_position - self.world_width))
+            } else if perimeter_position < 2.0 * self.world_width + self.world_height {
+                // Bottom edge
+                (self.world_width - (perimeter_position - self.world_width - self.world_height), 0.0)
+            } else {
+                // Left edge
+                (0.0, perimeter_position - 2.0 * self.world_width - self.world_height)
+            };
+            
+            // 30 degrees from up vector
+            let angle = -60.0_f64.to_radians();
+            let direction_x = angle.cos();
+            let direction_y = angle.sin();
+            
+            // Move spawn position slightly inward from boundary
+            let actual_start_x = start_x + direction_x.signum() * RAY_START_EPSILON;
+            let actual_start_y = start_y + direction_y.signum() * RAY_START_EPSILON;
+            
+            // Check if spawn position is valid (within bounds and not in solid tile)
+            if !self.is_valid_spawn_position(actual_start_x, actual_start_y) {
+                continue; // Skip this ray and try again
+            }
+            
+            let light_ray = LightRay::new(actual_start_x, actual_start_y, direction_x, direction_y);
+            self.light_rays.push(light_ray);
+            rays_created += 1;
+        }
+    }
+
+    /// Check if a position is valid for spawning a light ray
+    /// Returns false if position is out of bounds or inside a solid tile
+    fn is_valid_spawn_position(&self, x: f64, y: f64) -> bool {
+        // Check bounds
+        if x < 0.0 || x >= self.world_width || y < 0.0 || y >= self.world_height {
+            return false;
+        }
+        
+        // Check tile at position
+        let tile_x = (x / TILE_SIZE_PIXELS).floor() as usize;
+        let tile_y = (y / TILE_SIZE_PIXELS).floor() as usize;
+        
+        if let Some(tile) = self.tile_map.get_tile(tile_x, tile_y) {
+            match tile.tile_type {
+                TileType::Air | TileType::Water => true, // Allow spawning in air and water
+                TileType::Dirt | TileType::Stone | TileType::Foliage => false, // Don't spawn in solid tiles
+            }
+        } else {
+            false // No tile data available, consider invalid
+        }
+    }
+
+    /// Update light ray positions and handle collisions with tiles
+    fn update_light_rays(&mut self, dt: f64) {
+        let mut rays_to_remove = Vec::new();
+        
+        for (i, ray) in self.light_rays.iter_mut().enumerate() {
+            // Update ray position
+            ray.update(dt);
+            
+            // Check if ray is out of bounds
+            if ray.is_out_of_bounds(self.world_width, self.world_height) {
+                rays_to_remove.push(i);
+                continue;
+            }
+            
+            // Check for tile collision
+            let tile_x = (ray.x / TILE_SIZE_PIXELS).floor() as usize;
+            let tile_y = (ray.y / TILE_SIZE_PIXELS).floor() as usize;
+            
+            if let Some(tile) = self.tile_map.get_tile(tile_x, tile_y) {
+                match tile.tile_type {
+                    TileType::Air => {
+                        // Check if ray is exiting water into air
+                        let prev_x = ray.x - ray.vx * dt;
+                        let prev_y = ray.y - ray.vy * dt;
+                        let prev_tile_x = (prev_x / TILE_SIZE_PIXELS).floor() as usize;
+                        let prev_tile_y = (prev_y / TILE_SIZE_PIXELS).floor() as usize;
+                        
+                        let exiting_water = if let Some(prev_tile) = self.tile_map.get_tile(prev_tile_x, prev_tile_y) {
+                            prev_tile.tile_type == TileType::Water
+                        } else {
+                            false
+                        };
+                        
+                        if exiting_water {
+                            // Apply refraction when exiting water to air
+                            // n1 * sin(θ1) = n2 * sin(θ2)
+                            // Where n1 = 1.33 (water), n2 = 1.0 (air)
+                            const N_WATER: f64 = 1.33;
+                            const N_AIR: f64 = 1.0;
+                            
+                            let speed = (ray.vx * ray.vx + ray.vy * ray.vy).sqrt();
+                            let dir_x = ray.vx / speed;
+                            let dir_y = ray.vy / speed;
+                            
+                            // Determine surface normal at exit point
+                            let (normal_x, normal_y) = {
+                                let rel_x = (prev_x / TILE_SIZE_PIXELS) - prev_tile_x as f64;
+                                let rel_y = (prev_y / TILE_SIZE_PIXELS) - prev_tile_y as f64;
+                                
+                                // Determine which edge of the water tile we're exiting from
+                                if rel_x < 0.1 { (-1.0, 0.0) }       // Left edge
+                                else if rel_x > 0.9 { (1.0, 0.0) }   // Right edge  
+                                else if rel_y < 0.1 { (0.0, -1.0) }  // Bottom edge
+                                else if rel_y > 0.9 { (0.0, 1.0) }   // Top edge
+                                else { (0.0, 1.0) }                  // Default to top edge
+                            };
+                            
+                            // Calculate angle of incidence
+                            let cos_incident = -(dir_x * normal_x + dir_y * normal_y);
+                            let sin_incident = (1.0 - cos_incident * cos_incident).sqrt();
+                            
+                            // Apply Snell's law
+                            let sin_refracted = (N_WATER / N_AIR) * sin_incident;
+                            
+                            // Check for total internal reflection
+                            if sin_refracted <= 1.0 {
+                                let cos_refracted = (1.0 - sin_refracted * sin_refracted).sqrt();
+                                
+                                // Calculate refracted direction
+                                let ratio = N_WATER / N_AIR;
+                                let refracted_x = ratio * dir_x + (ratio * cos_incident - cos_refracted) * normal_x;
+                                let refracted_y = ratio * dir_y + (ratio * cos_incident - cos_refracted) * normal_y;
+                                
+                                // Apply refraction and speed up (light speeds up in air)
+                                let refracted_speed = speed * 1.33; // Restore original speed
+                                ray.vx = refracted_x * refracted_speed;
+                                ray.vy = refracted_y * refracted_speed;
+                            } else {
+                                // Total internal reflection - bounce back into water
+                                // Reflect across the normal
+                                let reflect_x = dir_x - 2.0 * (dir_x * normal_x) * normal_x;
+                                let reflect_y = dir_y - 2.0 * (dir_y * normal_y) * normal_y;
+                                ray.vx = reflect_x * speed;
+                                ray.vy = reflect_y * speed;
+                                ray.intensity *= 0.95; // Small energy loss on reflection
+                            }
+                        }
+                        // Ray passes through air - no collision
+                        continue;
+                    },
+                    TileType::Water => {
+                        // Check if ray is entering water from air by looking at previous position
+                        let prev_x = ray.x - ray.vx * dt;
+                        let prev_y = ray.y - ray.vy * dt;
+                        let prev_tile_x = (prev_x / TILE_SIZE_PIXELS).floor() as usize;
+                        let prev_tile_y = (prev_y / TILE_SIZE_PIXELS).floor() as usize;
+                        
+                        let entering_water = if let Some(prev_tile) = self.tile_map.get_tile(prev_tile_x, prev_tile_y) {
+                            prev_tile.tile_type != TileType::Water
+                        } else {
+                            true // Coming from outside bounds, consider as entering
+                        };
+                        
+                        if entering_water {
+                            // Apply refraction using Snell's law
+                            // n1 * sin(θ1) = n2 * sin(θ2)
+                            // Where n1 = 1.0 (air), n2 = 1.33 (water)
+                            const N_AIR: f64 = 1.0;
+                            const N_WATER: f64 = 1.33;
+                            
+                            // Calculate the normal to the surface at entry point
+                            // For simplicity, assume surface normal depends on entry direction
+                            let speed = (ray.vx * ray.vx + ray.vy * ray.vy).sqrt();
+                            let dir_x = ray.vx / speed;
+                            let dir_y = ray.vy / speed;
+                            
+                            // Determine surface normal based on which edge was actually crossed
+                            let (normal_x, normal_y) = {
+                                // Calculate which tile boundaries were crossed
+                                let curr_tile_x = (ray.x / TILE_SIZE_PIXELS).floor() as i32;
+                                let curr_tile_y = (ray.y / TILE_SIZE_PIXELS).floor() as i32;
+                                let prev_tile_x = (prev_x / TILE_SIZE_PIXELS).floor() as i32;
+                                let prev_tile_y = (prev_y / TILE_SIZE_PIXELS).floor() as i32;
+                                
+                                let dx = curr_tile_x - prev_tile_x;
+                                let dy = curr_tile_y - prev_tile_y;
+                                
+                                // Determine normal based on which boundary was crossed
+                                if dx != 0 && dy != 0 {
+                                    // Diagonal crossing - use the dominant direction
+                                    if dx.abs() > dy.abs() {
+                                        if dx > 0 { (-1.0, 0.0) } else { (1.0, 0.0) }
+                                    } else {
+                                        if dy > 0 { (0.0, -1.0) } else { (0.0, 1.0) }
+                                    }
+                                } else if dx != 0 {
+                                    // Horizontal crossing
+                                    if dx > 0 { (-1.0, 0.0) } else { (1.0, 0.0) }
+                                } else if dy != 0 {
+                                    // Vertical crossing
+                                    if dy > 0 { (0.0, -1.0) } else { (0.0, 1.0) }
+                                } else {
+                                    // No crossing detected, use ray direction to infer normal
+                                    if dir_x.abs() > dir_y.abs() {
+                                        if dir_x > 0.0 { (-1.0, 0.0) } else { (1.0, 0.0) }
+                                    } else {
+                                        if dir_y > 0.0 { (0.0, -1.0) } else { (0.0, 1.0) }
+                                    }
+                                }
+                            };
+                            
+                            // Calculate angle of incidence
+                            let cos_incident = -(dir_x * normal_x + dir_y * normal_y);
+                            let sin_incident = (1.0 - cos_incident * cos_incident).sqrt();
+                            
+                            // Apply Snell's law
+                            let sin_refracted = (N_AIR / N_WATER) * sin_incident;
+                            
+                            // Check for total internal reflection (shouldn't happen going air->water)
+                            if sin_refracted <= 1.0 {
+                                let cos_refracted = (1.0 - sin_refracted * sin_refracted).sqrt();
+                                
+                                // Calculate refracted direction
+                                let ratio = N_AIR / N_WATER;
+                                let refracted_x = ratio * dir_x + (ratio * cos_incident - cos_refracted) * normal_x;
+                                let refracted_y = ratio * dir_y + (ratio * cos_incident - cos_refracted) * normal_y;
+                                
+                                // Apply refraction
+                                let refracted_speed = speed * 0.75; // Light slows down in water
+                                ray.vx = refracted_x * refracted_speed;
+                                ray.vy = refracted_y * refracted_speed;
+                            }
+                        }
+                        
+                        // Apply absorption
+                        ray.intensity *= 1.0 - 0.02 * dt; // Less energy loss per step in water
+                        
+                        // Remove ray if intensity too low
+                        if ray.intensity < 0.1 {
+                            rays_to_remove.push(i);
+                        }
+                    },
+                    TileType::Dirt | TileType::Stone | TileType::Foliage => {
+                        // Solid tiles always reflect light at random direction
+                        let angle = random() * 2.0 * std::f64::consts::PI;
+                        let speed = (ray.vx * ray.vx + ray.vy * ray.vy).sqrt();
+                        ray.vx = speed * angle.cos();
+                        ray.vy = speed * angle.sin();
+                        ray.intensity *= 0.9; // Retain 90% intensity on reflection
+                        
+                        // Remove if too weak
+                        if ray.intensity < 0.1 {
+                            rays_to_remove.push(i);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Remove rays in reverse order to maintain indices
+        for &i in rays_to_remove.iter().rev() {
+            self.light_rays.remove(i);
+        }
     }
     
     // Get compact representation for rendering
@@ -428,7 +761,17 @@ impl GameState {
         let tile_map_json = serde_json::to_string(&self.tile_map)
             .unwrap_or_else(|_| "null".to_string());
         
-        format!("{{\"promisers\":[{}],\"tile_map\":{}}}", data.join(","), tile_map_json)
+        // Serialize light rays
+        let mut light_ray_data = Vec::new();
+        for ray in &self.light_rays {
+            light_ray_data.push(format!(
+                "{{\"x\":{:.2},\"y\":{:.2},\"vx\":{:.2},\"vy\":{:.2},\"intensity\":{:.2}}}",
+                ray.x, ray.y, ray.vx, ray.vy, ray.intensity
+            ));
+        }
+        
+        format!("{{\"promisers\":[{}],\"tile_map\":{},\"light_rays\":[{}]}}", 
+                data.join(","), tile_map_json, light_ray_data.join(","))
     }
     
     #[wasm_bindgen(getter)]
