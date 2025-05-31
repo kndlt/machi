@@ -649,17 +649,39 @@ impl GameState {
                             let dir_x = ray.vx / speed;
                             let dir_y = ray.vy / speed;
                             
-                            // Determine surface normal based on which edge we're entering from
+                            // Determine surface normal based on which edge was actually crossed
                             let (normal_x, normal_y) = {
-                                let rel_x = (ray.x / TILE_SIZE_PIXELS) - tile_x as f64;
-                                let rel_y = (ray.y / TILE_SIZE_PIXELS) - tile_y as f64;
+                                // Calculate which tile boundaries were crossed
+                                let curr_tile_x = (ray.x / TILE_SIZE_PIXELS).floor() as i32;
+                                let curr_tile_y = (ray.y / TILE_SIZE_PIXELS).floor() as i32;
+                                let prev_tile_x = (prev_x / TILE_SIZE_PIXELS).floor() as i32;
+                                let prev_tile_y = (prev_y / TILE_SIZE_PIXELS).floor() as i32;
                                 
-                                // Determine which edge of the tile we're closest to
-                                if rel_x < 0.1 { (-1.0, 0.0) }       // Left edge
-                                else if rel_x > 0.9 { (1.0, 0.0) }   // Right edge  
-                                else if rel_y < 0.1 { (0.0, -1.0) }  // Bottom edge
-                                else if rel_y > 0.9 { (0.0, 1.0) }   // Top edge
-                                else { (0.0, 1.0) }                  // Default to top edge
+                                let dx = curr_tile_x - prev_tile_x;
+                                let dy = curr_tile_y - prev_tile_y;
+                                
+                                // Determine normal based on which boundary was crossed
+                                if dx != 0 && dy != 0 {
+                                    // Diagonal crossing - use the dominant direction
+                                    if dx.abs() > dy.abs() {
+                                        if dx > 0 { (-1.0, 0.0) } else { (1.0, 0.0) }
+                                    } else {
+                                        if dy > 0 { (0.0, -1.0) } else { (0.0, 1.0) }
+                                    }
+                                } else if dx != 0 {
+                                    // Horizontal crossing
+                                    if dx > 0 { (-1.0, 0.0) } else { (1.0, 0.0) }
+                                } else if dy != 0 {
+                                    // Vertical crossing
+                                    if dy > 0 { (0.0, -1.0) } else { (0.0, 1.0) }
+                                } else {
+                                    // No crossing detected, use ray direction to infer normal
+                                    if dir_x.abs() > dir_y.abs() {
+                                        if dir_x > 0.0 { (-1.0, 0.0) } else { (1.0, 0.0) }
+                                    } else {
+                                        if dir_y > 0.0 { (0.0, -1.0) } else { (0.0, 1.0) }
+                                    }
+                                }
                             };
                             
                             // Calculate angle of incidence
