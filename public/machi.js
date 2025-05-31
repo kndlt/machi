@@ -68,6 +68,10 @@ class Game {
         this.currentTileMap = null; // Store current tile map data for comparison
         this.tileGraphics = new Map(); // Store tile graphics for hover effects
         
+        // Light ray rendering
+        this.lightRayContainer = null; // Container for light ray rendering
+        this.lightRayGraphics = null; // Graphics object for rendering all light rays
+        
         // Tile selection UI
         this.tileSelectionUI = null; // Container for tile selection panel
         this.selectedTileType = 'Dirt'; // Currently selected tile type
@@ -187,6 +191,14 @@ class Game {
         // Create container for promisers (in world space)
         this.container = new window.PIXI.Container();
         this.worldContainer.addChild(this.container);
+        
+        // Create container for light rays (in world space)
+        this.lightRayContainer = new window.PIXI.Container();
+        this.worldContainer.addChild(this.lightRayContainer);
+        
+        // Create graphics object for efficient light ray rendering
+        this.lightRayGraphics = new window.PIXI.Graphics();
+        this.lightRayContainer.addChild(this.lightRayGraphics);
         
         // Create container for UI elements (thought bubbles, etc.) - in screen space, not affected by camera
         this.uiContainer = new window.PIXI.Container();
@@ -1210,6 +1222,42 @@ class Game {
         }
     }
     
+    renderLightRays(lightRays) {
+        // Clear previous light ray graphics
+        this.lightRayGraphics.clear();
+        
+        if (!lightRays || lightRays.length === 0) {
+            return;
+        }
+        
+        // Debug logging (remove in production)
+        if (lightRays.length > 0) {
+            console.log(`✨ Rendering ${lightRays.length} light rays`);
+        }
+        
+        // Render each light ray as a small glowing particle
+        for (const ray of lightRays) {
+            // Calculate alpha based on intensity (0.1 to 1.0)
+            const alpha = Math.max(0.1, Math.min(1.0, ray.intensity));
+            
+            // Calculate particle size based on intensity (1 to 4 pixels)
+            const size = Math.max(1, Math.min(4, ray.intensity * 3));
+            
+            // Use a warm white/yellow color for light rays
+            const lightColor = 0xFFFF99; // Warm light color
+            
+            // Draw the light particle
+            this.lightRayGraphics.circle(ray.x, -ray.y, size);
+            this.lightRayGraphics.fill({ color: lightColor, alpha: alpha });
+            
+            // Add a subtle glow effect for brighter rays
+            if (ray.intensity > 0.5) {
+                this.lightRayGraphics.circle(ray.x, -ray.y, size + 1);
+                this.lightRayGraphics.fill({ color: lightColor, alpha: alpha * 0.3 });
+            }
+        }
+    }
+    
     updateRender(gameState, timestamp) {
         // Draw tile map if present (only once or when changed)
         if (gameState.tile_map && !this.tileMapCreated) {
@@ -1275,6 +1323,9 @@ class Game {
                 this.removeThoughtBubble(id);
             }
         }
+        
+        // Render light rays
+        this.renderLightRays(gameState.light_rays || []);
     }
     
     drawTileMap(tileMap) {

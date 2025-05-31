@@ -25,6 +25,47 @@ const MIN_FOLIAGE_MOISTURE: u16 = 128; // Minimum moisture needed for foliage gr
 const FOLIAGE_GROWTH_CHANCE: f64 = 1.0; // Chance per simulation step for foliage to grow
 const FOLIAGE_DEATH_MOISTURE: u16 = 64; // Below this moisture, foliage will die
 
+// Light ray constants
+const MAX_LIGHT_RAYS: usize = 10000; // Maximum number of active light rays
+const RAY_SPEED: f64 = 100.0; // Pixels per second
+const RAY_START_EPSILON: f64 = 2.0; // Distance to start ray from boundary
+
+// Light ray structure
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct LightRay {
+    pub x: f64,        // Current position x
+    pub y: f64,        // Current position y  
+    pub vx: f64,       // Velocity x (normalized direction * speed)
+    pub vy: f64,       // Velocity y (normalized direction * speed)
+    pub intensity: f64, // Light intensity (0.0 to 1.0)
+}
+
+impl LightRay {
+    pub fn new(start_x: f64, start_y: f64, direction_x: f64, direction_y: f64) -> Self {
+        // Normalize direction and apply speed
+        let length = (direction_x * direction_x + direction_y * direction_y).sqrt();
+        let norm_x = if length > 0.0 { direction_x / length } else { 0.0 };
+        let norm_y = if length > 0.0 { direction_y / length } else { 1.0 };
+        
+        LightRay {
+            x: start_x, // Use the provided position directly (epsilon already applied)
+            y: start_y,
+            vx: norm_x * RAY_SPEED,
+            vy: norm_y * RAY_SPEED,
+            intensity: 1.0,
+        }
+    }
+    
+    pub fn update(&mut self, dt: f64) {
+        self.x += self.vx * dt;
+        self.y += self.vy * dt;
+    }
+    
+    pub fn is_out_of_bounds(&self, world_width: f64, world_height: f64) -> bool {
+        self.x < 0.0 || self.x >= world_width || self.y < 0.0 || self.y >= world_height
+    }
+}
+
 // Promiser entity that moves randomly on a 2D plane
 #[wasm_bindgen]
 #[derive(Clone)]
@@ -292,6 +333,7 @@ pub struct GameState {
     last_update: f64,
     tick_count: u64,
     tile_map: TileMap, // Add tile map to game state
+    light_rays: Vec<LightRay>, // Light rays for rendering
 }
 
 #[wasm_bindgen]
@@ -320,6 +362,7 @@ impl GameState {
             last_update: 0.0,
             tick_count: 0,
             tile_map: TileMap::new(tile_width, tile_height),
+            light_rays: Vec::new(),
         };
         
         // Create initial promisers
@@ -396,13 +439,168 @@ impl GameState {
         if self.tick_count % 6 == 0 {
             self.simulate_water();
         }
-        
-        // Internal timing for foliage simulation (every 60 ticks ≈ 1 second at 60fps)
+         // Internal timing for foliage simulation (every 60 ticks ≈ 1 second at 60fps)
         if self.tick_count % 60 == 0 {
             self.simulate_foliage();
         }
         
+        // Update light rays every tick (for smooth movement)
+        self.update_light_rays(dt);
+        
+        // Generate new light rays (maintain 10000 rays)
+        if self.tick_count % 6 == 0 { // Generate new rays every 6 ticks (≈ 100ms at 60fps)
+            self.generate_light_rays();
+        }
+
         self.tick_count = self.tick_count.wrapping_add(1);
+    }
+
+    /// Generate new light rays from boundary locations to maintain target count
+    fn generate_light_rays(&mut self) {
+        let current_count = self.light_rays.len();
+        if current_count >= MAX_LIGHT_RAYS {
+            return;
+        }
+        
+        let rays_to_generate = (MAX_LIGHT_RAYS - current_count).min(100); // Generate at most 100 per call
+        
+        for _ in 0..rays_to_generate {
+            // Choose a random boundary location to spawn from
+            let boundary_side = (random() * 4.0) as u32; // 0=top, 1=right, 2=bottom, 3=left
+            
+            let (start_x, start_y, direction_x, direction_y) = match boundary_side {
+                0 => {
+                    // Top boundary - spawn from top, pointing down
+                    let x = random() * self.world_width;
+                    let y = self.world_height;
+                    (x, y, 0.0, -1.0)
+                },
+                1 => {
+                    // Right boundary - spawn from right, pointing left
+                    let x = self.world_width;
+                    let y = random() * self.world_height;
+                    (x, y, -1.0, 0.0)
+                },
+                2 => {
+                    // Bottom boundary - spawn from bottom, pointing up
+                    let x = random() * self.world_width;
+                    let y = 0.0;
+                    (x, y, 0.0, 1.0)
+                },
+                _ => {
+                    // Left boundary - spawn from left, pointing right
+                    let x = 0.0;
+                    let y = random() * self.world_height;
+                    (x, y, 1.0, 0.0)
+                }
+            };
+            
+            // Move spawn position slightly inward from boundary
+            let actual_start_x = start_x + direction_x * RAY_START_EPSILON;
+            let actual_start_y = start_y + direction_y * RAY_START_EPSILON;
+            
+            // Check if spawn position is valid (within bounds and not in solid tile)
+            if !self.is_valid_spawn_position(actual_start_x, actual_start_y) {
+                continue; // Skip this ray and try again
+            }
+            
+            // Add full 360 degree randomness to direction
+            let angle_variation = random() * 2.0 * 3.14159; // 0 to 2π radians (360 degrees)
+            let cos_var = angle_variation.cos();
+            let sin_var = angle_variation.sin();
+            
+            let final_dx = cos_var;
+            let final_dy = sin_var;
+            
+            let light_ray = LightRay::new(actual_start_x, actual_start_y, final_dx, final_dy);
+            self.light_rays.push(light_ray);
+        }
+    }
+
+    /// Check if a position is valid for spawning a light ray
+    /// Returns false if position is out of bounds or inside a solid tile
+    fn is_valid_spawn_position(&self, x: f64, y: f64) -> bool {
+        // Check bounds
+        if x < 0.0 || x >= self.world_width || y < 0.0 || y >= self.world_height {
+            return false;
+        }
+        
+        // Check tile at position
+        let tile_x = (x / TILE_SIZE_PIXELS).floor() as usize;
+        let tile_y = (y / TILE_SIZE_PIXELS).floor() as usize;
+        
+        if let Some(tile) = self.tile_map.get_tile(tile_x, tile_y) {
+            match tile.tile_type {
+                TileType::Air | TileType::Water => true, // Allow spawning in air and water
+                TileType::Dirt | TileType::Stone | TileType::Foliage => false, // Don't spawn in solid tiles
+            }
+        } else {
+            false // No tile data available, consider invalid
+        }
+    }
+
+    /// Update light ray positions and handle collisions with tiles
+    fn update_light_rays(&mut self, dt: f64) {
+        let mut rays_to_remove = Vec::new();
+        
+        for (i, ray) in self.light_rays.iter_mut().enumerate() {
+            // Update ray position
+            ray.update(dt);
+            
+            // Check if ray is out of bounds
+            if ray.is_out_of_bounds(self.world_width, self.world_height) {
+                rays_to_remove.push(i);
+                continue;
+            }
+            
+            // Check for tile collision
+            let tile_x = (ray.x / TILE_SIZE_PIXELS).floor() as usize;
+            let tile_y = (ray.y / TILE_SIZE_PIXELS).floor() as usize;
+            
+            if let Some(tile) = self.tile_map.get_tile(tile_x, tile_y) {
+                match tile.tile_type {
+                    TileType::Air => {
+                        // Ray passes through air - no collision
+                        continue;
+                    },
+                    TileType::Water => {
+                        // Water partially absorbs and slows down light
+                        ray.intensity *= 0.95; // Small energy loss
+                        ray.vx *= 0.9; // Slow down
+                        ray.vy *= 0.9;
+                        
+                        // Remove ray if intensity too low
+                        if ray.intensity < 0.1 {
+                            rays_to_remove.push(i);
+                        }
+                    },
+                    TileType::Dirt | TileType::Stone | TileType::Foliage => {
+                        // Solid tiles absorb or reflect light
+                        if random() < 0.3 {
+                            // 30% chance to reflect with random direction
+                            let angle = random() * 2.0 * std::f64::consts::PI;
+                            let speed = (ray.vx * ray.vx + ray.vy * ray.vy).sqrt() * 0.7; // Reduce speed on reflection
+                            ray.vx = speed * angle.cos();
+                            ray.vy = speed * angle.sin();
+                            ray.intensity *= 0.5; // Lose energy on reflection
+                            
+                            // Remove if too weak
+                            if ray.intensity < 0.1 {
+                                rays_to_remove.push(i);
+                            }
+                        } else {
+                            // 70% chance to be absorbed
+                            rays_to_remove.push(i);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Remove rays in reverse order to maintain indices
+        for &i in rays_to_remove.iter().rev() {
+            self.light_rays.remove(i);
+        }
     }
     
     // Get compact representation for rendering
@@ -428,7 +626,17 @@ impl GameState {
         let tile_map_json = serde_json::to_string(&self.tile_map)
             .unwrap_or_else(|_| "null".to_string());
         
-        format!("{{\"promisers\":[{}],\"tile_map\":{}}}", data.join(","), tile_map_json)
+        // Serialize light rays
+        let mut light_ray_data = Vec::new();
+        for ray in &self.light_rays {
+            light_ray_data.push(format!(
+                "{{\"x\":{:.2},\"y\":{:.2},\"vx\":{:.2},\"vy\":{:.2},\"intensity\":{:.2}}}",
+                ray.x, ray.y, ray.vx, ray.vy, ray.intensity
+            ));
+        }
+        
+        format!("{{\"promisers\":[{}],\"tile_map\":{},\"light_rays\":[{}]}}", 
+                data.join(","), tile_map_json, light_ray_data.join(","))
     }
     
     #[wasm_bindgen(getter)]
