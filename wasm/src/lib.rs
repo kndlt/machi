@@ -716,21 +716,15 @@ impl GameState {
                         }
                     },
                     TileType::Dirt | TileType::Stone | TileType::Foliage => {
-                        // Solid tiles absorb or reflect light
-                        if random() < 0.3 {
-                            // 30% chance to reflect with random direction
-                            let angle = random() * 2.0 * std::f64::consts::PI;
-                            let speed = (ray.vx * ray.vx + ray.vy * ray.vy).sqrt() * 0.7; // Reduce speed on reflection
-                            ray.vx = speed * angle.cos();
-                            ray.vy = speed * angle.sin();
-                            ray.intensity *= 0.5; // Lose energy on reflection
-                            
-                            // Remove if too weak
-                            if ray.intensity < 0.1 {
-                                rays_to_remove.push(i);
-                            }
-                        } else {
-                            // 70% chance to be absorbed
+                        // Solid tiles always reflect light at random direction
+                        let angle = random() * 2.0 * std::f64::consts::PI;
+                        let speed = (ray.vx * ray.vx + ray.vy * ray.vy).sqrt();
+                        ray.vx = speed * angle.cos();
+                        ray.vy = speed * angle.sin();
+                        ray.intensity *= 0.9; // Retain 90% intensity on reflection
+                        
+                        // Remove if too weak
+                        if ray.intensity < 0.1 {
                             rays_to_remove.push(i);
                         }
                     }
