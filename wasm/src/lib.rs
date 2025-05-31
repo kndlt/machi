@@ -554,14 +554,139 @@ impl GameState {
             if let Some(tile) = self.tile_map.get_tile(tile_x, tile_y) {
                 match tile.tile_type {
                     TileType::Air => {
+                        // Check if ray is exiting water into air
+                        let prev_x = ray.x - ray.vx * dt;
+                        let prev_y = ray.y - ray.vy * dt;
+                        let prev_tile_x = (prev_x / TILE_SIZE_PIXELS).floor() as usize;
+                        let prev_tile_y = (prev_y / TILE_SIZE_PIXELS).floor() as usize;
+                        
+                        let exiting_water = if let Some(prev_tile) = self.tile_map.get_tile(prev_tile_x, prev_tile_y) {
+                            prev_tile.tile_type == TileType::Water
+                        } else {
+                            false
+                        };
+                        
+                        if exiting_water {
+                            // Apply refraction when exiting water to air
+                            // n1 * sin(θ1) = n2 * sin(θ2)
+                            // Where n1 = 1.33 (water), n2 = 1.0 (air)
+                            const N_WATER: f64 = 1.33;
+                            const N_AIR: f64 = 1.0;
+                            
+                            let speed = (ray.vx * ray.vx + ray.vy * ray.vy).sqrt();
+                            let dir_x = ray.vx / speed;
+                            let dir_y = ray.vy / speed;
+                            
+                            // Determine surface normal at exit point
+                            let (normal_x, normal_y) = {
+                                let rel_x = (prev_x / TILE_SIZE_PIXELS) - prev_tile_x as f64;
+                                let rel_y = (prev_y / TILE_SIZE_PIXELS) - prev_tile_y as f64;
+                                
+                                // Determine which edge of the water tile we're exiting from
+                                if rel_x < 0.1 { (-1.0, 0.0) }       // Left edge
+                                else if rel_x > 0.9 { (1.0, 0.0) }   // Right edge  
+                                else if rel_y < 0.1 { (0.0, -1.0) }  // Bottom edge
+                                else if rel_y > 0.9 { (0.0, 1.0) }   // Top edge
+                                else { (0.0, 1.0) }                  // Default to top edge
+                            };
+                            
+                            // Calculate angle of incidence
+                            let cos_incident = -(dir_x * normal_x + dir_y * normal_y);
+                            let sin_incident = (1.0 - cos_incident * cos_incident).sqrt();
+                            
+                            // Apply Snell's law
+                            let sin_refracted = (N_WATER / N_AIR) * sin_incident;
+                            
+                            // Check for total internal reflection
+                            if sin_refracted <= 1.0 {
+                                let cos_refracted = (1.0 - sin_refracted * sin_refracted).sqrt();
+                                
+                                // Calculate refracted direction
+                                let ratio = N_WATER / N_AIR;
+                                let refracted_x = ratio * dir_x + (ratio * cos_incident - cos_refracted) * normal_x;
+                                let refracted_y = ratio * dir_y + (ratio * cos_incident - cos_refracted) * normal_y;
+                                
+                                // Apply refraction and speed up (light speeds up in air)
+                                let refracted_speed = speed * 1.33; // Restore original speed
+                                ray.vx = refracted_x * refracted_speed;
+                                ray.vy = refracted_y * refracted_speed;
+                            } else {
+                                // Total internal reflection - bounce back into water
+                                // Reflect across the normal
+                                let reflect_x = dir_x - 2.0 * (dir_x * normal_x) * normal_x;
+                                let reflect_y = dir_y - 2.0 * (dir_y * normal_y) * normal_y;
+                                ray.vx = reflect_x * speed;
+                                ray.vy = reflect_y * speed;
+                                ray.intensity *= 0.95; // Small energy loss on reflection
+                            }
+                        }
                         // Ray passes through air - no collision
                         continue;
                     },
                     TileType::Water => {
-                        // Water partially absorbs and slows down light
-                        ray.intensity *= 0.95; // Small energy loss
-                        ray.vx *= 0.9; // Slow down
-                        ray.vy *= 0.9;
+                        // Check if ray is entering water from air by looking at previous position
+                        let prev_x = ray.x - ray.vx * dt;
+                        let prev_y = ray.y - ray.vy * dt;
+                        let prev_tile_x = (prev_x / TILE_SIZE_PIXELS).floor() as usize;
+                        let prev_tile_y = (prev_y / TILE_SIZE_PIXELS).floor() as usize;
+                        
+                        let entering_water = if let Some(prev_tile) = self.tile_map.get_tile(prev_tile_x, prev_tile_y) {
+                            prev_tile.tile_type != TileType::Water
+                        } else {
+                            true // Coming from outside bounds, consider as entering
+                        };
+                        
+                        if entering_water {
+                            // Apply refraction using Snell's law
+                            // n1 * sin(θ1) = n2 * sin(θ2)
+                            // Where n1 = 1.0 (air), n2 = 1.33 (water)
+                            const N_AIR: f64 = 1.0;
+                            const N_WATER: f64 = 1.33;
+                            
+                            // Calculate the normal to the surface at entry point
+                            // For simplicity, assume surface normal depends on entry direction
+                            let speed = (ray.vx * ray.vx + ray.vy * ray.vy).sqrt();
+                            let dir_x = ray.vx / speed;
+                            let dir_y = ray.vy / speed;
+                            
+                            // Determine surface normal based on which edge we're entering from
+                            let (normal_x, normal_y) = {
+                                let rel_x = (ray.x / TILE_SIZE_PIXELS) - tile_x as f64;
+                                let rel_y = (ray.y / TILE_SIZE_PIXELS) - tile_y as f64;
+                                
+                                // Determine which edge of the tile we're closest to
+                                if rel_x < 0.1 { (-1.0, 0.0) }       // Left edge
+                                else if rel_x > 0.9 { (1.0, 0.0) }   // Right edge  
+                                else if rel_y < 0.1 { (0.0, -1.0) }  // Bottom edge
+                                else if rel_y > 0.9 { (0.0, 1.0) }   // Top edge
+                                else { (0.0, 1.0) }                  // Default to top edge
+                            };
+                            
+                            // Calculate angle of incidence
+                            let cos_incident = -(dir_x * normal_x + dir_y * normal_y);
+                            let sin_incident = (1.0 - cos_incident * cos_incident).sqrt();
+                            
+                            // Apply Snell's law
+                            let sin_refracted = (N_AIR / N_WATER) * sin_incident;
+                            
+                            // Check for total internal reflection (shouldn't happen going air->water)
+                            if sin_refracted <= 1.0 {
+                                let cos_refracted = (1.0 - sin_refracted * sin_refracted).sqrt();
+                                
+                                // Calculate refracted direction
+                                let ratio = N_AIR / N_WATER;
+                                let refracted_x = ratio * dir_x + (ratio * cos_incident - cos_refracted) * normal_x;
+                                let refracted_y = ratio * dir_y + (ratio * cos_incident - cos_refracted) * normal_y;
+                                
+                                // Apply refraction
+                                let refracted_speed = speed * 0.75; // Light slows down in water
+                                ray.vx = refracted_x * refracted_speed;
+                                ray.vy = refracted_y * refracted_speed;
+                            }
+                        }
+                        
+                        // Apply absorption
+                        ray.intensity *= 0.98; // Less energy loss per step in water
                         
                         // Remove ray if intensity too low
                         if ray.intensity < 0.1 {
