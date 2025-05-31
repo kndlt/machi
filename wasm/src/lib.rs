@@ -686,7 +686,7 @@ impl GameState {
                         }
                         
                         // Apply absorption
-                        ray.intensity *= 0.98; // Less energy loss per step in water
+                        ray.intensity *= 1.0 - 0.02 * dt; // Less energy loss per step in water
                         
                         // Remove ray if intensity too low
                         if ray.intensity < 0.1 {

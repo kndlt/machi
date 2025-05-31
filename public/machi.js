@@ -1235,25 +1235,44 @@ class Game {
             console.log(`✨ Rendering ${lightRays.length} light rays`);
         }
         
-        // Render each light ray as a small glowing particle
+        // Render each light ray as a tiny line oriented in its direction
         for (const ray of lightRays) {
             // Calculate alpha based on intensity (0.1 to 1.0)
             const alpha = Math.max(0.1, Math.min(1.0, ray.intensity));
             
-            // Calculate particle size based on intensity (1 to 4 pixels)
-            const size = Math.max(1, Math.min(4, ray.intensity * 3));
+            // Calculate line length based on intensity (2 to 8 pixels)
+            const lineLength = Math.max(2, Math.min(8, ray.intensity * 6));
+            
+            // Calculate line thickness based on intensity (0.5 to 2 pixels)
+            const lineWidth = Math.max(0.5, Math.min(2, ray.intensity * 2));
             
             // Use a warm white/yellow color for light rays
             const lightColor = 0xFFFF99; // Warm light color
             
-            // Draw the light particle
-            this.lightRayGraphics.circle(ray.x, -ray.y, size);
-            this.lightRayGraphics.fill({ color: lightColor, alpha: alpha });
-            
-            // Add a subtle glow effect for brighter rays
-            if (ray.intensity > 0.5) {
-                this.lightRayGraphics.circle(ray.x, -ray.y, size + 1);
-                this.lightRayGraphics.fill({ color: lightColor, alpha: alpha * 0.3 });
+            // Calculate the direction of the light ray
+            const speed = Math.sqrt(ray.vx * ray.vx + ray.vy * ray.vy);
+            if (speed > 0) {
+                const dirX = ray.vx / speed;
+                const dirY = ray.vy / speed;
+                
+                // Calculate start and end points of the line
+                const halfLength = lineLength / 2;
+                const startX = ray.x - dirX * halfLength;
+                const startY = -ray.y + dirY * halfLength; // Note: Y is inverted for screen coordinates
+                const endX = ray.x + dirX * halfLength;
+                const endY = -ray.y - dirY * halfLength;
+                
+                // Draw the light ray as a line
+                this.lightRayGraphics.moveTo(startX, startY);
+                this.lightRayGraphics.lineTo(endX, endY);
+                this.lightRayGraphics.stroke({ color: lightColor, width: lineWidth, alpha: alpha });
+                
+                // Add a subtle glow effect for brighter rays
+                if (ray.intensity > 0.5) {
+                    this.lightRayGraphics.moveTo(startX, startY);
+                    this.lightRayGraphics.lineTo(endX, endY);
+                    this.lightRayGraphics.stroke({ color: lightColor, width: lineWidth + 1, alpha: alpha * 0.3 });
+                }
             }
         }
     }
