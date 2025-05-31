@@ -491,8 +491,8 @@ impl GameState {
                 (0.0, perimeter_position - 2.0 * self.world_width - self.world_height)
             };
             
-            // Generate a truly random direction (360 degrees) for realistic light behavior
-            let angle = random() * 2.0 * std::f64::consts::PI;
+            // 30 degrees from up vector
+            let angle = -60.0_f64.to_radians();
             let direction_x = angle.cos();
             let direction_y = angle.sin();
             
