@@ -139,19 +139,39 @@ function PalettePanel() {
                     onClick={() => { editorStore.activeMatter.value = p.matter; }}
                     title={p.label}
                     style={{
-                        width: 28,
-                        height: 28,
-                        backgroundColor: p.color,
-                        border: active === p.matter
-                            ? "2px solid var(--gray-12)"
-                            : "2px solid transparent",
-                        borderRadius: 4,
+                        width: 40,
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        gap: 2,
+                        background: "none",
+                        border: "none",
+                        padding: 0,
                         cursor: "pointer",
-                        outline: active === p.matter
-                            ? "1px solid var(--gray-1)"
-                            : "none",
                     }}
-                />
+                >
+                    <div
+                        style={{
+                            width: 28,
+                            height: 28,
+                            backgroundColor: p.color,
+                            border: active === p.matter
+                                ? "2px solid var(--gray-12)"
+                                : "2px solid transparent",
+                            borderRadius: 4,
+                            outline: active === p.matter
+                                ? "1px solid var(--gray-1)"
+                                : "none",
+                        }}
+                    />
+                    <span style={{
+                        fontSize: 9,
+                        color: active === p.matter ? "var(--gray-12)" : "var(--gray-9)",
+                        lineHeight: 1,
+                    }}>
+                        {p.label}
+                    </span>
+                </button>
             ))}
         </div>
     );
