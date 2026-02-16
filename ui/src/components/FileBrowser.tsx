@@ -11,7 +11,7 @@ export function FileBrowser({ onClose }: { onClose: () => void }) {
 
     return (
         <div
-            style={{
+            css={{
                 position: "fixed",
                 inset: 0,
                 zIndex: 1000,
@@ -23,7 +23,7 @@ export function FileBrowser({ onClose }: { onClose: () => void }) {
             {/* Backdrop */}
             <div
                 onClick={onClose}
-                style={{
+                css={{
                     position: "absolute",
                     inset: 0,
                     backgroundColor: "rgba(0,0,0,0.6)",
@@ -32,7 +32,7 @@ export function FileBrowser({ onClose }: { onClose: () => void }) {
 
             {/* Panel */}
             <div
-                style={{
+                css={{
                     position: "relative",
                     width: 420,
                     maxHeight: "70vh",
@@ -46,7 +46,7 @@ export function FileBrowser({ onClose }: { onClose: () => void }) {
             >
                 {/* Header */}
                 <div
-                    style={{
+                    css={{
                         display: "flex",
                         justifyContent: "space-between",
                         alignItems: "center",
@@ -54,7 +54,7 @@ export function FileBrowser({ onClose }: { onClose: () => void }) {
                         borderBottom: "1px solid var(--gray-a5)",
                     }}
                 >
-                    <span style={{ fontWeight: 600, fontSize: 13 }}>
+                    <span css={{ fontWeight: 600, fontSize: 13 }}>
                         Saved Maps
                     </span>
                     <button onClick={onClose}>
@@ -63,16 +63,16 @@ export function FileBrowser({ onClose }: { onClose: () => void }) {
                 </div>
 
                 {/* List */}
-                <div style={{ flex: 1, overflowY: "auto", padding: "8px 0" }}>
+                <div css={{ flex: 1, overflowY: "auto", padding: "8px 0" }}>
                     {files.length === 0 && (
-                        <div style={{ padding: "24px 16px", color: "var(--gray-8)", fontSize: 12, textAlign: "center" }}>
+                        <div css={{ padding: "24px 16px", color: "var(--gray-8)", fontSize: 12, textAlign: "center" }}>
                             No saved maps yet. Use Save As to create one.
                         </div>
                     )}
                     {files.map((f) => (
                         <div
                             key={f.id}
-                            style={{
+                            css={{
                                 display: "flex",
                                 alignItems: "center",
                                 gap: 8,
@@ -86,9 +86,9 @@ export function FileBrowser({ onClose }: { onClose: () => void }) {
                                 onClose();
                             }}
                         >
-                            <div style={{ flex: 1, minWidth: 0 }}>
+                            <div css={{ flex: 1, minWidth: 0 }}>
                                 <div
-                                    style={{
+                                    css={{
                                         fontSize: 12,
                                         fontWeight: 500,
                                         overflow: "hidden",
@@ -98,13 +98,13 @@ export function FileBrowser({ onClose }: { onClose: () => void }) {
                                 >
                                     {f.name}
                                     {f.id === currentId && (
-                                        <span style={{ color: "var(--gray-8)", fontWeight: 400 }}>
+                                        <span css={{ color: "var(--gray-8)", fontWeight: 400 }}>
                                             {" "}
                                             (current)
                                         </span>
                                     )}
                                 </div>
-                                <div style={{ fontSize: 10, color: "var(--gray-8)", marginTop: 2 }}>
+                                <div css={{ fontSize: 10, color: "var(--gray-8)", marginTop: 2 }}>
                                     {f.width}×{f.height} · {new Date(f.updatedAt).toLocaleString()}
                                 </div>
                             </div>
@@ -119,7 +119,7 @@ export function FileBrowser({ onClose }: { onClose: () => void }) {
                                     }
                                 }}
                                 onBlur={() => setConfirmDelete(null)}
-                                style={{
+                                css={{
                                     color: confirmDelete === f.id ? "var(--red-9)" : "var(--gray-9)",
                                     fontSize: 12,
                                     padding: "4px 6px",
@@ -135,7 +135,7 @@ export function FileBrowser({ onClose }: { onClose: () => void }) {
 
                 {/* Footer */}
                 <div
-                    style={{
+                    css={{
                         display: "flex",
                         gap: 8,
                         padding: "10px 16px",
@@ -148,11 +148,11 @@ export function FileBrowser({ onClose }: { onClose: () => void }) {
                             tileMapStore.newFile();
                             onClose();
                         }}
-                        style={btnStyle}
+                        css={btncss}
                     >
                         New Map
                     </button>
-                    <button onClick={onClose} style={btnStyle}>
+                    <button onClick={onClose} css={btnStyle}>
                         Cancel
                     </button>
                 </div>

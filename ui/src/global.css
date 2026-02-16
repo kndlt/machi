@@ -15,7 +15,7 @@ html, body {
   height: 100%;
 }
 
-/* button {
+button {
   background: none;
   border: none;
   cursor: pointer;
@@ -28,4 +28,4 @@ html, body {
 input {
   color: inherit;
   font: inherit;
-} */
+}
