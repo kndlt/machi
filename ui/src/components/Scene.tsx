@@ -43,6 +43,7 @@ export function Scene() {
         let gridThick: Graphics;
         let tileGraphics: Graphics[] = [];
         let resizeObserverRef: ResizeObserver | null = null;
+        let unsubscribe: (() => void) | null = null;
         let destroyed = false;
 
         const init = async () => {
@@ -94,6 +95,12 @@ export function Scene() {
             renderTiles();
             setupInteraction();
             startCameraLoop();
+
+            // Re-render when the tileMap signal changes (e.g. New, Open, undo/redo)
+            unsubscribe = tileMapStore.tileMap.subscribe((tm) => {
+                if (!tm) return;
+                renderTiles();
+            });
 
             // Resize renderer buffer when the container changes size
             const resizeObserver = new ResizeObserver((entries) => {
@@ -510,6 +517,7 @@ export function Scene() {
 
         return () => {
             destroyed = true;
+            unsubscribe?.();
             resizeObserverRef?.disconnect();
             worldContainerRef.current = null;
             tileContainerRef.current = null;

@@ -44,7 +44,7 @@ export default function App() {
       }}
     >
       <MenuBar />
-      <div style={{ display: "flex", flexDirection: "row", flex: 1, minHeight: 0 }}>
+      <div css={{ display: "flex", flexDirection: "row", flex: 1, minHeight: 0 }}>
         <Toolbar />
         <Scene />
         <Inspector />
