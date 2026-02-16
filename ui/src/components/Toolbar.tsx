@@ -1,8 +1,6 @@
 import { useSignals } from "@preact/signals-react/runtime";
-import { Pencil1Icon, EraserIcon, OpacityIcon, FileIcon, DownloadIcon, FilePlusIcon } from "@radix-ui/react-icons";
+import { Pencil1Icon, EraserIcon, OpacityIcon } from "@radix-ui/react-icons";
 import { editorStore, type Tool } from "../states/editorStore";
-import { tileMapStore } from "../states/tileMapStore";
-import { autosave, saveFile } from "../states/persistence";
 
 const TOOLS: { id: Tool; icon: React.ReactNode; label: string }[] = [
     { id: "pencil", icon: <Pencil1Icon width={18} height={18} />, label: "Pencil (P)" },
@@ -38,43 +36,6 @@ export function Toolbar() {
                     }}
                 />
             ))}
-
-            {/* Divider */}
-            <div style={{ borderTop: "1px solid var(--gray-a5)", margin: "4px 6px" }} />
-
-            {/* File actions */}
-            <ToolButton
-                icon={<FileIcon width={18} height={18} />}
-                label="Open (⌘O)"
-                active={false}
-                onClick={() => {
-                    editorStore.activeDialog.value = "fileBrowser";
-                }}
-            />
-            <ToolButton
-                icon={<DownloadIcon width={18} height={18} />}
-                label="Save (⌘S)"
-                active={false}
-                onClick={() => {
-                    if (tileMapStore.currentFileId.value) {
-                        const tm = tileMapStore.tileMap.value;
-                        if (tm) {
-                            autosave(tm);
-                            saveFile(tm, tileMapStore.currentFileId.value!);
-                        }
-                    } else {
-                        editorStore.activeDialog.value = "saveAs";
-                    }
-                }}
-            />
-            <ToolButton
-                icon={<FilePlusIcon width={18} height={18} />}
-                label="Save As (⌘⇧S)"
-                active={false}
-                onClick={() => {
-                    editorStore.activeDialog.value = "saveAs";
-                }}
-            />
         </div>
     );
 }

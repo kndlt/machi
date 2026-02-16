@@ -24,6 +24,17 @@ function createTileMapStore() {
   const undoCount = signal(0);
   const redoCount = signal(0);
 
+  const makeDefaultTiles = (width: number, height: number): Array<Tile | null> => {
+    const tiles: Array<Tile | null> = new Array(width * height).fill(null);
+    const dirtRows = 4;
+    for (let y = height - dirtRows; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        tiles[y * width + x] = { matter: "dirt" };
+      }
+    }
+    return tiles;
+  };
+
   const initTileMapStore = () => {
     console.log("Initializing tile map store...");
 
@@ -35,12 +46,11 @@ function createTileMapStore() {
     } else {
       const width = 80;
       const height = 60;
-      const numTiles = width * height;
       const initialTileMap: TileMap = {
         name: "Untitled",
         width,
         height,
-        tiles: new Array(numTiles).fill(null),
+        tiles: makeDefaultTiles(width, height),
       };
       tileMap.value = initialTileMap;
       currentFileId.value = null;
@@ -161,7 +171,7 @@ function createTileMapStore() {
       name: "Untitled",
       width,
       height,
-      tiles: new Array(width * height).fill(null),
+      tiles: makeDefaultTiles(width, height),
     };
     currentFileId.value = null;
     undoStack.length = 0;

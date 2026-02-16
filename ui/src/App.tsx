@@ -5,6 +5,7 @@ import { Scene } from "./components/Scene";
 import { Toolbar } from "./components/Toolbar";
 import { Inspector } from "./components/Inspector";
 import { StatusBar } from "./components/StatusBar";
+import { MenuBar } from "./components/MenuBar";
 import { FileBrowser, SaveAsDialog } from "./components/FileBrowser";
 import { tileMapStore } from "./states/tileMapStore";
 import { editorStore } from "./states/editorStore";
@@ -42,6 +43,7 @@ export default function App() {
         overflow: "hidden",
       }}
     >
+      <MenuBar />
       <div style={{ display: "flex", flexDirection: "row", flex: 1, minHeight: 0 }}>
         <Toolbar />
         <Scene />
