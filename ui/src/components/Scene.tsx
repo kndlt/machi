@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Application, Graphics, Container, FederatedPointerEvent, RenderTexture, Sprite } from "pixi.js";
+import { Application, Graphics, Container, FederatedPointerEvent, RenderTexture, Sprite, Texture, BufferImageSource } from "pixi.js";
 import { tileMapStore } from "../states/tileMapStore";
 import { editorStore } from "../states/editorStore";
 import { autosave, saveFile } from "../states/persistence";
@@ -40,10 +40,19 @@ export function Scene() {
         let gridContainer: Container;
         let gridNormal: Graphics;
         let gridThick: Graphics;
-        // Back buffer: single RenderTexture + Sprite instead of per-tile Graphics
-        let tileTexture: RenderTexture | null = null;
-        let tileSprite: Sprite | null = null;
-        const stampGraphics = new Graphics(); // reusable stamp for drawing into texture
+        // Back buffer: pixel-buffer texture for full redraws, RenderTexture overlay for incremental
+        let pixelBuf: Uint8Array | null = null;
+        let bufSource: BufferImageSource | null = null;
+        let bufTexture: Texture | null = null;
+        let bufSprite: Sprite | null = null;
+        // Overlay RenderTexture for per-frame dirty-tile stamps (avoids full re-upload)
+        let overlayTexture: RenderTexture | null = null;
+        let overlaySprite: Sprite | null = null;
+        const stampGraphics = new Graphics(); // reusable stamp for drawing into overlay
+        // Dirty-tile tracking: accumulate during events, flush once per frame
+        const dirtyTiles = new Set<number>();
+        let needsFullRedraw = false;
+        let suppressNextRedraw = false; // skip full redraw on paint commit
         let resizeObserverRef: ResizeObserver | null = null;
         let unsubscribe: (() => void) | null = null;
         let onKeyDown: ((e: KeyboardEvent) => void) | null = null;
@@ -105,7 +114,11 @@ export function Scene() {
             // Re-render when the tileMap signal changes (e.g. New, Open, undo/redo)
             unsubscribe = tileMapStore.tileMap.subscribe((tm) => {
                 if (!tm) return;
-                renderTiles();
+                if (suppressNextRedraw) {
+                    suppressNextRedraw = false;
+                    return;
+                }
+                needsFullRedraw = true;
             });
 
             // Resize renderer buffer when the container changes size
@@ -122,6 +135,29 @@ export function Scene() {
             resizeObserverRef = resizeObserver;
         };
 
+        /** Convert a hex colour (0xRRGGBB) into [R, G, B] bytes. */
+        const hexToRGB = (hex: number): [number, number, number] => [
+            (hex >> 16) & 0xFF, (hex >> 8) & 0xFF, hex & 0xFF,
+        ];
+
+        /** Write one tile's colour into the pixel buffer at (tileX, tileY). */
+        const stampTilePixel = (buf: Uint8Array, mapW: number, tileX: number, tileY: number, color: number) => {
+            const [r, g, b] = hexToRGB(color);
+            const stride = mapW * TILE_SIZE * 4; // bytes per row of pixels
+            const baseY = tileY * TILE_SIZE;
+            const baseX = tileX * TILE_SIZE;
+            for (let py = 0; py < TILE_SIZE; py++) {
+                const rowOffset = (baseY + py) * stride + baseX * 4;
+                for (let px = 0; px < TILE_SIZE; px++) {
+                    const i = rowOffset + px * 4;
+                    buf[i]     = r;
+                    buf[i + 1] = g;
+                    buf[i + 2] = b;
+                    buf[i + 3] = 255;
+                }
+            }
+        };
+
         const renderTiles = () => {
             const tileMap = tileMapStore.tileMap.value;
             if (!tileMap || !tileContainer || !app?.renderer) return;
@@ -129,29 +165,42 @@ export function Scene() {
             const texW = tileMap.width * TILE_SIZE;
             const texH = tileMap.height * TILE_SIZE;
 
-            // (Re)create texture & sprite when map dimensions change
-            if (!tileTexture || tileTexture.width !== texW || tileTexture.height !== texH) {
-                tileTexture?.destroy(true);
-                tileSprite?.destroy();
-                tileTexture = RenderTexture.create({ width: texW, height: texH });
-                tileSprite = new Sprite(tileTexture);
+            // (Re)create pixel-buffer texture when map dimensions change
+            if (!pixelBuf || !bufSource || !bufTexture || !bufSprite
+                || bufSource.width !== texW || bufSource.height !== texH) {
+                bufSprite?.destroy();
+                bufTexture?.destroy(true);
+                overlaySprite?.destroy();
+                overlayTexture?.destroy(true);
+
+                pixelBuf = new Uint8Array(texW * texH * 4);
+                bufSource = new BufferImageSource({ resource: pixelBuf, width: texW, height: texH });
+                bufTexture = new Texture({ source: bufSource });
+                bufSprite = new Sprite(bufTexture);
+
+                overlayTexture = RenderTexture.create({ width: texW, height: texH });
+                overlaySprite = new Sprite(overlayTexture);
+
                 tileContainer.removeChildren();
-                tileContainer.addChild(tileSprite);
+                tileContainer.addChild(bufSprite);    // base layer: pixel buffer
+                tileContainer.addChild(overlaySprite); // overlay: incremental stamps
             }
 
-            // Draw every tile into the texture in one pass
-            const g = stampGraphics;
-            g.clear();
+            // Write every tile into the pixel buffer (CPU — fast, no GPU round-trips)
             for (let y = 0; y < tileMap.height; y++) {
                 for (let x = 0; x < tileMap.width; x++) {
                     const index = y * tileMap.width + x;
                     const tile = tileMap.tiles[index];
                     const color = tile ? (TILE_COLORS[tile.matter] ?? 0xFF00FF) : TILE_COLORS.air;
-                    g.rect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-                    g.fill(color);
+                    stampTilePixel(pixelBuf, tileMap.width, x, y, color);
                 }
             }
-            app.renderer.render({ container: g, target: tileTexture, clear: true });
+            bufSource.update(); // single GPU upload
+
+            // Clear the overlay (all incremental stamps are baked into the base)
+            if (overlayTexture) {
+                app.renderer.render({ container: new Container(), target: overlayTexture, clear: true });
+            }
 
             // Render grid lines in a separate container (two layers: normal + thick)
             gridContainer.removeChildren();
@@ -179,19 +228,29 @@ export function Scene() {
             gridContainer.addChild(gridThick);
         };
 
-        /** Repaint a single tile into the back-buffer texture (no scene-graph churn). */
+        /** Mark a single tile as dirty — it will be flushed to the back buffer next frame. */
         const updateTileGraphic = (index: number) => {
+            dirtyTiles.add(index);
+        };
+
+        /** Flush all pending dirty tiles into the overlay RenderTexture (called once per frame). */
+        const flushDirtyTiles = () => {
             const tileMap = tileMapStore.tileMap.value;
-            if (!tileMap || !tileTexture || !app?.renderer) return;
-            const tile = tileMap.tiles[index];
-            const color = tile ? (TILE_COLORS[tile.matter] ?? 0xFF00FF) : TILE_COLORS.air;
-            const x = index % tileMap.width;
-            const y = Math.floor(index / tileMap.width);
+            if (!tileMap || !overlayTexture || !app?.renderer) return;
+            if (dirtyTiles.size === 0) return;
+
             const g = stampGraphics;
             g.clear();
-            g.rect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-            g.fill(color);
-            app.renderer.render({ container: g, target: tileTexture, clear: false });
+            for (const index of dirtyTiles) {
+                const tile = tileMap.tiles[index];
+                const color = tile ? (TILE_COLORS[tile.matter] ?? 0xFF00FF) : TILE_COLORS.air;
+                const x = index % tileMap.width;
+                const y = Math.floor(index / tileMap.width);
+                g.rect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                g.fill(color);
+            }
+            app.renderer.render({ container: g, target: overlayTexture, clear: false });
+            dirtyTiles.clear();
         };
 
         /** Bresenham line from (x0,y0) to (x1,y1) — returns all tile coords along the path. */
@@ -359,6 +418,8 @@ export function Scene() {
             const stopPan = () => {
                 // If we were painting, commit the stroke to undo history
                 if (isPaintingRef.current && strokeSnapshotRef.current) {
+                    // Suppress the full redraw — the texture is already current
+                    suppressNextRedraw = true;
                     // Reassign signal so persistence / React subscribers update
                     const tm = tileMapStore.tileMap.value;
                     if (tm) tileMapStore.tileMap.value = { ...tm };
@@ -550,6 +611,15 @@ export function Scene() {
                 const camera = cameraRef.current;
                 if (!worldContainerRef.current) return;
 
+                // Flush pending tile updates into the back-buffer texture
+                if (needsFullRedraw) {
+                    needsFullRedraw = false;
+                    dirtyTiles.clear();
+                    renderTiles();
+                } else {
+                    flushDirtyTiles();
+                }
+
                 const dx = camera.targetX - camera.x;
                 const dy = camera.targetY - camera.y;
                 const dz = camera.targetZoom - camera.zoom;
@@ -598,8 +668,10 @@ export function Scene() {
                 if (onWheel) appRef.current.canvas.removeEventListener("wheel", onWheel);
                 if (onContextMenu) appRef.current.canvas.removeEventListener("contextmenu", onContextMenu);
             }
-            tileTexture?.destroy(true);
-            tileSprite?.destroy();
+            bufSprite?.destroy();
+            bufTexture?.destroy(true);
+            overlaySprite?.destroy();
+            overlayTexture?.destroy(true);
             stampGraphics.destroy();
             worldContainerRef.current = null;
             tileContainerRef.current = null;
