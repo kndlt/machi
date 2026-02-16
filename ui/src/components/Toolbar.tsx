@@ -15,8 +15,8 @@ export function Toolbar() {
         <div
             style={{
                 width: 52,
-                backgroundColor: "#1e1e1e",
-                borderRight: "1px solid #3e3e3e",
+                backgroundColor: "var(--color-panel)",
+                borderRight: "1px solid var(--gray-a5)",
                 display: "flex",
                 flexDirection: "column",
                 padding: "8px 4px",
@@ -56,8 +56,8 @@ function ToolButton({
             style={{
                 width: 44,
                 height: 44,
-                backgroundColor: active ? "#094771" : "#2d2d2d",
-                border: active ? "1px solid #0e639c" : "1px solid #3e3e3e",
+                backgroundColor: active ? "var(--accent-a4)" : "var(--gray-a3)",
+                border: active ? "1px solid var(--accent-a7)" : "1px solid var(--gray-a5)",
                 borderRadius: 4,
                 fontSize: 20,
                 cursor: "pointer",
@@ -67,10 +67,10 @@ function ToolButton({
                 transition: "background-color 0.1s",
             }}
             onMouseEnter={(e) => {
-                if (!active) e.currentTarget.style.backgroundColor = "#383838";
+                if (!active) e.currentTarget.style.backgroundColor = "var(--gray-a4)";
             }}
             onMouseLeave={(e) => {
-                if (!active) e.currentTarget.style.backgroundColor = "#2d2d2d";
+                if (!active) e.currentTarget.style.backgroundColor = "var(--gray-a3)";
             }}
         >
             {icon}

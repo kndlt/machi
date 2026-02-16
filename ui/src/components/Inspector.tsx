@@ -12,8 +12,8 @@ export function Inspector() {
         <div
             style={{
                 width: 240,
-                backgroundColor: "#1e1e1e",
-                borderLeft: "1px solid #3e3e3e",
+                backgroundColor: "var(--color-panel)",
+                borderLeft: "1px solid var(--gray-a5)",
                 padding: 12,
                 display: "flex",
                 flexDirection: "column",
@@ -59,7 +59,7 @@ export function Inspector() {
 
             {/* Controls hint */}
             <Section title="CONTROLS">
-                <div style={{ color: "#888", fontSize: 11, lineHeight: 1.6 }}>
+                <div style={{ color: "var(--gray-9)", fontSize: 11, lineHeight: 1.6 }}>
                     <div>Space + Drag → Pan</div>
                     <div>Scroll → Zoom</div>
                     <div>P → Pencil</div>
@@ -80,7 +80,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
         <div>
             <div
                 style={{
-                    color: "#888",
+                    color: "var(--gray-9)",
                     fontSize: 10,
                     fontWeight: 700,
                     letterSpacing: "0.05em",
@@ -99,8 +99,8 @@ function InfoGrid({ rows }: { rows: [string, string][] }) {
         <div style={{ display: "grid", gridTemplateColumns: "70px 1fr", gap: "2px 8px", fontSize: 11 }}>
             {rows.map(([label, value]) => (
                 <div key={label} style={{ display: "contents" }}>
-                    <span style={{ color: "#888" }}>{label}</span>
-                    <span style={{ color: "#ccc" }}>{value}</span>
+                    <span style={{ color: "var(--gray-9)" }}>{label}</span>
+                    <span style={{ color: "var(--gray-12)" }}>{value}</span>
                 </div>
             ))}
         </div>
@@ -108,7 +108,7 @@ function InfoGrid({ rows }: { rows: [string, string][] }) {
 }
 
 function Placeholder({ text }: { text: string }) {
-    return <div style={{ color: "#555", fontSize: 11 }}>{text}</div>;
+    return <div style={{ color: "var(--gray-8)", fontSize: 11 }}>{text}</div>;
 }
 
 function MiniMap() {
@@ -162,7 +162,7 @@ function MiniMap() {
                 width: w,
                 height: h,
                 imageRendering: "pixelated",
-                border: "1px solid #3e3e3e",
+                border: "1px solid var(--gray-a5)",
                 borderRadius: 2,
             }}
         />

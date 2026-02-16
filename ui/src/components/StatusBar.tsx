@@ -10,14 +10,14 @@ export function StatusBar() {
         <div
             style={{
                 height: 24,
-                backgroundColor: "#1e1e1e",
-                borderTop: "1px solid #3e3e3e",
+                backgroundColor: "var(--color-panel)",
+                borderTop: "1px solid var(--gray-a5)",
                 display: "flex",
                 alignItems: "center",
                 padding: "0 12px",
                 gap: 16,
                 fontSize: 11,
-                color: "#888",
+                color: "var(--gray-9)",
                 flexShrink: 0,
             }}
         >

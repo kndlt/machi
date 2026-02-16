@@ -22,6 +22,7 @@ export default function App() {
 
   return (
     <Theme
+      appearance="dark"
       style={{
         width: "100%",
         height: "100%",
