@@ -17,7 +17,6 @@ const TILE_COLORS: Record<string, number> = {
 };
 
 export function Scene() {
-    console.log("[render] Scene");
     const canvasRef = useRef<HTMLDivElement>(null);
     const appRef = useRef<Application | null>(null);
     const worldContainerRef = useRef<Container | null>(null);
@@ -44,6 +43,10 @@ export function Scene() {
         let tileGraphics: Graphics[] = [];
         let resizeObserverRef: ResizeObserver | null = null;
         let unsubscribe: (() => void) | null = null;
+        let onKeyDown: ((e: KeyboardEvent) => void) | null = null;
+        let onKeyUp: ((e: KeyboardEvent) => void) | null = null;
+        let onWheel: ((e: WheelEvent) => void) | null = null;
+        let onContextMenu: ((e: Event) => void) | null = null;
         let destroyed = false;
 
         const init = async () => {
@@ -129,7 +132,7 @@ export function Scene() {
                     const index = y * tileMap.width + x;
                     const tile = tileMap.tiles[index];
                     const graphics = new Graphics();
-                    const color = tile ? TILE_COLORS[tile.matter] : TILE_COLORS.air;
+                    const color = tile ? (TILE_COLORS[tile.matter] ?? 0xFF00FF) : TILE_COLORS.air;
 
                     graphics.rect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
                     graphics.fill(color);
@@ -172,7 +175,7 @@ export function Scene() {
             const g = tileGraphics[index];
             if (!g) return;
             const tile = tileMap.tiles[index];
-            const color = tile ? TILE_COLORS[tile.matter] : TILE_COLORS.air;
+            const color = tile ? (TILE_COLORS[tile.matter] ?? 0xFF00FF) : TILE_COLORS.air;
             const x = index % tileMap.width;
             const y = Math.floor(index / tileMap.width);
             g.clear();
@@ -217,9 +220,10 @@ export function Scene() {
 
             const visited = new Set<number>();
             const queue: [number, number][] = [[startX, startY]];
+            let head = 0;
 
-            while (queue.length > 0) {
-                const [x, y] = queue.shift()!;
+            while (head < queue.length) {
+                const [x, y] = queue[head++];
                 const index = y * tileMap.width + x;
                 if (x < 0 || x >= tileMap.width || y < 0 || y >= tileMap.height) continue;
                 if (visited.has(index)) continue;
@@ -249,7 +253,6 @@ export function Scene() {
 
             if (tool === "bucket") {
                 floodFill(tileX, tileY);
-                renderTiles();
             } else if (tool === "pencil" || tool === "eraser") {
                 if (index !== lastPaintedTileRef.current) {
                     const matter = editorStore.activeMatter.value;
@@ -295,7 +298,8 @@ export function Scene() {
             app.stage.hitArea = app.screen;
 
             // Prevent context menu on right-click so we can use it for panning
-            app.canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+            onContextMenu = (e) => e.preventDefault();
+            app.canvas.addEventListener("contextmenu", onContextMenu);
 
             app.stage.on("pointerdown", (e: FederatedPointerEvent) => {
                 if (spaceKeyRef.current || e.button === 1 || e.button === 2) {
@@ -359,7 +363,7 @@ export function Scene() {
             app.stage.on("pointerupoutside", stopPan);
 
             // Two-finger scroll → pan, pinch-to-zoom (Ctrl+wheel) → zoom around cursor
-            app.canvas.addEventListener("wheel", (e: WheelEvent) => {
+            onWheel = (e: WheelEvent) => {
                 e.preventDefault();
                 const camera = cameraRef.current;
                 if (e.ctrlKey || e.metaKey) {
@@ -385,10 +389,11 @@ export function Scene() {
                     camera.targetX += e.deltaX / camera.zoom;
                     camera.targetY += e.deltaY / camera.zoom;
                 }
-            });
+            };
+            app.canvas.addEventListener("wheel", onWheel, { passive: false });
 
             // Keyboard shortcuts
-            const onKeyDown = (e: KeyboardEvent) => {
+            onKeyDown = (e: KeyboardEvent) => {
                 if (e.code === "Space" && !spaceKeyRef.current) {
                     e.preventDefault();
                     spaceKeyRef.current = true;
@@ -490,7 +495,7 @@ export function Scene() {
                     camera.targetZoom = newZoom;
                 }
             };
-            const onKeyUp = (e: KeyboardEvent) => {
+            onKeyUp = (e: KeyboardEvent) => {
                 if (e.code === "Space") {
                     e.preventDefault();
                     spaceKeyRef.current = false;
@@ -534,9 +539,12 @@ export function Scene() {
                 const camera = cameraRef.current;
                 if (!worldContainerRef.current) return;
 
-                camera.x += (camera.targetX - camera.x) * 0.15;
-                camera.y += (camera.targetY - camera.y) * 0.15;
-                camera.zoom += (camera.targetZoom - camera.zoom) * 0.15;
+                const dx = camera.targetX - camera.x;
+                const dy = camera.targetY - camera.y;
+                const dz = camera.targetZoom - camera.zoom;
+                camera.x += Math.abs(dx) < 0.01 ? dx : dx * 0.15;
+                camera.y += Math.abs(dy) < 0.01 ? dy : dy * 0.15;
+                camera.zoom += Math.abs(dz) < 0.0001 ? dz : dz * 0.15;
 
                 clampCamera();
 
@@ -573,6 +581,12 @@ export function Scene() {
             destroyed = true;
             unsubscribe?.();
             resizeObserverRef?.disconnect();
+            if (onKeyDown) window.removeEventListener("keydown", onKeyDown);
+            if (onKeyUp) window.removeEventListener("keyup", onKeyUp);
+            if (appRef.current?.canvas) {
+                if (onWheel) appRef.current.canvas.removeEventListener("wheel", onWheel);
+                if (onContextMenu) appRef.current.canvas.removeEventListener("contextmenu", onContextMenu);
+            }
             worldContainerRef.current = null;
             tileContainerRef.current = null;
             appRef.current?.destroy(true);
