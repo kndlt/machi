@@ -324,10 +324,25 @@ export function Scene() {
                 if (e.code === "KeyP") editorStore.activeTool.value = "pencil";
                 if (e.code === "KeyE") editorStore.activeTool.value = "eraser";
                 if (e.code === "KeyG") editorStore.activeTool.value = "bucket";
-                // Cmd+0 → reset zoom to 100%
+                // Cmd+0 → fit entire map in canvas
                 if (e.code === "Digit0" && (e.metaKey || e.ctrlKey)) {
                     e.preventDefault();
-                    cameraRef.current.targetZoom = 1;
+                    const camera = cameraRef.current;
+                    const canvas = canvasRef.current;
+                    const tm = tileMapStore.tileMap.value;
+                    if (!canvas || !tm) return;
+                    const rect = canvas.getBoundingClientRect();
+                    const mapW = tm.width * TILE_SIZE;
+                    const mapH = tm.height * TILE_SIZE;
+                    const padding = 16; // px breathing room
+                    const zoom = Math.min(
+                        (rect.width - padding * 2) / mapW,
+                        (rect.height - padding * 2) / mapH,
+                    );
+                    camera.targetZoom = Math.max(0.125, Math.min(4, zoom));
+                    // Center the map
+                    camera.targetX = (mapW - rect.width / camera.targetZoom) / 2;
+                    camera.targetY = (mapH - rect.height / camera.targetZoom) / 2;
                 }
                 // Cmd+= / Cmd+- → snap to next/prev Photoshop-style zoom stop
                 if ((e.code === "Equal" || e.code === "Minus") && (e.metaKey || e.ctrlKey)) {
