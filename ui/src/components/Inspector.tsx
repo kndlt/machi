@@ -115,6 +115,7 @@ function MiniMap() {
     useSignals();
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const tileMap = tileMapStore.tileMap.value;
+    const viewport = editorStore.viewport.value;
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -122,6 +123,7 @@ function MiniMap() {
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
 
+        // Draw tiles
         for (let y = 0; y < tileMap.height; y++) {
             for (let x = 0; x < tileMap.width; x++) {
                 const tile = tileMap.tiles[y * tileMap.width + x];
@@ -129,7 +131,20 @@ function MiniMap() {
                 ctx.fillRect(x, y, 1, 1);
             }
         }
-    }, [tileMap]);
+
+        // Draw viewport rectangle
+        if (viewport) {
+            const TILE_SIZE = 32;
+            const vx = viewport.x / TILE_SIZE;
+            const vy = viewport.y / TILE_SIZE;
+            const vw = viewport.w / TILE_SIZE;
+            const vh = viewport.h / TILE_SIZE;
+
+            ctx.strokeStyle = "red";
+            ctx.lineWidth = 0.5;
+            ctx.strokeRect(vx, vy, vw, vh);
+        }
+    }, [tileMap, viewport]);
 
     if (!tileMap) return null;
 
