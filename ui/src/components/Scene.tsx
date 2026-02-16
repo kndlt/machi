@@ -5,6 +5,7 @@ import { editorStore } from "../states/editorStore";
 import type { Tile } from "../models/Tile";
 
 const TILE_SIZE = 32;
+const RENDER_SCALE = 2;
 const TILE_COLORS = {
     dirt: 0x8B4513,
     air: 0x87CEEB,
@@ -36,16 +37,27 @@ export function Scene() {
 
         const init = async () => {
             app = new Application();
+            const el = canvasRef.current!;
             await app.init({
-                resizeTo: canvasRef.current!,
+                width: el.clientWidth * RENDER_SCALE,
+                height: el.clientHeight * RENDER_SCALE,
                 backgroundColor: 0x2d2d2d,
                 antialias: false,
+                resolution: 1,          // we manage the scaling ourselves
+                autoDensity: false,
             });
 
             if (destroyed) { app.destroy(true); return; }
 
-            canvasRef.current!.appendChild(app.canvas);
+            // Size the canvas element to fill the container via CSS, keeping the 2x backing buffer
+            app.canvas.style.width = "100%";
+            app.canvas.style.height = "100%";
+
+            el.appendChild(app.canvas);
             appRef.current = app;
+
+            // The stage itself works in 2x space, so scale everything up
+            app.stage.scale.set(RENDER_SCALE);
 
             worldContainer = new Container();
             app.stage.addChild(worldContainer);
