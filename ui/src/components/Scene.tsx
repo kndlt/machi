@@ -5,7 +5,7 @@ import { editorStore } from "../states/editorStore";
 import { autosave, saveFile } from "../states/persistence";
 import type { Tile } from "../models/Tile";
 
-const TILE_SIZE = 32;
+const TILE_SIZE = 8;
 const RENDER_SCALE = 2;
 const ZOOM_STOPS = [
     0.125, 1/6, 0.25, 1/3, 0.5, 2/3, 1, 2, 3, 4,

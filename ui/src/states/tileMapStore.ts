@@ -5,6 +5,8 @@ import * as persistence from "./persistence";
 import type { SavedFileEntry } from "./persistence";
 
 const MAX_UNDO = 50;
+const DEFAULT_WIDTH = 80 * 2;
+const DEFAULT_HEIGHT = 60 * 2;
 
 type TileSnapshot = Array<Tile | null>;
 
@@ -44,8 +46,8 @@ function createTileMapStore() {
       tileMap.value = autosaved;
       currentFileId.value = null;
     } else {
-      const width = 80;
-      const height = 60;
+      const width = DEFAULT_WIDTH;
+      const height = DEFAULT_HEIGHT;
       const initialTileMap: TileMap = {
         name: "Untitled",
         width,
@@ -165,8 +167,8 @@ function createTileMapStore() {
 
   /** Create a fresh blank map, discarding the current one. */
   const newFile = () => {
-    const width = 80;
-    const height = 60;
+    const width = DEFAULT_WIDTH;
+    const height = DEFAULT_HEIGHT;
     tileMap.value = {
       name: "Untitled",
       width,
