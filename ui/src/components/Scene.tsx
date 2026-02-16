@@ -41,6 +41,7 @@ export function Scene() {
         let gridNormal: Graphics;
         let gridThick: Graphics;
         let tileGraphics: Graphics[] = [];
+        let resizeObserverRef: ResizeObserver | null = null;
         let destroyed = false;
 
         const init = async () => {
@@ -92,6 +93,19 @@ export function Scene() {
             renderTiles();
             setupInteraction();
             startCameraLoop();
+
+            // Resize renderer buffer when the container changes size
+            const resizeObserver = new ResizeObserver((entries) => {
+                const entry = entries[0];
+                if (!entry || !app?.renderer) return;
+                const w = entry.contentRect.width;
+                const h = entry.contentRect.height;
+                if (w > 0 && h > 0) {
+                    app.renderer.resize(w * RENDER_SCALE, h * RENDER_SCALE);
+                }
+            });
+            resizeObserver.observe(el);
+            resizeObserverRef = resizeObserver;
         };
 
         const renderTiles = () => {
@@ -496,6 +510,7 @@ export function Scene() {
 
         return () => {
             destroyed = true;
+            resizeObserverRef?.disconnect();
             worldContainerRef.current = null;
             tileContainerRef.current = null;
             appRef.current?.destroy(true);
