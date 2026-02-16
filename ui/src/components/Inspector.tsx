@@ -144,10 +144,6 @@ function PalettePanel() {
                         flexDirection: "column",
                         alignItems: "center",
                         gap: 2,
-                        background: "none",
-                        border: "none",
-                        padding: 0,
-                        cursor: "pointer",
                     }}
                 >
                     <div

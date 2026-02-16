@@ -62,7 +62,6 @@ function ToolButton({
                 border: active ? "1px solid var(--accent-a7)" : "1px solid var(--gray-a5)",
                 borderRadius: 4,
                 color: active ? "var(--gray-12)" : "var(--gray-11)",
-                cursor: "pointer",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",

@@ -54,10 +54,10 @@ export function FileBrowser({ onClose }: { onClose: () => void }) {
                         borderBottom: "1px solid var(--gray-a5)",
                     }}
                 >
-                    <span style={{ fontWeight: 600, fontSize: 13, color: "var(--gray-12)" }}>
+                    <span style={{ fontWeight: 600, fontSize: 13 }}>
                         Saved Maps
                     </span>
-                    <button onClick={onClose} style={closeBtnStyle}>
+                    <button onClick={onClose}>
                         <Cross2Icon />
                     </button>
                 </div>
@@ -91,7 +91,6 @@ export function FileBrowser({ onClose }: { onClose: () => void }) {
                                     style={{
                                         fontSize: 12,
                                         fontWeight: 500,
-                                        color: "var(--gray-12)",
                                         overflow: "hidden",
                                         textOverflow: "ellipsis",
                                         whiteSpace: "nowrap",
@@ -121,8 +120,10 @@ export function FileBrowser({ onClose }: { onClose: () => void }) {
                                 }}
                                 onBlur={() => setConfirmDelete(null)}
                                 style={{
-                                    ...actionBtnStyle,
                                     color: confirmDelete === f.id ? "var(--red-9)" : "var(--gray-9)",
+                                    fontSize: 12,
+                                    padding: "4px 6px",
+                                    flexShrink: 0,
                                 }}
                                 title={confirmDelete === f.id ? "Click again to confirm" : "Delete"}
                             >
@@ -147,11 +148,11 @@ export function FileBrowser({ onClose }: { onClose: () => void }) {
                             tileMapStore.newFile();
                             onClose();
                         }}
-                        style={footerBtnStyle}
+                        style={btnStyle}
                     >
                         New Map
                     </button>
-                    <button onClick={onClose} style={footerBtnStyle}>
+                    <button onClick={onClose} style={btnStyle}>
                         Cancel
                     </button>
                 </div>
@@ -187,7 +188,7 @@ export function SaveAsDialog({ onClose }: { onClose: () => void }) {
         >
             <div
                 onClick={onClose}
-                style={{ position: "absolute", inset: 0, backgroundColor: "rgba(0,0,0,0.6)" }}
+                style={{ position: "absolute", inset: 0 }}
             />
             <div
                 style={{
@@ -202,7 +203,7 @@ export function SaveAsDialog({ onClose }: { onClose: () => void }) {
                     gap: 12,
                 }}
             >
-                <div style={{ fontWeight: 600, fontSize: 13, color: "var(--gray-12)" }}>Save As</div>
+                <div style={{ fontWeight: 600, fontSize: 13 }}>Save As</div>
                 <input
                     autoFocus
                     value={name}
@@ -216,19 +217,18 @@ export function SaveAsDialog({ onClose }: { onClose: () => void }) {
                         padding: "6px 10px",
                         fontSize: 13,
                         backgroundColor: "var(--gray-a3)",
-                        color: "var(--gray-12)",
                         border: "1px solid var(--gray-a5)",
                         borderRadius: 4,
                         outline: "none",
                     }}
                 />
                 <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                    <button onClick={onClose} style={footerBtnStyle}>
+                    <button onClick={onClose} style={btnStyle}>
                         Cancel
                     </button>
                     <button
                         onClick={handleSave}
-                        style={{ ...footerBtnStyle, backgroundColor: "var(--gray-a4)" }}
+                        style={{ ...btnStyle, backgroundColor: "var(--gray-a4)" }}
                     >
                         Save
                     </button>
@@ -240,31 +240,10 @@ export function SaveAsDialog({ onClose }: { onClose: () => void }) {
 
 // ─── Shared styles ──────────────────────────────────────────────────────────
 
-const closeBtnStyle: React.CSSProperties = {
-    background: "none",
-    border: "none",
-    color: "var(--gray-9)",
-    cursor: "pointer",
-    fontSize: 14,
-    padding: 4,
-};
-
-const actionBtnStyle: React.CSSProperties = {
-    background: "none",
-    border: "none",
-    cursor: "pointer",
-    fontSize: 12,
-    padding: "4px 6px",
-    borderRadius: 4,
-    flexShrink: 0,
-};
-
-const footerBtnStyle: React.CSSProperties = {
-    background: "none",
+const btnStyle: React.CSSProperties = {
     border: "1px solid var(--gray-a5)",
     borderRadius: 4,
     color: "var(--gray-11)",
-    cursor: "pointer",
     fontSize: 12,
     padding: "5px 12px",
 };
