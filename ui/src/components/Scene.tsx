@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { Application, Graphics, Container, FederatedPointerEvent } from "pixi.js";
 import { tileMapStore } from "../states/tileMapStore";
 import { editorStore } from "../states/editorStore";
+import { autosave, saveFile } from "../states/persistence";
 import type { Tile } from "../models/Tile";
 
 const TILE_SIZE = 32;
@@ -333,9 +334,34 @@ export function Scene() {
                     renderTiles();
                 }
                 // Tool hotkeys
-                if (e.code === "KeyP") editorStore.activeTool.value = "pencil";
-                if (e.code === "KeyE") editorStore.activeTool.value = "eraser";
-                if (e.code === "KeyG") editorStore.activeTool.value = "bucket";
+                if (!e.metaKey && !e.ctrlKey) {
+                    if (e.code === "KeyP") editorStore.activeTool.value = "pencil";
+                    if (e.code === "KeyE") editorStore.activeTool.value = "eraser";
+                    if (e.code === "KeyG") editorStore.activeTool.value = "bucket";
+                }
+                // Cmd+S → save (auto-save named, or prompt Save As for unnamed)
+                if (e.code === "KeyS" && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
+                    e.preventDefault();
+                    if (tileMapStore.currentFileId.value) {
+                        const tm = tileMapStore.tileMap.value;
+                        if (tm) {
+                            autosave(tm);
+                            saveFile(tm, tileMapStore.currentFileId.value!);
+                        }
+                    } else {
+                        editorStore.activeDialog.value = "saveAs";
+                    }
+                }
+                // Cmd+Shift+S → Save As
+                if (e.code === "KeyS" && (e.metaKey || e.ctrlKey) && e.shiftKey) {
+                    e.preventDefault();
+                    editorStore.activeDialog.value = "saveAs";
+                }
+                // Cmd+O → Open file browser
+                if (e.code === "KeyO" && (e.metaKey || e.ctrlKey)) {
+                    e.preventDefault();
+                    editorStore.activeDialog.value = "fileBrowser";
+                }
                 // Cmd+0 → fit entire map in canvas
                 if (e.code === "Digit0" && (e.metaKey || e.ctrlKey)) {
                     e.preventDefault();

@@ -67,6 +67,9 @@ export function Inspector() {
                     <div>G → Bucket Fill</div>
                     <div>⌘Z → Undo ({tileMapStore.undoCount.value})</div>
                     <div>⌘⇧Z → Redo ({tileMapStore.redoCount.value})</div>
+                    <div>⌘S → Save</div>
+                    <div>⌘⇧S → Save As</div>
+                    <div>⌘O → Open</div>
                 </div>
             </Section>
         </div>

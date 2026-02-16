@@ -1,5 +1,7 @@
 import { useSignals } from "@preact/signals-react/runtime";
 import { editorStore, type Tool } from "../states/editorStore";
+import { tileMapStore } from "../states/tileMapStore";
+import { autosave, saveFile } from "../states/persistence";
 
 const TOOLS: { id: Tool; icon: string; label: string }[] = [
     { id: "pencil", icon: "✏️", label: "Pencil (P)" },
@@ -34,6 +36,43 @@ export function Toolbar() {
                     }}
                 />
             ))}
+
+            {/* Divider */}
+            <div style={{ borderTop: "1px solid var(--gray-a5)", margin: "4px 6px" }} />
+
+            {/* File actions */}
+            <ToolButton
+                icon="📂"
+                label="Open (⌘O)"
+                active={false}
+                onClick={() => {
+                    editorStore.activeDialog.value = "fileBrowser";
+                }}
+            />
+            <ToolButton
+                icon="💾"
+                label="Save (⌘S)"
+                active={false}
+                onClick={() => {
+                    if (tileMapStore.currentFileId.value) {
+                        const tm = tileMapStore.tileMap.value;
+                        if (tm) {
+                            autosave(tm);
+                            saveFile(tm, tileMapStore.currentFileId.value!);
+                        }
+                    } else {
+                        editorStore.activeDialog.value = "saveAs";
+                    }
+                }}
+            />
+            <ToolButton
+                icon="📄"
+                label="Save As (⌘⇧S)"
+                active={false}
+                onClick={() => {
+                    editorStore.activeDialog.value = "saveAs";
+                }}
+            />
         </div>
     );
 }

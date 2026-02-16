@@ -1,10 +1,13 @@
 import { useSignals } from "@preact/signals-react/runtime";
 import { editorStore } from "../states/editorStore";
+import { tileMapStore } from "../states/tileMapStore";
 
 export function StatusBar() {
     useSignals();
     const zoom = editorStore.zoom.value;
     const hovered = editorStore.hoveredTile.value;
+    const mapName = tileMapStore.tileMap.value?.name ?? "—";
+    const isSaved = tileMapStore.currentFileId.value !== null;
 
     return (
         <div
@@ -21,6 +24,7 @@ export function StatusBar() {
                 flexShrink: 0,
             }}
         >
+            <span>{mapName}{!isSaved && " (unsaved)"}</span>
             <span>Zoom: {Math.round(zoom * 100)}%</span>
             {hovered && <span>Tile: {hovered.x}, {hovered.y}</span>}
         </div>

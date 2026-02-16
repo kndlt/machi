@@ -1,6 +1,8 @@
 import { signal } from "@preact/signals-react";
 import type { TileMap } from "../models/TileMap";
 import type { Tile } from "../models/Tile";
+import * as persistence from "./persistence";
+import type { SavedFileEntry } from "./persistence";
 
 const MAX_UNDO = 50;
 
@@ -8,6 +10,12 @@ type TileSnapshot = Array<Tile | null>;
 
 function createTileMapStore() {
   const tileMap = signal<TileMap | undefined>();
+
+  /** The id of the currently-open named file, or null for unsaved. */
+  const currentFileId = signal<string | null>(null);
+
+  /** Reactive list of saved files for the file browser. */
+  const savedFiles = signal<SavedFileEntry[]>(persistence.listFiles());
 
   // Undo / redo stacks store tile-array snapshots
   const undoStack: TileSnapshot[] = [];
@@ -18,20 +26,31 @@ function createTileMapStore() {
 
   const initTileMapStore = () => {
     console.log("Initializing tile map store...");
-    const width = 80;
-    const height = 60;
-    const numTiles = width * height;
-    const initialTileMap: TileMap = {
-      name: "Test Map",
-      width,
-      height,
-      tiles: new Array(numTiles).fill(null)
-    };
-    tileMap.value = initialTileMap;
+
+    // Try loading autosave first
+    const autosaved = persistence.loadAutosave();
+    if (autosaved) {
+      tileMap.value = autosaved;
+      currentFileId.value = null;
+    } else {
+      const width = 80;
+      const height = 60;
+      const numTiles = width * height;
+      const initialTileMap: TileMap = {
+        name: "Untitled",
+        width,
+        height,
+        tiles: new Array(numTiles).fill(null),
+      };
+      tileMap.value = initialTileMap;
+      currentFileId.value = null;
+    }
+
     undoStack.length = 0;
     redoStack.length = 0;
     undoCount.value = 0;
     redoCount.value = 0;
+    savedFiles.value = persistence.listFiles();
   };
 
   /** Take a snapshot of the current tiles (call before a stroke begins). */
@@ -60,6 +79,17 @@ function createTileMapStore() {
     redoStack.length = 0;
     undoCount.value = undoStack.length;
     redoCount.value = 0;
+
+    // Auto-persist after every stroke
+    const current2 = tileMap.value;
+    if (current2) {
+      persistence.autosave(current2);
+      // If this is a named file, also persist to its slot
+      if (currentFileId.value) {
+        persistence.saveFile(current2, currentFileId.value);
+        savedFiles.value = persistence.listFiles();
+      }
+    }
   };
 
   const undo = () => {
@@ -86,8 +116,78 @@ function createTileMapStore() {
     redoCount.value = redoStack.length;
   };
 
+  // ─── File management ───────────────────────────────────────────────────
+
+  /** Save current map as a new named file (prompts for name externally). */
+  const saveAs = (name: string) => {
+    const tm = tileMap.value;
+    if (!tm) return;
+    tm.name = name;
+    tileMap.value = { ...tm };
+    const entry = persistence.saveFile(tm);
+    currentFileId.value = entry.id;
+    persistence.autosave(tm);
+    savedFiles.value = persistence.listFiles();
+  };
+
+  /** Load a named file by id. */
+  const openFile = (id: string) => {
+    const tm = persistence.loadFile(id);
+    if (!tm) return;
+    tileMap.value = tm;
+    currentFileId.value = id;
+    persistence.autosave(tm);
+    undoStack.length = 0;
+    redoStack.length = 0;
+    undoCount.value = 0;
+    redoCount.value = 0;
+    savedFiles.value = persistence.listFiles();
+  };
+
+  /** Delete a named file. If it's the currently-open file, create a new blank map. */
+  const deleteFileById = (id: string) => {
+    persistence.deleteFile(id);
+    if (currentFileId.value === id) {
+      newFile();
+    }
+    savedFiles.value = persistence.listFiles();
+  };
+
+  /** Create a fresh blank map, discarding the current one. */
+  const newFile = () => {
+    const width = 80;
+    const height = 60;
+    tileMap.value = {
+      name: "Untitled",
+      width,
+      height,
+      tiles: new Array(width * height).fill(null),
+    };
+    currentFileId.value = null;
+    undoStack.length = 0;
+    redoStack.length = 0;
+    undoCount.value = 0;
+    redoCount.value = 0;
+    persistence.autosave(tileMap.value);
+  };
+
+  /** Rename the current map (and re-save if named). */
+  const rename = (name: string) => {
+    const tm = tileMap.value;
+    if (!tm) return;
+    tm.name = name;
+    tileMap.value = { ...tm };
+    persistence.autosave(tm);
+    if (currentFileId.value) {
+      persistence.saveFile(tm, currentFileId.value);
+      savedFiles.value = persistence.listFiles();
+    }
+  };
+
   return {
     tileMap,
+    currentFileId,
+    savedFiles,
     undoCount,
     redoCount,
     initTileMapStore,
@@ -95,6 +195,11 @@ function createTileMapStore() {
     pushUndo,
     undo,
     redo,
+    saveAs,
+    openFile,
+    deleteFileById,
+    newFile,
+    rename,
   };
 }
 

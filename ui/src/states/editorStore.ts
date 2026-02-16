@@ -19,11 +19,15 @@ function createEditorStore() {
   const viewport = signal<Viewport | null>(null);
   const zoom = signal(1);
 
+  /** Which dialog is currently open (null = none). */
+  const activeDialog = signal<"fileBrowser" | "saveAs" | null>(null);
+
   return {
     activeTool,
     hoveredTile,
     viewport,
     zoom,
+    activeDialog,
   };
 }
 

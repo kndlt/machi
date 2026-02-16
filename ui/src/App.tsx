@@ -1,10 +1,13 @@
 import { useEffect } from "react";
 import { Theme } from "@radix-ui/themes";
+import { useSignals } from "@preact/signals-react/runtime";
 import { Scene } from "./components/Scene";
 import { Toolbar } from "./components/Toolbar";
 import { Inspector } from "./components/Inspector";
 import { StatusBar } from "./components/StatusBar";
+import { FileBrowser, SaveAsDialog } from "./components/FileBrowser";
 import { tileMapStore } from "./states/tileMapStore";
+import { editorStore } from "./states/editorStore";
 
 let initPromise: Promise<void> | undefined;
 
@@ -14,11 +17,18 @@ async function initApp() {
 }
 
 export default function App() {
+  useSignals();
+
   useEffect(() => {
     if (!initPromise) {
       initPromise = initApp();
     }
   }, []);
+
+  const dialog = editorStore.activeDialog.value;
+  const closeDialog = () => {
+    editorStore.activeDialog.value = null;
+  };
 
   return (
     <Theme
@@ -37,6 +47,8 @@ export default function App() {
         <Inspector />
       </div>
       <StatusBar />
+      {dialog === "fileBrowser" && <FileBrowser onClose={closeDialog} />}
+      {dialog === "saveAs" && <SaveAsDialog onClose={closeDialog} />}
     </Theme>
   );
 }
