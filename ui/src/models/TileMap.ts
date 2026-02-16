@@ -1,4 +1,4 @@
-import type { Tile } from "./tile";
+import type { Tile } from "./Tile";
 
 export interface TileMap {
     name: string,

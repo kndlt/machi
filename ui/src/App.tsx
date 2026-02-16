@@ -19,13 +19,12 @@ export default function App() {
   }, []);
   return (
     <Theme
-      // appearance="dark"
       css={{
-        minHeight: "100%",
-        maxHeight: "100%",
+        width: "100%",
         height: "100%",
         display: "flex",
-        flexDirection: "column"
+        flexDirection: "column",
+        overflow: "hidden"
       }}
     >
       <Scene />
