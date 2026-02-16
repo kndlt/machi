@@ -1,11 +1,25 @@
-import { css } from "@emotion/react";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Theme } from "@radix-ui/themes";
+import { Scene } from "./components/Scene";
+import { tileMapStore } from "./states/tileMapStore";
+
+
+let initPromise: Promise<void> | undefined;
+
+async function initApp() {
+  console.log("Initializing app...");
+  tileMapStore.initTileMapStore();
+}
 
 export default function App() {
+  useEffect(() => {
+    if (!initPromise) {
+      initPromise = initApp();
+    }
+  }, []);
   return (
     <Theme
-      appearance="dark"
+      // appearance="dark"
       css={{
         minHeight: "100%",
         maxHeight: "100%",
@@ -14,9 +28,7 @@ export default function App() {
         flexDirection: "column"
       }}
     >
-      <h1>
-        Welcome to Machi!
-      </h1>
+      <Scene />
     </Theme>
   );
 }
