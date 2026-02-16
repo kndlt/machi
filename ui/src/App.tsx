@@ -17,6 +17,7 @@ async function initApp() {
 }
 
 export default function App() {
+  console.log("[render] App");
   useSignals();
 
   useEffect(() => {

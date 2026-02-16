@@ -10,6 +10,7 @@ const TOOLS: { id: Tool; icon: string; label: string }[] = [
 ];
 
 export function Toolbar() {
+    console.log("[render] Toolbar");
     useSignals();
     const active = editorStore.activeTool.value;
 

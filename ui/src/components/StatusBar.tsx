@@ -3,6 +3,7 @@ import { editorStore } from "../states/editorStore";
 import { tileMapStore } from "../states/tileMapStore";
 
 export function StatusBar() {
+    // console.log("[render] StatusBar");
     useSignals();
     const zoom = editorStore.zoom.value;
     const hovered = editorStore.hoveredTile.value;

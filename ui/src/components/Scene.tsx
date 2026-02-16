@@ -16,6 +16,7 @@ const TILE_COLORS = {
 };
 
 export function Scene() {
+    console.log("[render] Scene");
     const canvasRef = useRef<HTMLDivElement>(null);
     const appRef = useRef<Application | null>(null);
     const worldContainerRef = useRef<Container | null>(null);

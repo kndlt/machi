@@ -4,6 +4,7 @@ import { tileMapStore } from "../states/tileMapStore";
 import { editorStore } from "../states/editorStore";
 
 export function Inspector() {
+    console.log("[render] Inspector");
     useSignals();
     const tileMap = tileMapStore.tileMap.value;
     const hovered = editorStore.hoveredTile.value;
@@ -115,6 +116,7 @@ function Placeholder({ text }: { text: string }) {
 }
 
 function MiniMap() {
+    // console.log("[render] MiniMap");
     useSignals();
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const tileMap = tileMapStore.tileMap.value;
