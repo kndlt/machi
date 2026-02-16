@@ -32,6 +32,7 @@ export function Scene() {
         let app: Application;
         let worldContainer: Container;
         let tileContainer: Container;
+        let gridContainer: Container;
         let tileGraphics: Graphics[] = [];
         let destroyed = false;
 
@@ -67,6 +68,9 @@ export function Scene() {
             worldContainer.addChild(tileContainer);
             tileContainerRef.current = tileContainer;
 
+            gridContainer = new Container();
+            worldContainer.addChild(gridContainer);
+
             // Center camera on tile map
             const tileMap = tileMapStore.tileMap.value;
             if (tileMap) {
@@ -100,12 +104,26 @@ export function Scene() {
 
                     graphics.rect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
                     graphics.fill(color);
-                    graphics.stroke({ width: 1.0, color: 0x000000, alpha: 0.2 });
 
                     tileContainer.addChild(graphics);
                     tileGraphics.push(graphics);
                 }
             }
+
+            // Render grid lines in a separate container
+            gridContainer.removeChildren();
+            const gridGfx = new Graphics();
+            gridGfx.setStrokeStyle({ width: 1.0, color: 0x000000, alpha: 0.2 });
+            for (let y = 0; y <= tileMap.height; y++) {
+                gridGfx.moveTo(0, y * TILE_SIZE);
+                gridGfx.lineTo(tileMap.width * TILE_SIZE, y * TILE_SIZE);
+            }
+            for (let x = 0; x <= tileMap.width; x++) {
+                gridGfx.moveTo(x * TILE_SIZE, 0);
+                gridGfx.lineTo(x * TILE_SIZE, tileMap.height * TILE_SIZE);
+            }
+            gridGfx.stroke();
+            gridContainer.addChild(gridGfx);
         };
 
         // --- Tile editing helpers ------------------------------------------
@@ -264,7 +282,7 @@ export function Scene() {
                     const worldYBefore = camera.targetY + cursorY / camera.targetZoom;
 
                     const zoomDelta = e.deltaY > 0 ? 0.95 : 1.05;
-                    const newZoom = Math.max(0.25, Math.min(4, camera.targetZoom * zoomDelta));
+                    const newZoom = Math.max(0.125, Math.min(4, camera.targetZoom * zoomDelta));
 
                     // Adjust camera so the same world point stays under the cursor
                     camera.targetX = worldXBefore - cursorX / newZoom;
@@ -363,6 +381,9 @@ export function Scene() {
                     Math.round(-camera.y * camera.zoom),
                 );
                 worldContainerRef.current.scale.set(camera.zoom);
+
+                // Hide grid when zoomed out below 50%
+                gridContainer.visible = camera.zoom >= 0.5;
 
                 // Publish viewport for minimap
                 const cw = canvasRef.current?.clientWidth ?? 0;
