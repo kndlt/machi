@@ -165,6 +165,21 @@ export function Scene() {
             gridContainer.addChild(gridThick);
         };
 
+        /** Repaint a single tile graphic in-place (no destroy/recreate). */
+        const updateTileGraphic = (index: number) => {
+            const tileMap = tileMapStore.tileMap.value;
+            if (!tileMap) return;
+            const g = tileGraphics[index];
+            if (!g) return;
+            const tile = tileMap.tiles[index];
+            const color = tile ? TILE_COLORS[tile.matter] : TILE_COLORS.air;
+            const x = index % tileMap.width;
+            const y = Math.floor(index / tileMap.width);
+            g.clear();
+            g.rect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+            g.fill(color);
+        };
+
         // --- Tile editing helpers ------------------------------------------
 
         const floodFill = (startX: number, startY: number) => {
@@ -221,8 +236,7 @@ export function Scene() {
                     lastPaintedTileRef.current = index;
                     const matter = editorStore.activeMatter.value;
                     tileMap.tiles[index] = matter ? { matter } : null;
-                    tileMapStore.tileMap.value = { ...tileMap };
-                    renderTiles();
+                    updateTileGraphic(index);
                 }
             }
         };
@@ -293,6 +307,9 @@ export function Scene() {
             const stopPan = () => {
                 // If we were painting, commit the stroke to undo history
                 if (isPaintingRef.current && strokeSnapshotRef.current) {
+                    // Reassign signal so persistence / React subscribers update
+                    const tm = tileMapStore.tileMap.value;
+                    if (tm) tileMapStore.tileMap.value = { ...tm };
                     tileMapStore.pushUndo(strokeSnapshotRef.current);
                     strokeSnapshotRef.current = undefined;
                 }
