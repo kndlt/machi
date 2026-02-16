@@ -1,12 +1,13 @@
 import { useSignals } from "@preact/signals-react/runtime";
+import { Pencil1Icon, EraserIcon, OpacityIcon, FileIcon, DownloadIcon, FilePlusIcon } from "@radix-ui/react-icons";
 import { editorStore, type Tool } from "../states/editorStore";
 import { tileMapStore } from "../states/tileMapStore";
 import { autosave, saveFile } from "../states/persistence";
 
-const TOOLS: { id: Tool; icon: string; label: string }[] = [
-    { id: "pencil", icon: "✏️", label: "Pencil (P)" },
-    { id: "eraser", icon: "🧹", label: "Eraser (E)" },
-    { id: "bucket", icon: "🪣", label: "Bucket Fill (G)" },
+const TOOLS: { id: Tool; icon: React.ReactNode; label: string }[] = [
+    { id: "pencil", icon: <Pencil1Icon width={18} height={18} />, label: "Pencil (P)" },
+    { id: "eraser", icon: <EraserIcon width={18} height={18} />, label: "Eraser (E)" },
+    { id: "bucket", icon: <OpacityIcon width={18} height={18} />, label: "Bucket Fill (G)" },
 ];
 
 export function Toolbar() {
@@ -43,7 +44,7 @@ export function Toolbar() {
 
             {/* File actions */}
             <ToolButton
-                icon="📂"
+                icon={<FileIcon width={18} height={18} />}
                 label="Open (⌘O)"
                 active={false}
                 onClick={() => {
@@ -51,7 +52,7 @@ export function Toolbar() {
                 }}
             />
             <ToolButton
-                icon="💾"
+                icon={<DownloadIcon width={18} height={18} />}
                 label="Save (⌘S)"
                 active={false}
                 onClick={() => {
@@ -67,7 +68,7 @@ export function Toolbar() {
                 }}
             />
             <ToolButton
-                icon="📄"
+                icon={<FilePlusIcon width={18} height={18} />}
                 label="Save As (⌘⇧S)"
                 active={false}
                 onClick={() => {
@@ -84,7 +85,7 @@ function ToolButton({
     active,
     onClick,
 }: {
-    icon: string;
+    icon: React.ReactNode;
     label: string;
     active: boolean;
     onClick: () => void;
@@ -99,7 +100,7 @@ function ToolButton({
                 backgroundColor: active ? "var(--accent-a4)" : "var(--gray-a3)",
                 border: active ? "1px solid var(--accent-a7)" : "1px solid var(--gray-a5)",
                 borderRadius: 4,
-                fontSize: 20,
+                color: active ? "var(--gray-12)" : "var(--gray-11)",
                 cursor: "pointer",
                 display: "flex",
                 alignItems: "center",

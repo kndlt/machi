@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useSignals } from "@preact/signals-react/runtime";
+import { Cross2Icon } from "@radix-ui/react-icons";
 import { tileMapStore } from "../states/tileMapStore";
 
 export function FileBrowser({ onClose }: { onClose: () => void }) {
@@ -57,7 +58,7 @@ export function FileBrowser({ onClose }: { onClose: () => void }) {
                         Saved Maps
                     </span>
                     <button onClick={onClose} style={closeBtnStyle}>
-                        ✕
+                        <Cross2Icon />
                     </button>
                 </div>
 
