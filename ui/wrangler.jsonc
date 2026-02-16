@@ -1,0 +1,30 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "machi",
+	"compatibility_date": "2025-08-20",
+	// This is needed for stripe SDK import to work via
+	// @cloudflare/vite-plugin
+	// See: https://github.com/cloudflare/workers-sdk/issues/7672#issuecomment-2781331882
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"assets": {
+		"directory": "dist",
+		"not_found_handling": "single-page-application",
+		"run_worker_first": [
+			"/api/*" // Regular APIs
+		]
+	},
+	"main": "./worker/index.ts",
+	// Plain, non-sensitive env vars for all envs (OVERWRITES on deploy)
+	"vars": {},
+	"durable_objects": {
+		"bindings": []
+	},
+	"migrations": [],
+	"observability": {
+		"logs": {
+			"enabled": true
+		}
+	}
+}
