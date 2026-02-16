@@ -36,7 +36,7 @@ export function FileBrowser({ onClose }: { onClose: () => void }) {
                     position: "relative",
                     width: 420,
                     maxHeight: "70vh",
-                    backgroundColor: "var(--color-panel)",
+                    backgroundColor: "var(--color-panel-solid)",
                     border: "1px solid var(--gray-a5)",
                     borderRadius: 8,
                     display: "flex",
@@ -193,7 +193,7 @@ export function SaveAsDialog({ onClose }: { onClose: () => void }) {
                 style={{
                     position: "relative",
                     width: 320,
-                    backgroundColor: "var(--color-panel)",
+                    backgroundColor: "var(--color-panel-solid)",
                     border: "1px solid var(--gray-a5)",
                     borderRadius: 8,
                     padding: 20,

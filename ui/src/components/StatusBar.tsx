@@ -14,7 +14,7 @@ export function StatusBar() {
         <div
             style={{
                 height: 24,
-                backgroundColor: "var(--color-panel)",
+                backgroundColor: "var(--color-panel-solid)",
                 borderTop: "1px solid var(--gray-a5)",
                 display: "flex",
                 alignItems: "center",

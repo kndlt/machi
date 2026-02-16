@@ -23,7 +23,7 @@ export function MenuBar() {
         <div
             style={{
                 height: 32,
-                backgroundColor: "var(--color-panel)",
+                backgroundColor: "var(--color-panel-solid)",
                 borderBottom: "1px solid var(--gray-a5)",
                 display: "flex",
                 alignItems: "center",
@@ -98,7 +98,7 @@ const triggerStyle: React.CSSProperties = {
 };
 
 const contentStyle: React.CSSProperties = {
-    backgroundColor: "var(--color-panel)",
+    backgroundColor: "var(--color-panel-solid)",
     border: "1px solid var(--gray-a5)",
     borderRadius: 6,
     padding: "4px 0",

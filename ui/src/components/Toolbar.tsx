@@ -17,7 +17,7 @@ export function Toolbar() {
         <div
             style={{
                 width: 52,
-                backgroundColor: "var(--color-panel)",
+                backgroundColor: "var(--color-panel-solid)",
                 borderRight: "1px solid var(--gray-a5)",
                 display: "flex",
                 flexDirection: "column",

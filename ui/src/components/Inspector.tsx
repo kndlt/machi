@@ -20,7 +20,7 @@ export function Inspector() {
         <div
             style={{
                 width: 240,
-                backgroundColor: "var(--color-panel)",
+                backgroundColor: "var(--color-panel-solid)",
                 borderLeft: "1px solid var(--gray-a5)",
                 padding: 12,
                 display: "flex",
