@@ -11,7 +11,7 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(pkg.version),
   },
   server: {
-    port: 8788,      // Vite dev server (HMR)
+    port: 8588,      // Vite dev server (HMR)
     strictPort: true, // fail if port is taken
     host: true,       // Allow external connections
     allowedHosts: [
