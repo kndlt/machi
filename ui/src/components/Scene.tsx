@@ -180,6 +180,25 @@ export function Scene() {
             g.fill(color);
         };
 
+        /** Bresenham line from (x0,y0) to (x1,y1) — returns all tile coords along the path. */
+        const bresenhamLine = (x0: number, y0: number, x1: number, y1: number): [number, number][] => {
+            const points: [number, number][] = [];
+            const dx = Math.abs(x1 - x0);
+            const dy = -Math.abs(y1 - y0);
+            const sx = x0 < x1 ? 1 : -1;
+            const sy = y0 < y1 ? 1 : -1;
+            let err = dx + dy;
+            let cx = x0, cy = y0;
+            while (true) {
+                points.push([cx, cy]);
+                if (cx === x1 && cy === y1) break;
+                const e2 = 2 * err;
+                if (e2 >= dy) { err += dy; cx += sx; }
+                if (e2 <= dx) { err += dx; cy += sy; }
+            }
+            return points;
+        };
+
         // --- Tile editing helpers ------------------------------------------
 
         const floodFill = (startX: number, startY: number) => {
@@ -233,10 +252,28 @@ export function Scene() {
                 renderTiles();
             } else if (tool === "pencil" || tool === "eraser") {
                 if (index !== lastPaintedTileRef.current) {
-                    lastPaintedTileRef.current = index;
                     const matter = editorStore.activeMatter.value;
-                    tileMap.tiles[index] = matter ? { matter } : null;
-                    updateTileGraphic(index);
+                    const newTile: Tile | null = matter ? { matter } : null;
+
+                    // Interpolate from last painted tile to current tile
+                    const lastIdx = lastPaintedTileRef.current;
+                    if (lastIdx !== null) {
+                        const lastX = lastIdx % tileMap.width;
+                        const lastY = Math.floor(lastIdx / tileMap.width);
+                        const line = bresenhamLine(lastX, lastY, tileX, tileY);
+                        for (const [lx, ly] of line) {
+                            const li = ly * tileMap.width + lx;
+                            if (li !== lastIdx) {
+                                tileMap.tiles[li] = newTile;
+                                updateTileGraphic(li);
+                            }
+                        }
+                    } else {
+                        tileMap.tiles[index] = newTile;
+                        updateTileGraphic(index);
+                    }
+
+                    lastPaintedTileRef.current = index;
                 }
             }
         };
