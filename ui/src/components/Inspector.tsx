@@ -29,14 +29,14 @@ export function Inspector() {
                 overflow: "auto",
             }}
         >
-            {/* Palette */}
-            <Section title="PALETTE">
-                <PalettePanel />
-            </Section>
-
             {/* Mini Map */}
             <Section title="MINIMAP">
                 {tileMap ? <MiniMap /> : <Placeholder text="No map loaded" />}
+            </Section>
+
+            {/* Palette */}
+            <Section title="PALETTE">
+                <PalettePanel />
             </Section>
 
             {/* Map Info */}
