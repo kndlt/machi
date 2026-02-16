@@ -65,6 +65,8 @@ export function Inspector() {
                     <div>P → Pencil</div>
                     <div>E → Eraser</div>
                     <div>G → Bucket Fill</div>
+                    <div>⌘Z → Undo ({tileMapStore.undoCount.value})</div>
+                    <div>⌘⇧Z → Redo ({tileMapStore.redoCount.value})</div>
                 </div>
             </Section>
         </div>

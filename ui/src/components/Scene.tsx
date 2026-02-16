@@ -23,6 +23,7 @@ export function Scene() {
     const lastPaintedTileRef = useRef<number | null>(null);
     const lastMouseRef = useRef({ x: 0, y: 0 });
     const spaceKeyRef = useRef(false);
+    const strokeSnapshotRef = useRef<Array<Tile | null> | undefined>(undefined);
 
     useEffect(() => {
         if (!canvasRef.current) return;
@@ -183,6 +184,8 @@ export function Scene() {
                     lastMouseRef.current = { x: e.global.x, y: e.global.y };
                     app.canvas.style.cursor = "grabbing";
                 } else if (e.button === 0) {
+                    // Snapshot tiles before this stroke for undo
+                    strokeSnapshotRef.current = tileMapStore.snapshotTiles();
                     isPaintingRef.current = true;
                     lastPaintedTileRef.current = null;
                     const worldPos = worldContainer.toLocal(e.global);
@@ -220,6 +223,11 @@ export function Scene() {
             });
 
             const stopPan = () => {
+                // If we were painting, commit the stroke to undo history
+                if (isPaintingRef.current && strokeSnapshotRef.current) {
+                    tileMapStore.pushUndo(strokeSnapshotRef.current);
+                    strokeSnapshotRef.current = undefined;
+                }
                 isPanningRef.current = false;
                 isPaintingRef.current = false;
                 lastPaintedTileRef.current = null;
@@ -263,6 +271,21 @@ export function Scene() {
                     e.preventDefault();
                     spaceKeyRef.current = true;
                     updateCursor();
+                }
+                // Undo: Cmd+Z (Mac) / Ctrl+Z
+                if (e.code === "KeyZ" && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
+                    e.preventDefault();
+                    tileMapStore.undo();
+                    renderTiles();
+                }
+                // Redo: Cmd+Shift+Z / Ctrl+Shift+Z  or  Cmd+Y / Ctrl+Y
+                if (
+                    (e.code === "KeyZ" && (e.metaKey || e.ctrlKey) && e.shiftKey) ||
+                    (e.code === "KeyY" && (e.metaKey || e.ctrlKey))
+                ) {
+                    e.preventDefault();
+                    tileMapStore.redo();
+                    renderTiles();
                 }
                 // Tool hotkeys
                 if (e.code === "KeyP") editorStore.activeTool.value = "pencil";
