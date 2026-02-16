@@ -305,6 +305,32 @@ export function Scene() {
         };
 
         const startCameraLoop = () => {
+            /** Clamp camera so the tile map is always at least partially visible. */
+            const clampCamera = () => {
+                const tileMap = tileMapStore.tileMap.value;
+                if (!tileMap || !canvasRef.current) return;
+
+                const cw = canvasRef.current.clientWidth;
+                const ch = canvasRef.current.clientHeight;
+                const camera = cameraRef.current;
+                const viewW = cw / camera.zoom;
+                const viewH = ch / camera.zoom;
+                const mapW = tileMap.width * TILE_SIZE;
+                const mapH = tileMap.height * TILE_SIZE;
+
+                // Camera x/y is the world-space top-left of the viewport.
+                // Allow panning until the viewport just barely touches the map edge.
+                const minX = -viewW + TILE_SIZE;
+                const maxX = mapW - TILE_SIZE;
+                const minY = -viewH + TILE_SIZE;
+                const maxY = mapH - TILE_SIZE;
+
+                camera.targetX = Math.max(minX, Math.min(maxX, camera.targetX));
+                camera.targetY = Math.max(minY, Math.min(maxY, camera.targetY));
+                camera.x = Math.max(minX, Math.min(maxX, camera.x));
+                camera.y = Math.max(minY, Math.min(maxY, camera.y));
+            };
+
             const loop = () => {
                 if (destroyed) return;
                 const camera = cameraRef.current;
@@ -313,6 +339,8 @@ export function Scene() {
                 camera.x += (camera.targetX - camera.x) * 0.15;
                 camera.y += (camera.targetY - camera.y) * 0.15;
                 camera.zoom += (camera.targetZoom - camera.zoom) * 0.15;
+
+                clampCamera();
 
                 worldContainerRef.current.position.set(-camera.x * camera.zoom, -camera.y * camera.zoom);
                 worldContainerRef.current.scale.set(camera.zoom);
