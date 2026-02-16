@@ -36,6 +36,8 @@ export function Scene() {
         let worldContainer: Container;
         let tileContainer: Container;
         let gridContainer: Container;
+        let gridNormal: Graphics;
+        let gridThick: Graphics;
         let tileGraphics: Graphics[] = [];
         let destroyed = false;
 
@@ -113,20 +115,30 @@ export function Scene() {
                 }
             }
 
-            // Render grid lines in a separate container
+            // Render grid lines in a separate container (two layers: normal + thick)
             gridContainer.removeChildren();
-            const gridGfx = new Graphics();
-            gridGfx.setStrokeStyle({ width: 1.0, color: 0x000000, alpha: 0.2 });
-            for (let y = 0; y <= tileMap.height; y++) {
-                gridGfx.moveTo(0, y * TILE_SIZE);
-                gridGfx.lineTo(tileMap.width * TILE_SIZE, y * TILE_SIZE);
-            }
-            for (let x = 0; x <= tileMap.width; x++) {
-                gridGfx.moveTo(x * TILE_SIZE, 0);
-                gridGfx.lineTo(x * TILE_SIZE, tileMap.height * TILE_SIZE);
-            }
-            gridGfx.stroke();
-            gridContainer.addChild(gridGfx);
+
+            const buildGrid = (strokeWidth: number) => {
+                const g = new Graphics();
+                g.setStrokeStyle({ width: strokeWidth, color: 0x000000, alpha: 0.2 });
+                for (let y = 0; y <= tileMap.height; y++) {
+                    g.moveTo(0, y * TILE_SIZE);
+                    g.lineTo(tileMap.width * TILE_SIZE, y * TILE_SIZE);
+                }
+                for (let x = 0; x <= tileMap.width; x++) {
+                    g.moveTo(x * TILE_SIZE, 0);
+                    g.lineTo(x * TILE_SIZE, tileMap.height * TILE_SIZE);
+                }
+                g.stroke();
+                return g;
+            };
+
+            gridNormal = buildGrid(1.0);
+            gridThick = buildGrid(2.0);
+            gridNormal.visible = false;
+            gridThick.visible = false;
+            gridContainer.addChild(gridNormal);
+            gridContainer.addChild(gridThick);
         };
 
         // --- Tile editing helpers ------------------------------------------
@@ -432,8 +444,10 @@ export function Scene() {
                 );
                 worldContainerRef.current.scale.set(camera.zoom);
 
-                // Hide grid when zoomed out below 50%
-                gridContainer.visible = camera.zoom >= 0.5;
+                // Toggle grid: thick stroke at 0.25–0.5, normal at >=0.5, hidden below 0.25
+                gridContainer.visible = camera.zoom >= 0.24;
+                gridNormal.visible = camera.zoom >= 0.5;
+                gridThick.visible = camera.zoom >= 0.24 && camera.zoom < 0.5;
 
                 // Publish viewport for minimap
                 const cw = canvasRef.current?.clientWidth ?? 0;
