@@ -6,6 +6,9 @@ import type { Tile } from "../models/Tile";
 
 const TILE_SIZE = 32;
 const RENDER_SCALE = 2;
+const ZOOM_STOPS = [
+    0.125, 1/6, 0.25, 1/3, 0.5, 2/3, 1, 2, 3, 4,
+];
 const TILE_COLORS = {
     dirt: 0x8B4513,
     air: 0x87CEEB,
@@ -323,7 +326,39 @@ export function Scene() {
                 if (e.code === "KeyG") editorStore.activeTool.value = "bucket";
                 // Cmd+0 → reset zoom to 100%
                 if (e.code === "Digit0" && (e.metaKey || e.ctrlKey)) {
+                    e.preventDefault();
                     cameraRef.current.targetZoom = 1;
+                }
+                // Cmd+= / Cmd+- → snap to next/prev Photoshop-style zoom stop
+                if ((e.code === "Equal" || e.code === "Minus") && (e.metaKey || e.ctrlKey)) {
+                    e.preventDefault();
+                    const camera = cameraRef.current;
+                    const canvas = canvasRef.current;
+                    if (!canvas) return;
+                    const rect = canvas.getBoundingClientRect();
+                    const cx = rect.width / 2;
+                    const cy = rect.height / 2;
+                    const worldXBefore = camera.targetX + cx / camera.targetZoom;
+                    const worldYBefore = camera.targetY + cy / camera.targetZoom;
+
+                    const cur = camera.targetZoom;
+                    let newZoom = cur;
+                    const eps = 0.001;
+                    if (e.code === "Equal") {
+                        // zoom in → next stop above current
+                        for (let i = 0; i < ZOOM_STOPS.length; i++) {
+                            if (ZOOM_STOPS[i] > cur + eps) { newZoom = ZOOM_STOPS[i]; break; }
+                        }
+                    } else {
+                        // zoom out → next stop below current
+                        for (let i = ZOOM_STOPS.length - 1; i >= 0; i--) {
+                            if (ZOOM_STOPS[i] < cur - eps) { newZoom = ZOOM_STOPS[i]; break; }
+                        }
+                    }
+
+                    camera.targetX = worldXBefore - cx / newZoom;
+                    camera.targetY = worldYBefore - cy / newZoom;
+                    camera.targetZoom = newZoom;
                 }
             };
             const onKeyUp = (e: KeyboardEvent) => {
