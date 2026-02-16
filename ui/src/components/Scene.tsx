@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Application, Graphics, Container, FederatedPointerEvent } from "pixi.js";
+import { Application, Graphics, Container, FederatedPointerEvent, RenderTexture, Sprite } from "pixi.js";
 import { tileMapStore } from "../states/tileMapStore";
 import { editorStore } from "../states/editorStore";
 import { autosave, saveFile } from "../states/persistence";
@@ -40,7 +40,10 @@ export function Scene() {
         let gridContainer: Container;
         let gridNormal: Graphics;
         let gridThick: Graphics;
-        let tileGraphics: Graphics[] = [];
+        // Back buffer: single RenderTexture + Sprite instead of per-tile Graphics
+        let tileTexture: RenderTexture | null = null;
+        let tileSprite: Sprite | null = null;
+        const stampGraphics = new Graphics(); // reusable stamp for drawing into texture
         let resizeObserverRef: ResizeObserver | null = null;
         let unsubscribe: (() => void) | null = null;
         let onKeyDown: ((e: KeyboardEvent) => void) | null = null;
@@ -121,43 +124,51 @@ export function Scene() {
 
         const renderTiles = () => {
             const tileMap = tileMapStore.tileMap.value;
-            if (!tileMap || !tileContainer) return;
+            if (!tileMap || !tileContainer || !app?.renderer) return;
 
-            tileGraphics.forEach(g => g.destroy());
-            tileGraphics = [];
-            tileContainer.removeChildren();
+            const texW = tileMap.width * TILE_SIZE;
+            const texH = tileMap.height * TILE_SIZE;
 
+            // (Re)create texture & sprite when map dimensions change
+            if (!tileTexture || tileTexture.width !== texW || tileTexture.height !== texH) {
+                tileTexture?.destroy(true);
+                tileSprite?.destroy();
+                tileTexture = RenderTexture.create({ width: texW, height: texH });
+                tileSprite = new Sprite(tileTexture);
+                tileContainer.removeChildren();
+                tileContainer.addChild(tileSprite);
+            }
+
+            // Draw every tile into the texture in one pass
+            const g = stampGraphics;
+            g.clear();
             for (let y = 0; y < tileMap.height; y++) {
                 for (let x = 0; x < tileMap.width; x++) {
                     const index = y * tileMap.width + x;
                     const tile = tileMap.tiles[index];
-                    const graphics = new Graphics();
                     const color = tile ? (TILE_COLORS[tile.matter] ?? 0xFF00FF) : TILE_COLORS.air;
-
-                    graphics.rect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-                    graphics.fill(color);
-
-                    tileContainer.addChild(graphics);
-                    tileGraphics.push(graphics);
+                    g.rect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                    g.fill(color);
                 }
             }
+            app.renderer.render({ container: g, target: tileTexture, clear: true });
 
             // Render grid lines in a separate container (two layers: normal + thick)
             gridContainer.removeChildren();
 
             const buildGrid = (strokeWidth: number) => {
-                const g = new Graphics();
-                g.setStrokeStyle({ width: strokeWidth, color: 0x000000, alpha: 0.2 });
+                const gr = new Graphics();
+                gr.setStrokeStyle({ width: strokeWidth, color: 0x000000, alpha: 0.2 });
                 for (let y = 0; y <= tileMap.height; y++) {
-                    g.moveTo(0, y * TILE_SIZE);
-                    g.lineTo(tileMap.width * TILE_SIZE, y * TILE_SIZE);
+                    gr.moveTo(0, y * TILE_SIZE);
+                    gr.lineTo(tileMap.width * TILE_SIZE, y * TILE_SIZE);
                 }
                 for (let x = 0; x <= tileMap.width; x++) {
-                    g.moveTo(x * TILE_SIZE, 0);
-                    g.lineTo(x * TILE_SIZE, tileMap.height * TILE_SIZE);
+                    gr.moveTo(x * TILE_SIZE, 0);
+                    gr.lineTo(x * TILE_SIZE, tileMap.height * TILE_SIZE);
                 }
-                g.stroke();
-                return g;
+                gr.stroke();
+                return gr;
             };
 
             gridNormal = buildGrid(1.0);
@@ -168,19 +179,19 @@ export function Scene() {
             gridContainer.addChild(gridThick);
         };
 
-        /** Repaint a single tile graphic in-place (no destroy/recreate). */
+        /** Repaint a single tile into the back-buffer texture (no scene-graph churn). */
         const updateTileGraphic = (index: number) => {
             const tileMap = tileMapStore.tileMap.value;
-            if (!tileMap) return;
-            const g = tileGraphics[index];
-            if (!g) return;
+            if (!tileMap || !tileTexture || !app?.renderer) return;
             const tile = tileMap.tiles[index];
             const color = tile ? (TILE_COLORS[tile.matter] ?? 0xFF00FF) : TILE_COLORS.air;
             const x = index % tileMap.width;
             const y = Math.floor(index / tileMap.width);
+            const g = stampGraphics;
             g.clear();
             g.rect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
             g.fill(color);
+            app.renderer.render({ container: g, target: tileTexture, clear: false });
         };
 
         /** Bresenham line from (x0,y0) to (x1,y1) — returns all tile coords along the path. */
@@ -587,6 +598,9 @@ export function Scene() {
                 if (onWheel) appRef.current.canvas.removeEventListener("wheel", onWheel);
                 if (onContextMenu) appRef.current.canvas.removeEventListener("contextmenu", onContextMenu);
             }
+            tileTexture?.destroy(true);
+            tileSprite?.destroy();
+            stampGraphics.destroy();
             worldContainerRef.current = null;
             tileContainerRef.current = null;
             appRef.current?.destroy(true);
