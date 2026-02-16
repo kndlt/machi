@@ -88,7 +88,7 @@ export function Scene() {
 
                     graphics.rect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
                     graphics.fill(color);
-                    graphics.stroke({ width: 0.5, color: 0x000000, alpha: 0.2 });
+                    graphics.stroke({ width: 1.0, color: 0x000000, alpha: 0.2 });
 
                     tileContainer.addChild(graphics);
                     tileGraphics.push(graphics);
