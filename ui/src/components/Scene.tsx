@@ -10,8 +10,9 @@ const RENDER_SCALE = 2;
 const ZOOM_STOPS = [
     0.125, 1/6, 0.25, 1/3, 0.5, 2/3, 1, 2, 3, 4,
 ];
-const TILE_COLORS = {
+const TILE_COLORS: Record<string, number> = {
     dirt: 0x8B4513,
+    water: 0x1E90FF,
     air: 0x87CEEB,
 };
 
@@ -165,8 +166,13 @@ export function Scene() {
 
             const startIndex = startY * tileMap.width + startX;
             const targetTile = tileMap.tiles[startIndex];
-            const fillTile: Tile = { matter: "dirt" };
-            if (targetTile?.matter === fillTile.matter) return;
+            const matter = editorStore.activeMatter.value;
+            const fillValue: Tile | null = matter ? { matter } : null;
+
+            // Skip if the target is already the fill value
+            const targetMatter = targetTile?.matter ?? null;
+            const fillMatter = fillValue?.matter ?? null;
+            if (targetMatter === fillMatter) return;
 
             const visited = new Set<number>();
             const queue: [number, number][] = [[startX, startY]];
@@ -182,7 +188,7 @@ export function Scene() {
                 if (!matches) continue;
 
                 visited.add(index);
-                tileMap.tiles[index] = fillTile;
+                tileMap.tiles[index] = fillValue;
                 queue.push([x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]);
             }
 
@@ -203,17 +209,11 @@ export function Scene() {
             if (tool === "bucket") {
                 floodFill(tileX, tileY);
                 renderTiles();
-            } else if (tool === "pencil") {
+            } else if (tool === "pencil" || tool === "eraser") {
                 if (index !== lastPaintedTileRef.current) {
                     lastPaintedTileRef.current = index;
-                    tileMap.tiles[index] = { matter: "dirt" };
-                    tileMapStore.tileMap.value = { ...tileMap };
-                    renderTiles();
-                }
-            } else if (tool === "eraser") {
-                if (index !== lastPaintedTileRef.current) {
-                    lastPaintedTileRef.current = index;
-                    tileMap.tiles[index] = null;
+                    const matter = editorStore.activeMatter.value;
+                    tileMap.tiles[index] = matter ? { matter } : null;
                     tileMapStore.tileMap.value = { ...tileMap };
                     renderTiles();
                 }

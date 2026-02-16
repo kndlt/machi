@@ -1,4 +1,5 @@
 import { signal } from "@preact/signals-react";
+import type { TileMatter } from "../models/Tile";
 
 export type Tool = "pencil" | "eraser" | "bucket";
 
@@ -15,6 +16,7 @@ export interface Viewport {
 
 function createEditorStore() {
   const activeTool = signal<Tool>("pencil");
+  const activeMatter = signal<TileMatter | null>("dirt");
   const hoveredTile = signal<{ x: number; y: number } | null>(null);
   const viewport = signal<Viewport | null>(null);
   const zoom = signal(1);
@@ -24,6 +26,7 @@ function createEditorStore() {
 
   return {
     activeTool,
+    activeMatter,
     hoveredTile,
     viewport,
     zoom,

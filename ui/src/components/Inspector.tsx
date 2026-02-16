@@ -2,6 +2,13 @@ import { useEffect, useRef } from "react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { tileMapStore } from "../states/tileMapStore";
 import { editorStore } from "../states/editorStore";
+import type { TileMatter } from "../models/Tile";
+
+const PALETTE: { matter: TileMatter | null; label: string; color: string }[] = [
+    { matter: null, label: "Air (empty)", color: "#87CEEB" },
+    { matter: "dirt", label: "Dirt", color: "#8B4513" },
+    { matter: "water", label: "Water", color: "#1E90FF" },
+];
 
 export function Inspector() {
     console.log("[render] Inspector");
@@ -22,6 +29,11 @@ export function Inspector() {
                 overflow: "auto",
             }}
         >
+            {/* Palette */}
+            <Section title="PALETTE">
+                <PalettePanel />
+            </Section>
+
             {/* Mini Map */}
             <Section title="MINIMAP">
                 {tileMap ? <MiniMap /> : <Placeholder text="No map loaded" />}
@@ -115,6 +127,36 @@ function Placeholder({ text }: { text: string }) {
     return <div style={{ color: "var(--gray-8)", fontSize: 11 }}>{text}</div>;
 }
 
+function PalettePanel() {
+    useSignals();
+    const active = editorStore.activeMatter.value;
+
+    return (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {PALETTE.map((p) => (
+                <button
+                    key={p.matter ?? "air"}
+                    onClick={() => { editorStore.activeMatter.value = p.matter; }}
+                    title={p.label}
+                    style={{
+                        width: 28,
+                        height: 28,
+                        backgroundColor: p.color,
+                        border: active === p.matter
+                            ? "2px solid var(--gray-12)"
+                            : "2px solid transparent",
+                        borderRadius: 4,
+                        cursor: "pointer",
+                        outline: active === p.matter
+                            ? "1px solid var(--gray-1)"
+                            : "none",
+                    }}
+                />
+            ))}
+        </div>
+    );
+}
+
 function MiniMap() {
     // console.log("[render] MiniMap");
     useSignals();
@@ -132,7 +174,9 @@ function MiniMap() {
         for (let y = 0; y < tileMap.height; y++) {
             for (let x = 0; x < tileMap.width; x++) {
                 const tile = tileMap.tiles[y * tileMap.width + x];
-                ctx.fillStyle = tile ? "#8B4513" : "#87CEEB";
+                ctx.fillStyle = tile
+                    ? (tile.matter === "water" ? "#1E90FF" : "#8B4513")
+                    : "#87CEEB";
                 ctx.fillRect(x, y, 1, 1);
             }
         }
@@ -153,7 +197,7 @@ function MiniMap() {
 
     if (!tileMap) return null;
 
-    const maxW = 216;
+    const maxW = 168;
     const aspect = tileMap.width / tileMap.height;
     const w = aspect > 1 ? maxW : maxW * aspect;
     const h = aspect > 1 ? maxW / aspect : maxW;
