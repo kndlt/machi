@@ -291,6 +291,10 @@ export function Scene() {
                 if (e.code === "KeyP") editorStore.activeTool.value = "pencil";
                 if (e.code === "KeyE") editorStore.activeTool.value = "eraser";
                 if (e.code === "KeyG") editorStore.activeTool.value = "bucket";
+                // Cmd+0 → reset zoom to 100%
+                if (e.code === "Digit0" && (e.metaKey || e.ctrlKey)) {
+                    cameraRef.current.targetZoom = 1;
+                }
             };
             const onKeyUp = (e: KeyboardEvent) => {
                 if (e.code === "Space") {
