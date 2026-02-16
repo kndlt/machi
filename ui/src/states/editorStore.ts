@@ -17,11 +17,13 @@ function createEditorStore() {
   const activeTool = signal<Tool>("pencil");
   const hoveredTile = signal<{ x: number; y: number } | null>(null);
   const viewport = signal<Viewport | null>(null);
+  const zoom = signal(1);
 
   return {
     activeTool,
     hoveredTile,
     viewport,
+    zoom,
   };
 }
 

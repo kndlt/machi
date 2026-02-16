@@ -342,7 +342,10 @@ export function Scene() {
 
                 clampCamera();
 
-                worldContainerRef.current.position.set(-camera.x * camera.zoom, -camera.y * camera.zoom);
+                worldContainerRef.current.position.set(
+                    Math.round(-camera.x * camera.zoom),
+                    Math.round(-camera.y * camera.zoom),
+                );
                 worldContainerRef.current.scale.set(camera.zoom);
 
                 // Publish viewport for minimap
@@ -354,6 +357,7 @@ export function Scene() {
                     w: cw / camera.zoom,
                     h: ch / camera.zoom,
                 };
+                editorStore.zoom.value = camera.zoom;
 
                 requestAnimationFrame(loop);
             };

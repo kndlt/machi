@@ -3,6 +3,7 @@ import { Theme } from "@radix-ui/themes";
 import { Scene } from "./components/Scene";
 import { Toolbar } from "./components/Toolbar";
 import { Inspector } from "./components/Inspector";
+import { StatusBar } from "./components/StatusBar";
 import { tileMapStore } from "./states/tileMapStore";
 
 let initPromise: Promise<void> | undefined;
@@ -25,13 +26,16 @@ export default function App() {
         width: "100%",
         height: "100%",
         display: "flex",
-        flexDirection: "row",
+        flexDirection: "column",
         overflow: "hidden",
       }}
     >
-      <Toolbar />
-      <Scene />
-      <Inspector />
+      <div style={{ display: "flex", flexDirection: "row", flex: 1, minHeight: 0 }}>
+        <Toolbar />
+        <Scene />
+        <Inspector />
+      </div>
+      <StatusBar />
     </Theme>
   );
 }
