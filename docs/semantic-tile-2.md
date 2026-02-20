@@ -30,7 +30,7 @@ Now, we can define a walkable areas by pixel level.
 
 This gives us super high fidelity.
 
-![alt text](image-1.png)
+![alt text](concept-01.png)
 
 ## Limitations
 
