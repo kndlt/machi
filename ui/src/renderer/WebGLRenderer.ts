@@ -44,7 +44,9 @@ export function createWebGLRenderer(canvas: HTMLCanvasElement): WebGLRenderer {
   let lastFpsTime = performance.now();
   let frameTimes: number[] = [];
 
-  function updateFps(frameMs: number) {
+  const MODE_NAMES = ["visual", "matter", "segmentation"];
+
+  function updateFps(frameMs: number, viewMode: number) {
     frameCount++;
     frameTimes.push(frameMs);
     const now = performance.now();
@@ -53,7 +55,8 @@ export function createWebGLRenderer(canvas: HTMLCanvasElement): WebGLRenderer {
       const fps = Math.round((frameCount * 1000) / elapsed);
       const avg = frameTimes.reduce((a, b) => a + b, 0) / frameTimes.length;
       const max = Math.max(...frameTimes);
-      fpsEl.textContent = `${fps} FPS | ${avg.toFixed(2)}ms avg | ${max.toFixed(1)}ms max`;
+      const mode = MODE_NAMES[viewMode] ?? `mode ${viewMode}`;
+      fpsEl.textContent = `${fps} FPS | ${avg.toFixed(2)}ms avg | ${max.toFixed(1)}ms max | ${mode}`;
       frameCount = 0;
       lastFpsTime = now;
       frameTimes = [];
@@ -79,7 +82,7 @@ export function createWebGLRenderer(canvas: HTMLCanvasElement): WebGLRenderer {
       layerRenderer.render(camera);
 
       const t1 = performance.now();
-      updateFps(t1 - t0);
+      updateFps(t1 - t0, layerRenderer.viewMode);
 
       rafId = requestAnimationFrame(tick);
     };
