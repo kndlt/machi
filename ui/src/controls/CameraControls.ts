@@ -10,7 +10,7 @@ import { screenToWorld } from "../renderer/Camera";
 const PAN_SPEED = 5;         // pixels per frame at 1× zoom
 
 /** Zoom snap levels — integers + clean fractions for pixel-perfect rendering */
-const ZOOM_SNAPS = [0.25, 0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+const ZOOM_SNAPS = [0.125, 0.25, 0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
 export interface CameraControls {
   dispose(): void;

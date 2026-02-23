@@ -33,6 +33,28 @@ export function createWebGLRenderer(canvas: HTMLCanvasElement): WebGLRenderer {
     gl.viewport(0, 0, canvas.width, canvas.height);
   }
 
+  // ── FPS meter ──────────────────────────────────────────────────────────────
+  const fpsEl = document.createElement("div");
+  fpsEl.style.cssText =
+    "position:absolute;top:8px;left:8px;color:#0f0;font:12px monospace;" +
+    "pointer-events:none;z-index:10;text-shadow:0 0 2px #000";
+  canvas.parentElement?.appendChild(fpsEl);
+
+  let frameCount = 0;
+  let lastFpsTime = performance.now();
+
+  function updateFps() {
+    frameCount++;
+    const now = performance.now();
+    const elapsed = now - lastFpsTime;
+    if (elapsed >= 1000) {
+      const fps = Math.round((frameCount * 1000) / elapsed);
+      fpsEl.textContent = `${fps} FPS`;
+      frameCount = 0;
+      lastFpsTime = now;
+    }
+  }
+
   // ── Animation loop ────────────────────────────────────────────────────────
   function start(camera: Camera, layerRenderer: LayerRenderer): () => void {
     let rafId = 0;
@@ -48,6 +70,7 @@ export function createWebGLRenderer(canvas: HTMLCanvasElement): WebGLRenderer {
       gl.clear(gl.COLOR_BUFFER_BIT);
 
       layerRenderer.render(camera);
+      updateFps();
 
       rafId = requestAnimationFrame(tick);
     };
@@ -61,6 +84,7 @@ export function createWebGLRenderer(canvas: HTMLCanvasElement): WebGLRenderer {
 
   // ── Dispose ──────────────────────────────────────────────────────────────
   function dispose(): void {
+    fpsEl.remove();
     const ext = gl.getExtension("WEBGL_lose_context");
     ext?.loseContext();
   }
