@@ -1,0 +1,8 @@
+<!-- Map is placements of maps -->
+<world
+  title="World 1"
+  description="Welcome to World 1!"
+>
+  <!-- Figma style frame placements -->
+  <map path="maps/map1/map.xml" x="0" y="0" />
+</world>

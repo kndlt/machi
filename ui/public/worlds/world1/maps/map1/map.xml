@@ -1,0 +1,16 @@
+<!--
+   Map's textures paths are:
+   - foreground.png
+   - support.png
+   - matter.png
+   - background.png
+   - sky.png
+
+   No entities or triggers for now, just the map image layers.
+-->
+<map 
+  title="Map 1" 
+  description="This is the first map of World 1."
+  width="1024"
+  height="512"
+/>

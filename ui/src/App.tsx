@@ -59,7 +59,7 @@ function initApp(canvas: HTMLCanvasElement): () => void {
   gl.linkProgram(prog);
 
   if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
-    console.error("Program error:", gl.getProgramInfoLog(prog));
+    console.error("Program error:", gl.getProgramInfoLogin(prog));
     throw new Error("Program linking failed");
   }
 
