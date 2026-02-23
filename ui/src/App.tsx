@@ -26,7 +26,7 @@ async function initApp(canvas: HTMLCanvasElement): Promise<() => void> {
     const p = world.mapPlacements[0];
     camera.x = p.x + p.map.width / 2;
     camera.y = p.y + p.map.height / 2;
-    camera.zoom = 2; // default zoom so 512x256 map fills more of the screen
+    camera.zoom = 3; // default zoom so 512x256 map fills more of the screen
   }
 
   // 4. Layer renderer
