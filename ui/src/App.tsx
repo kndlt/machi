@@ -1,23 +1,23 @@
 import { useEffect, useRef } from "react";
 import { Theme } from "@radix-ui/themes";
 
-let initPromise: Promise<void> | undefined;
+let initPromise: Promise<() => void> | undefined;
 
-async function initApp(canvas: HTMLCanvasElement) {
+async function initApp(canvas: HTMLCanvasElement): Promise<() => void> {
   console.log("Initializing app...");
 
   const gl = canvas.getContext("webgl2");
   if (!gl) {
     alert("WebGL2 not supported");
-    return;
+    return () => {};
   }
 
   // ---------- Resize ----------
-  function resize() {
+  const resize = () => {
     canvas.width = canvas.clientWidth;
     canvas.height = canvas.clientHeight;
     gl.viewport(0, 0, canvas.width, canvas.height);
-  }
+  };
   window.addEventListener("resize", resize);
   resize();
 
@@ -80,13 +80,8 @@ async function initApp(canvas: HTMLCanvasElement) {
     vec3 c = bg + dustColor * d;
 
     color = vec4(c,1.0);
-  }`;
-//   const fs = `#version 300 es
-// precision highp float;
-// out vec4 color;
-// void main() {
-//   color = vec4(1.0, 0.0, 1.0, 1.0); // bright magenta
-// }`;
+  }
+  `;
 
   function compile(type: number, src: string) {
     const s = gl.createShader(type)!;
@@ -112,16 +107,18 @@ async function initApp(canvas: HTMLCanvasElement) {
   let camX = 0;
   let camY = 0;
 
-  window.addEventListener("keydown", e=>{
+  const handleKeydown = (e: KeyboardEvent) => {
     const s = 20;
     if(e.key==="ArrowLeft") camX -= s;
     if(e.key==="ArrowRight") camX += s;
     if(e.key==="ArrowUp") camY -= s;
     if(e.key==="ArrowDown") camY += s;
-  });
+  };
+  window.addEventListener("keydown", handleKeydown);
 
   // ---------- Loop ----------
-  function frame(t: number) {
+  let animationId: number;
+  const frame = (t: number) => {
     gl.useProgram(prog);
     gl.bindVertexArray(vao);
 
@@ -131,10 +128,20 @@ async function initApp(canvas: HTMLCanvasElement) {
 
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
-    requestAnimationFrame(frame);
-  }
+    animationId = requestAnimationFrame(frame);
+  };
 
-  requestAnimationFrame(frame);
+  animationId = requestAnimationFrame(frame);
+
+  // ---------- Cleanup ----------
+  return () => {
+    cancelAnimationFrame(animationId);
+    window.removeEventListener("resize", resize);
+    window.removeEventListener("keydown", handleKeydown);
+    gl.deleteBuffer(buf);
+    gl.deleteVertexArray(vao);
+    gl.deleteProgram(prog);
+  };
 }
 
 export default function App() {
@@ -146,6 +153,10 @@ export default function App() {
     if (!initPromise && canvasRef.current) {
       initPromise = initApp(canvasRef.current);
     }
+    return () => {
+      initPromise?.then(cleanup => cleanup());
+      initPromise = undefined;
+    };
   }, []);
 
   return (
