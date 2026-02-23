@@ -4,7 +4,7 @@ import { Theme } from "@radix-ui/themes";
 function initApp(canvas: HTMLCanvasElement): () => void {
   console.log("Initializing app...");
 
-  const gl = canvas.getContext("webgl2");
+  const gl = canvas.getContext("webgl2", { antialias: false });
   if (!gl) {
     console.error("WebGL2 not supported");
     alert("WebGL2 not supported");
