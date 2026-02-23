@@ -23,12 +23,20 @@ in vec2 v_uv;
 uniform sampler2D u_sky;
 uniform sampler2D u_background;
 uniform sampler2D u_foreground;
+uniform sampler2D u_matter;
+uniform int u_show_matter;   // 0 = visual, 1 = matter
 
 out vec4 out_color;
 
 void main() {
   // Flip V: PNG top-left origin → OpenGL bottom-left origin
   vec2 uv = vec2(v_uv.x, 1.0 - v_uv.y);
+
+  if (u_show_matter == 1) {
+    vec4 m = texture(u_matter, uv);
+    out_color = vec4(m.rgb, 1.0);
+    return;
+  }
 
   vec3 sky = texture(u_sky, uv).rgb;
   vec4 bg  = texture(u_background, uv);

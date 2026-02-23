@@ -6,6 +6,7 @@
 
 import type { Camera } from "../renderer/Camera";
 import { screenToWorld } from "../renderer/Camera";
+import type { LayerRenderer } from "../renderer/LayerRenderer";
 
 const PAN_SPEED = 5;         // pixels per frame at 1× zoom
 
@@ -18,12 +19,18 @@ export interface CameraControls {
 
 export function createCameraControls(
   canvas: HTMLCanvasElement,
-  camera: Camera
+  camera: Camera,
+  layerRenderer: LayerRenderer
 ): CameraControls {
   // ── Keyboard state ─────────────────────────────────────────────────────
   const keys = new Set<string>();
 
   const onKeyDown = (e: KeyboardEvent) => {
+    if (e.key === "Tab") {
+      e.preventDefault();
+      layerRenderer.showMatter = !layerRenderer.showMatter;
+      return;
+    }
     keys.add(e.key);
   };
   const onKeyUp = (e: KeyboardEvent) => {

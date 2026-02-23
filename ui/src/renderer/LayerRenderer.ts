@@ -20,6 +20,7 @@ interface MapGPU {
 
 export interface LayerRenderer {
   render(camera: Camera): void;
+  showMatter: boolean;
   dispose(): void;
 }
 
@@ -37,6 +38,10 @@ export function createLayerRenderer(
   const u_sky = gl.getUniformLocation(program, "u_sky");
   const u_background = gl.getUniformLocation(program, "u_background");
   const u_foreground = gl.getUniformLocation(program, "u_foreground");
+  const u_matter = gl.getUniformLocation(program, "u_matter");
+  const u_show_matter = gl.getUniformLocation(program, "u_show_matter");
+
+  let showMatter = false;
 
   // ── Per-map GPU resources ────────────────────────────────────────────────
   const mapGPUs: MapGPU[] = world.mapPlacements.map((placement) => {
@@ -81,6 +86,8 @@ export function createLayerRenderer(
     gl.uniform1i(u_sky, 0);
     gl.uniform1i(u_background, 1);
     gl.uniform1i(u_foreground, 2);
+    gl.uniform1i(u_matter, 3);
+    gl.uniform1i(u_show_matter, showMatter ? 1 : 0);
 
     // Enable blending for correct alpha compositing
     gl.enable(gl.BLEND);
@@ -103,6 +110,9 @@ export function createLayerRenderer(
       gl.activeTexture(gl.TEXTURE2);
       gl.bindTexture(gl.TEXTURE_2D, layers.foreground);
 
+      gl.activeTexture(gl.TEXTURE3);
+      gl.bindTexture(gl.TEXTURE_2D, layers.matter);
+
       // Draw quad
       gl.bindVertexArray(vao);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
@@ -121,9 +131,15 @@ export function createLayerRenderer(
       gl.deleteTexture(layers.sky);
       gl.deleteTexture(layers.background);
       gl.deleteTexture(layers.foreground);
+      gl.deleteTexture(layers.matter);
     }
     gl.deleteProgram(program);
   }
 
-  return { render, dispose };
+  return {
+    render,
+    get showMatter() { return showMatter; },
+    set showMatter(v: boolean) { showMatter = v; },
+    dispose,
+  };
 }

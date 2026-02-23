@@ -77,14 +77,15 @@ async function loadMap(
     throw new Error(`Invalid map dimensions ${width}×${height} in ${fullMapUrl}`);
   }
 
-  // Load the three rendered layers in parallel
-  const [sky, background, foreground] = await Promise.all([
+  // Load layers in parallel
+  const [sky, background, foreground, matter] = await Promise.all([
     loadTexture(gl, `${mapDir}/sky.png`),
     loadTexture(gl, `${mapDir}/background.png`),
     loadTexture(gl, `${mapDir}/foreground.png`),
+    loadTexture(gl, `${mapDir}/matter.png`),
   ]);
 
-  const layers: MapLayers = { sky, background, foreground };
+  const layers: MapLayers = { sky, background, foreground, matter };
 
   return { map: { title, description, width, height, layers } };
 }

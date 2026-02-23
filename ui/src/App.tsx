@@ -33,7 +33,7 @@ async function initApp(canvas: HTMLCanvasElement): Promise<() => void> {
   const layerRenderer = createLayerRenderer(gl, world);
 
   // 5. Controls
-  const controls = createCameraControls(canvas, camera);
+  const controls = createCameraControls(canvas, camera, layerRenderer);
 
   // 6. Start animation loop
   const stopLoop = renderer.start(camera, layerRenderer);
