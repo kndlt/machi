@@ -11,6 +11,6 @@
 <map 
   title="Map 1" 
   description="This is the first map of World 1."
-  width="1024"
-  height="512"
+  width="512"
+  height="256"
 />
