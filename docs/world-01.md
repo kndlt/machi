@@ -2,6 +2,11 @@
 
 Let's design our first world. 
 
+## 0. Mission Statement
+
+> Sprited is a digital souls company.
+> Machi provides place for digital beings to flurish.
+
 ## 1. Ontology (MVP)
 
 ### 1.1 World
@@ -146,3 +151,72 @@ We use Cloudflare Durable Objects.
 - For all character movements placements, etc, we use the client (MVP)
 - Durable Object is only used as an interface to efficiently store the data an resolve conflicts.
 - We update directly the images.
+
+## 4. Technology
+
+### 4.1 World Representation
+
+Each world map is represented as a continuous surface rendered as a large quad of size W × H in world space.
+
+Conceptually, the world behaves as a continuous visual and simulation field. The quad serves as a carrier surface onto which world textures are sampled.
+
+The world is rendered using virtual texturing, allowing the renderer to sample from a logical world texture space while only streaming the visible portions into GPU memory.
+
+### 4.2 Virtual Texturing
+
+World visual and simulation layers are stored as tiled textures (pages).
+
+At runtime:
+- The renderer determines which pages intersect the camera viewport.
+- Only those pages (at appropriate LOD) are loaded to GPU memory.
+- The shader samples the logical world texture space space seamlessly via page table lookup.
+
+This enables:
+- Large or unbounded worlds
+- Memory-bounded rendering
+- Efficient zoom with level-of-detail
+- Sparse updates
+
+### 4.3 Camera Model
+
+The renderer uses an orthographic camera oriented perpendicular to the world surface.
+
+The camera defines:
+- Viewport dimensions
+- Zoom level
+- Visible world rectangle
+
+Camera movement does not affect world state. It only changes which portions of the world are sampled and rendered.
+
+### 4.4 Entities (Characters and Dynamic Objects)
+
+Characters and dynamic entities are represented as quads positioned in world coordinates.
+
+Each entity has:
+- A world-space position
+- A bounding box
+- Optional depth/ordering value
+
+Entities are culled on CPU if their bounding boxes does not intersect the camera viewport.
+
+### 4.5 World Rendering Outputs
+
+The world rendering pass produces multiple screen-space buffers.
+
+- Color buffer - final world visual appearance
+- Occlusion/depth buffer - per-pixel field describing whether world geometry occludes entities
+
+These buffers are used during entity rendering to correctly composite characters with the world, allowing partial occlusion (e.g. characters behind foliage or structures).
+
+### 4.6 Rendering Model
+
+Rendering is field-based rather than tile-based.
+
+Shaders sample world state using continuous world coordinates, allowing the renderer to treat the world as a unified surface independent of internal texture tiling.
+
+This model supports:
+- Global visual effects
+- Field visualization/debugging
+- Scalable world size
+- Clean compositing of entities.
+
