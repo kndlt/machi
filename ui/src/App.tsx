@@ -75,6 +75,7 @@ function initApp(canvas: HTMLCanvasElement): () => void {
 
   // ---------- Resize ----------
   const resize = () => {
+    // Use clientWidth/Height directly for low-res canvas that scales up
     canvas.width = canvas.clientWidth;
     canvas.height = canvas.clientHeight;
     gl.viewport(0, 0, canvas.width, canvas.height);
@@ -121,7 +122,8 @@ export default function App() {
         style={{
           width: "100%",
           height: "100%",
-          display: "block"
+          display: "block",
+          imageRendering: "pixelated"
         }}
       />
     </Theme>
