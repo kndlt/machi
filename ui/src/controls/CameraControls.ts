@@ -28,7 +28,7 @@ export function createCameraControls(
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === "Tab") {
       e.preventDefault();
-      layerRenderer.showMatter = !layerRenderer.showMatter;
+      layerRenderer.viewMode = layerRenderer.viewMode + 1; // cycles 0→1→2→0
       return;
     }
     keys.add(e.key);

@@ -78,14 +78,15 @@ async function loadMap(
   }
 
   // Load layers in parallel
-  const [sky, background, foreground, matter] = await Promise.all([
+  const [sky, background, foreground, support, matter] = await Promise.all([
     loadTexture(gl, `${mapDir}/sky.png`),
     loadTexture(gl, `${mapDir}/background.png`),
     loadTexture(gl, `${mapDir}/foreground.png`),
+    loadTexture(gl, `${mapDir}/support.png`),
     loadTexture(gl, `${mapDir}/matter.png`),
   ]);
 
-  const layers: MapLayers = { sky, background, foreground, matter };
+  const layers: MapLayers = { sky, background, foreground, support, matter };
 
   return { map: { title, description, width, height, layers } };
 }

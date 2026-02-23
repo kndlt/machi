@@ -23,8 +23,9 @@ in vec2 v_uv;
 uniform sampler2D u_sky;
 uniform sampler2D u_background;
 uniform sampler2D u_foreground;
+uniform sampler2D u_support;
 uniform sampler2D u_matter;
-uniform int u_show_matter;   // 0 = visual, 1 = matter
+uniform int u_view_mode;   // 0 = visual, 1 = matter, 2 = segmentation
 
 out vec4 out_color;
 
@@ -32,19 +33,39 @@ void main() {
   // Flip V: PNG top-left origin → OpenGL bottom-left origin
   vec2 uv = vec2(v_uv.x, 1.0 - v_uv.y);
 
-  if (u_show_matter == 1) {
+  if (u_view_mode == 1) {
+    // Matter view
     vec4 m = texture(u_matter, uv);
     out_color = vec4(m.rgb, 1.0);
     return;
   }
 
-  vec3 sky = texture(u_sky, uv).rgb;
   vec4 bg  = texture(u_background, uv);
   vec4 fg  = texture(u_foreground, uv);
+  vec4 sp  = texture(u_support, uv);
 
-  // Composite back-to-front
+  if (u_view_mode == 2) {
+    // Segmentation view: color-code which layer the pixel comes from
+    // Resolve top-down (same composite order): foreground > support > background > sky
+    vec3 segColor;
+    if (fg.a > 0.5) {
+      segColor = vec3(0.2, 0.8, 0.2);   // green = foreground
+    } else if (sp.a > 0.5) {
+      segColor = vec3(0.8, 0.2, 0.8);   // magenta = support
+    } else if (bg.a > 0.5) {
+      segColor = vec3(0.2, 0.5, 0.9);   // blue = background
+    } else {
+      segColor = vec3(0.3, 0.3, 0.3);   // gray = sky
+    }
+    out_color = vec4(segColor, 1.0);
+    return;
+  }
+
+  // Visual mode: composite back-to-front
+  vec3 sky = texture(u_sky, uv).rgb;
   vec3 c = sky;
   c = mix(c, bg.rgb, bg.a);
+  c = mix(c, sp.rgb, sp.a);
   c = mix(c, fg.rgb, fg.a);
 
   out_color = vec4(c, 1.0);

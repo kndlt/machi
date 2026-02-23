@@ -25,6 +25,6 @@ export interface MapLayers {
   sky: WebGLTexture | null;
   background: WebGLTexture | null;
   foreground: WebGLTexture | null;
+  support: WebGLTexture | null;
   matter: WebGLTexture | null;
-  // support not loaded yet
 }
