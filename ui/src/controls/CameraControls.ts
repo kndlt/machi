@@ -5,10 +5,12 @@
  */
 
 import type { Camera } from "../renderer/Camera";
-import { screenToWorld, MIN_ZOOM, MAX_ZOOM } from "../renderer/Camera";
+import { screenToWorld } from "../renderer/Camera";
 
 const PAN_SPEED = 5;         // pixels per frame at 1× zoom
-const ZOOM_FACTOR = 1.1;     // multiplier per wheel notch
+
+/** Zoom snap levels — integers + clean fractions for pixel-perfect rendering */
+const ZOOM_SNAPS = [0.25, 0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
 export interface CameraControls {
   dispose(): void;
@@ -84,10 +86,13 @@ export function createCameraControls(
     const sy = e.clientY - rect.top;
     const before = screenToWorld(camera, sx, sy);
 
-    // Apply zoom
+    // Snap to next/prev zoom level
     const direction = e.deltaY < 0 ? 1 : -1;
-    const newZoom = camera.zoom * Math.pow(ZOOM_FACTOR, direction);
-    camera.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newZoom));
+    const currentIdx = ZOOM_SNAPS.findIndex((z) => z >= camera.zoom - 0.001);
+    const nextIdx = Math.max(0, Math.min(ZOOM_SNAPS.length - 1,
+      (currentIdx === -1 ? ZOOM_SNAPS.length - 1 : currentIdx) + direction
+    ));
+    camera.zoom = ZOOM_SNAPS[nextIdx];
 
     // World position under mouse after zoom
     const after = screenToWorld(camera, sx, sy);
