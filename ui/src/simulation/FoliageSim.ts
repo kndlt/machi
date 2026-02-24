@@ -11,7 +11,7 @@ import { createTexture, createFBO, createProgram } from "../utils/gl-utils";
 
 export interface FoliageSim {
   /** Run one simulation step. Swaps ping-pong buffers internally. */
-  step(matterTex: WebGLTexture, seed: number): void;
+  step(matterTex: WebGLTexture, noiseTex: WebGLTexture): void;
 
   /** The foliage texture that holds the latest result (read source). */
   currentTexture(): WebGLTexture;
@@ -31,7 +31,7 @@ export function createFoliageSim(
   const program = createProgram(gl, simVert, simFrag);
   const u_matter = gl.getUniformLocation(program, "u_matter");
   const u_foliage_prev = gl.getUniformLocation(program, "u_foliage_prev");
-  const u_seed = gl.getUniformLocation(program, "u_seed");
+  const u_noise = gl.getUniformLocation(program, "u_noise");
 
   const emptyVAO = gl.createVertexArray()!;
 
@@ -44,7 +44,7 @@ export function createFoliageSim(
   const fbos: [WebGLFramebuffer, WebGLFramebuffer] = [fboA, fboB];
   let readIdx = 0;
 
-  function step(matterTex: WebGLTexture, seed: number): void {
+  function step(matterTex: WebGLTexture, noiseTex: WebGLTexture): void {
     const readTex = textures[readIdx];
     const writeIdx = 1 - readIdx;
     const writeFbo = fbos[writeIdx];
@@ -57,12 +57,14 @@ export function createFoliageSim(
 
     gl.uniform1i(u_matter, 0);
     gl.uniform1i(u_foliage_prev, 1);
-    gl.uniform1f(u_seed, seed);
+    gl.uniform1i(u_noise, 2);
 
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, matterTex);
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, readTex);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, noiseTex);
 
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 

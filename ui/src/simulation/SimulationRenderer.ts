@@ -12,11 +12,13 @@
 
 import type { World, MapPlacement } from "../world/types";
 import { createFoliageSim, type FoliageSim } from "./FoliageSim";
+import { createNoiseSim, type NoiseSim } from "./NoiseSim";
 
 /** Per-map simulation instance */
 interface MapSim {
   placement: MapPlacement;
   sim: FoliageSim;
+  noise: NoiseSim;
 }
 
 export interface SimulationRenderer {
@@ -29,34 +31,29 @@ export function createSimulationRenderer(
   gl: WebGL2RenderingContext,
   world: World,
 ): SimulationRenderer {
-  // ── Per-map FoliageSim instances ─────────────────────────────────────────
+  // ── Per-map FoliageSim + NoiseSim instances ──────────────────────────────
   const mapSims: MapSim[] = world.mapPlacements.map((placement) => {
     const { width, height } = placement.map;
     const sim = createFoliageSim(gl, width, height);
+    const noise = createNoiseSim(gl, width, height);
 
     // Expose initial (empty) foliage texture to the render pass
     placement.map.layers.foliage = sim.currentTexture();
 
-    return { placement, sim };
+    return { placement, sim, noise };
   });
 
-  // Stable seed that changes every 20 s
-  let currentSeed = Math.random();
-  let lastSeedChange = performance.now();
-  const SEED_CHANGE_INTERVAL_MS = 20_000;
+  let stepCount = 0;
 
   // ── Simulation step ──────────────────────────────────────────────────────
   function step(): void {
-    const now = performance.now();
-    if (now - lastSeedChange >= SEED_CHANGE_INTERVAL_MS) {
-      currentSeed = Math.random();
-      lastSeedChange = now;
-    }
-
+    stepCount++;
     const prevViewport = gl.getParameter(gl.VIEWPORT) as Int32Array;
 
-    for (const { placement, sim } of mapSims) {
-      sim.step(placement.map.layers.matter!, currentSeed);
+    for (const { placement, sim, noise } of mapSims) {
+      // Evolve noise first, then feed it to foliage sim
+      noise.step(stepCount);
+      sim.step(placement.map.layers.matter!, noise.currentTexture());
       placement.map.layers.foliage = sim.currentTexture();
     }
 
@@ -68,8 +65,9 @@ export function createSimulationRenderer(
 
   // ── Dispose ──────────────────────────────────────────────────────────────
   function dispose(): void {
-    for (const { placement, sim } of mapSims) {
+    for (const { placement, sim, noise } of mapSims) {
       sim.dispose();
+      noise.dispose();
       placement.map.layers.foliage = null;
     }
   }

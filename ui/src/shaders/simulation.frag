@@ -14,7 +14,7 @@ in vec2 v_uv;
 
 uniform sampler2D u_matter;
 uniform sampler2D u_foliage_prev;
-uniform float u_seed;  // stable seed (changes rarely)
+uniform sampler2D u_noise;  // slowly-evolving noise gradient
 
 out vec4 out_color;
 
@@ -30,13 +30,6 @@ const float LIGHT_BLOCK = 0.2;         // Light lost per foliage pixel above
 const float ENERGY_DEATH = 0.05;       // Below this energy → die
 const float ENERGY_GROW_MIN = 0.3;     // Neighbor needs this energy to spread
 const float GROW_BASE_CHANCE = 0.15;   // Base probability for growth attempt
-
-// ── Pseudo-random hash ───────────────────────────────────────────────────
-float hash(vec2 p, float seed) {
-  vec3 p3 = fract(vec3(p.xyx) * 0.1031 + seed);
-  p3 += dot(p3, p3.yzx + 33.33);
-  return fract((p3.x + p3.y) * p3.z);
-}
 
 bool isDirt(vec4 m) {
   return m.a > 0.5 && distance(m.rgb, DIRT_COLOR) < DIRT_THRESHOLD;
@@ -59,7 +52,7 @@ void main() {
   vec4 fPrev = texture(u_foliage_prev, v_uv);
   vec2 texelSize = 1.0 / vec2(textureSize(u_matter, 0));
   
-  float rngStable = hash(v_uv, u_seed);
+  float rngStable = texture(u_noise, v_uv).r;
 
   // ── Not air → no foliage ───────────────────────────────────────────────
   if (!isAir(mHere)) {

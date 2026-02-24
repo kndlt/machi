@@ -11,6 +11,7 @@
  */
 
 import { createFoliageSim } from "../simulation/FoliageSim";
+import { createNoiseSim } from "../simulation/NoiseSim";
 import { createTexture } from "../utils/gl-utils";
 
 // ── Configuration ────────────────────────────────────────────────────────────
@@ -18,7 +19,6 @@ const W = 16;
 const H = 16;
 const DIRT_ROWS = 8;        // bottom 8 rows are dirt
 const NUM_STEPS = 40;       // how many simulation steps to run
-const SEED = 0.42;          // fixed seed for reproducibility
 
 // Dirt color must match shader: (103, 82, 75, 255)
 const DIRT_RGBA = [103, 82, 75, 255] as const;
@@ -34,7 +34,11 @@ function log(msg: string) {
 
 // ── Snapshot storage ─────────────────────────────────────────────────────────
 // Collect raw pixel data per step; render the grid at the end
-const snapshots: PixelGrid[] = [];
+interface Snapshot {
+  foliage: Float32Array;
+  noise: Float32Array;
+}
+const snapshots: Snapshot[] = [];
 
 // ── Color mapping ────────────────────────────────────────────────────────────
 const DIRT_COLOR = [103, 82, 75] as const;
@@ -84,6 +88,11 @@ const CHANNELS: ChannelDef[] = [
     label: "Alive",
     hue: [255, 255, 255],
     value: (d, i) => d[i + 3],
+  },
+  {
+    label: "Noise",
+    hue: [180, 120, 255],
+    value: (_d, _i) => 0, // special-cased in renderGrid
   },
 ];
 
@@ -178,7 +187,7 @@ const PAD = 2;         // gap between cells
 const LABEL_H = 18;    // row label height
 const HEADER_H = 16;   // column header height
 
-function renderGrid(steps: PixelGrid[]): string {
+function renderGrid(steps: Snapshot[]): string {
   const numSteps = steps.length;
   const numChannels = CHANNELS.length;
   const labelH = 14;   // top row for channel headers
@@ -213,7 +222,8 @@ function renderGrid(steps: PixelGrid[]): string {
 
   // Rows = timesteps, Columns = channels
   for (let row = 0; row < numSteps; row++) {
-    const foliage = steps[row];
+    const { foliage: foliageData, noise: noiseData } = steps[row];
+    const foliage = { data: foliageData };
     const y0 = labelH + row * (CELL + PAD);
 
     // Row label (t0, t1, ...) — pixel font, right-aligned
@@ -233,7 +243,19 @@ function renderGrid(steps: PixelGrid[]): string {
           const isDirt = py >= (H - DIRT_ROWS);
 
           let r: number, g: number, b: number;
-          if (isDirt) {
+          if (ch.label === "Noise") {
+            // Noise is independent of foliage alive state
+            const val = noiseData[idx]; // R channel
+            r = Math.round(ch.hue[0] * val);
+            g = Math.round(ch.hue[1] * val);
+            b = Math.round(ch.hue[2] * val);
+            if (isDirt) {
+              // Dim noise over dirt regions
+              r = Math.round(r * 0.4 + DIRT_COLOR[0] * 0.6);
+              g = Math.round(g * 0.4 + DIRT_COLOR[1] * 0.6);
+              b = Math.round(b * 0.4 + DIRT_COLOR[2] * 0.6);
+            }
+          } else if (isDirt) {
             [r, g, b] = DIRT_COLOR;
           } else if (alive > 0.05) {
             if (ch.label === "Visual") {
@@ -352,17 +374,19 @@ function renderASCII(foliage: PixelGrid, step: number): string {
 
 // ── RUN SIMULATION ───────────────────────────────────────────────────────────
 function run() {
-  log(`Simulation Lab — ${W}×${H} grid, ${DIRT_ROWS} dirt rows, seed=${SEED}`);
+  log(`Simulation Lab — ${W}×${H} grid, ${DIRT_ROWS} dirt rows`);
   log(`Running ${NUM_STEPS} steps...\n`);
 
   const matterTex = createMatterTexture();
   const sim = createFoliageSim(gl, W, H);
+  const noise = createNoiseSim(gl, W, H);
 
   let prevAliveCount = -1;
   let convergedAt = -1;
 
   for (let step = 0; step < NUM_STEPS; step++) {
-    sim.step(matterTex, SEED);
+    noise.step(step);
+    sim.step(matterTex, noise.currentTexture());
 
     // Read back result
     const data = sim.readPixels();
@@ -387,8 +411,9 @@ function run() {
     }
 
     // Snapshot raw pixel data for grid rendering at end
-    const copy = new Float32Array(data);
-    snapshots.push({ data: copy });
+    const foliageCopy = new Float32Array(data);
+    const noiseCopy = new Float32Array(noise.readPixels());
+    snapshots.push({ foliage: foliageCopy, noise: noiseCopy });
 
     prevAliveCount = aliveCount;
 
@@ -402,6 +427,7 @@ function run() {
   // Cleanup
   gl.deleteTexture(matterTex);
   sim.dispose();
+  noise.dispose();
 
   // Render the composite grid image
   const gridDataUrl = renderGrid(snapshots);
