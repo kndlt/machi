@@ -138,13 +138,28 @@ bool isAir(vec4 m) {
 void main() {
   vec4 mHere = texture(u_matter, v_uv);
 
-  // In PNG/texture space: Y increases downward.
-  // "Below in world" = one row down in the image = +texelY.
-  vec2 texelSize = 1.0 / vec2(textureSize(u_matter, 0));
-  vec4 mBelow = texture(u_matter, v_uv + vec2(0.0, texelSize.y));
+  // If this pixel is not air, no foliage
+  if (!isAir(mHere)) {
+    out_color = vec4(0.0);
+    return;
+  }
 
-  if (isAir(mHere) && isDirt(mBelow)) {
-    out_color = FOLIAGE_RGBA;
+  // In PNG/texture space: Y increases downward.
+  // Check if there's dirt within 5 pixels below → thicker foliage stroke.
+  vec2 texelSize = 1.0 / vec2(textureSize(u_matter, 0));
+  float minDist = 6.0; // distance to nearest dirt below (in pixels)
+  for (int i = 1; i <= 5; i++) {
+    vec4 mBelow = texture(u_matter, v_uv + vec2(0.0, texelSize.y * float(i)));
+    if (isDirt(mBelow)) {
+      minDist = float(i);
+      break;
+    }
+  }
+
+  if (minDist <= 5.0) {
+    // Fade foliage alpha with distance from dirt surface
+    float alpha = 1.0 - (minDist - 1.0) * 0.15;
+    out_color = vec4(FOLIAGE_RGBA.rgb, alpha);
   } else {
     out_color = vec4(0.0);
   }
