@@ -35,6 +35,16 @@ out vec4 out_color;
 // Outline color: darker green for foliage edges
 const vec3 OUTLINE_COLOR = vec3(0.15, 0.30, 0.10);
 
+// Foliage visual colors — mapped from energy level
+const vec3 FOLIAGE_LUSH  = vec3(0.30, 0.55, 0.20); // high energy: vibrant green
+const vec3 FOLIAGE_WEAK  = vec3(0.50, 0.45, 0.15); // low energy: yellow-brown
+
+// Convert foliage resource channels to visual color
+vec3 foliageColor(vec4 fol) {
+  float energy = fol.r;
+  return mix(FOLIAGE_WEAK, FOLIAGE_LUSH, clamp(energy, 0.0, 1.0));
+}
+
 // Check if a pixel is an outline (it has no foliage itself, but has a foliage neighbor)
 bool isFoliageOutline(sampler2D folTex, vec2 uv, vec2 ts) {
   if (texture(folTex, uv).a > 0.05) return false; // is foliage → not outline (we want outset)
@@ -82,10 +92,10 @@ void main() {
   vec2 folTexelSize = 1.0 / vec2(textureSize(u_foliage, 0));
 
   if (u_view_mode == 3) {
-    // Foliage-only view
+    // Foliage-only view (resource channels → visual color)
     vec4 fol = texture(u_foliage, uv);
     if (fol.a > 0.05) {
-      out_color = vec4(fol.rgb, 1.0);
+      out_color = vec4(foliageColor(fol), 1.0);
     } else if (u_outline_enabled == 1 && isFoliageOutline(u_foliage, uv, folTexelSize)) {
       out_color = vec4(OUTLINE_COLOR, 1.0); // Outset outline
     } else {
@@ -109,7 +119,8 @@ void main() {
     // Since we are checking current pixel, if it's an outline pixel, we draw outline.
     // If it's a foliage pixel, we draw foliage.
     if (fol.a > 0.05) {
-      c = mix(c, fol.rgb, fol.a);
+      vec3 fColor = foliageColor(fol);
+      c = mix(c, fColor, 1.0);
     } else if (u_outline_enabled == 1 && isFoliageOutline(u_foliage, uv, folTexelSize)) {
       // Draw outline on non-foliage pixels that are adjacent to foliage
       // We mix with 1.0 alpha because outline is opaque on top of whatever was below
@@ -139,13 +150,17 @@ void main() {
  * Foliage simulation fragment shader.
  *
  * IN:  matter texture + previous foliage state
- * OUT: new foliage RGBA
+ * OUT: new foliage RGBA where channels encode resources:
+ *        R = energy (0–1): combined vitality, determines color/survival
+ *        G = nutrients (0–1): supplied by dirt, flows through neighbors
+ *        B = light (0–1): supplied from above, blocked by canopy
+ *        A = alive flag (> 0 = alive)
  *
- * Rules:
- * - Seeding: air pixel near dirt surface → spawn foliage
- * - Growth: air pixel adjacent to existing foliage → spread (with probability)
- * - Decay: foliage too far from dirt or too crowded → die
- * - Dirt tinting: shallow dirt pixels near air get a green tint
+ * Growth is constrained by resources:
+ * - Nutrients come from dirt and decay with each hop through foliage
+ * - Light comes from above and is blocked by foliage canopy
+ * - Energy = nutrients * light; pixel dies if energy too low
+ * - Growth requires a neighbor with surplus energy to share
  *
  * Uses u_seed for per-step randomness (hash-based pseudo-random).
  */
@@ -164,11 +179,16 @@ out vec4 out_color;
 const vec3 DIRT_COLOR = vec3(0.404, 0.322, 0.294);
 const float DIRT_THRESHOLD = 0.12;
 
-// Foliage rendering color
-const vec4 FOLIAGE_RGBA = vec4(0.30, 0.52, 0.22, 1.0);
+// ── Resource constants ───────────────────────────────────────────────────
+const float NUTRIENT_ROOT = 1.0;       // Max nutrients at dirt contact
+const float NUTRIENT_DECAY = 0.15;     // Nutrient loss per hop through foliage
+const float LIGHT_FULL = 1.0;          // Full light (no canopy above)
+const float LIGHT_BLOCK = 0.2;         // Light lost per foliage pixel above
+const float ENERGY_DEATH = 0.05;       // Below this energy → die
+const float ENERGY_GROW_MIN = 0.3;     // Neighbor needs this energy to spread
+const float GROW_BASE_CHANCE = 0.15;   // Base probability for growth attempt
 
 // ── Pseudo-random hash ───────────────────────────────────────────────────
-// Standard hash: depends on UV + input seed
 float hash(vec2 p, float seed) {
   vec3 p3 = fract(vec3(p.xyx) * 0.1031 + seed);
   p3 += dot(p3, p3.yzx + 33.33);
@@ -187,96 +207,126 @@ bool hasFoliage(vec4 f) {
   return f.a > 0.05;
 }
 
+bool hasMatter(vec4 m) {
+  return !isAir(m);
+}
+
 void main() {
   vec4 mHere = texture(u_matter, v_uv);
   vec4 fPrev = texture(u_foliage_prev, v_uv);
   vec2 texelSize = 1.0 / vec2(textureSize(u_matter, 0));
   
-  // Stable RNG for survival (prevents flickering)
   float rngStable = hash(v_uv, u_seed);
 
-  // // ── Dirt pixel: tint near-surface dirt ──────────────────────────────────
-  // if (isDirt(mHere)) {
-  //   float distToAir = 3.0;
-  //   for (int i = 1; i <= 2; i++) {
-  //     vec4 mAbove = texture(u_matter, v_uv - vec2(0.0, texelSize.y * float(i)));
-  //     if (isAir(mAbove)) {
-  //       distToAir = float(i);
-  //       break;
-  //     }
-  //   }
-  //   if (distToAir <= 2.0) {
-  //     float alpha = 0.7 - (distToAir - 1.0) * 0.25;
-  //     out_color = vec4(FOLIAGE_RGBA.rgb, alpha);
-  //   } else {
-  //     out_color = vec4(0.0);
-  //   }
-  //   return;
-  // }
-
-  // ── Non-air, non-dirt: no foliage ──────────────────────────────────────
+  // ── Not air → no foliage ───────────────────────────────────────────────
   if (!isAir(mHere)) {
     out_color = vec4(0.0);
     return;
   }
 
-  // ── Air pixel logic ────────────────────────────────────────────────────
+  // ── Sample 4 neighbors (matter + foliage) ──────────────────────────────
+  vec2 offR = vec2( texelSize.x, 0.0);
+  vec2 offL = vec2(-texelSize.x, 0.0);
+  vec2 offU = vec2(0.0, -texelSize.y); // up in texture = -Y
+  vec2 offD = vec2(0.0,  texelSize.y); // down in texture = +Y
 
-  // Find distance to nearest dirt below (up to 5px)
-  float distToDirt = 6.0;
+  bool dirtR = hasMatter(texture(u_matter, v_uv + offR));
+  bool dirtL = hasMatter(texture(u_matter, v_uv + offL));
+  bool dirtU = hasMatter(texture(u_matter, v_uv + offU));
+  bool dirtD = hasMatter(texture(u_matter, v_uv + offD));
+  bool isTouchingDirt = dirtR || dirtL || dirtU || dirtD;
+
+  vec4 fR = texture(u_foliage_prev, v_uv + offR);
+  vec4 fL = texture(u_foliage_prev, v_uv + offL);
+  vec4 fU = texture(u_foliage_prev, v_uv + offU);
+  vec4 fD = texture(u_foliage_prev, v_uv + offD);
+
+  int foliageNeighbors = 0;
+  if (hasFoliage(fR)) foliageNeighbors++;
+  if (hasFoliage(fL)) foliageNeighbors++;
+  if (hasFoliage(fU)) foliageNeighbors++;
+  if (hasFoliage(fD)) foliageNeighbors++;
+
+  // ── Calculate NUTRIENTS ────────────────────────────────────────────────
+  // Rooted pixels get full nutrients. Otherwise, take the max from
+  // foliage neighbors minus decay (nutrients flow through the network).
+  float nutrients = 0.0;
+  if (isTouchingDirt) {
+    nutrients = NUTRIENT_ROOT;
+  } else {
+    // Best nutrient supply from any foliage neighbor
+    if (hasFoliage(fR)) nutrients = max(nutrients, fR.g - NUTRIENT_DECAY);
+    if (hasFoliage(fL)) nutrients = max(nutrients, fL.g - NUTRIENT_DECAY);
+    if (hasFoliage(fU)) nutrients = max(nutrients, fU.g - NUTRIENT_DECAY);
+    if (hasFoliage(fD)) nutrients = max(nutrients, fD.g - NUTRIENT_DECAY);
+    nutrients = max(nutrients, 0.0);
+  }
+
+  // ── Calculate LIGHT ────────────────────────────────────────────────────
+  // Check how many foliage pixels are above (up to 5). More canopy = less light.
+  float light = LIGHT_FULL;
   for (int i = 1; i <= 5; i++) {
-    vec4 mBelow = texture(u_matter, v_uv + vec2(0.0, texelSize.y * float(i)));
-    if (isDirt(mBelow)) {
-      distToDirt = float(i);
+    vec4 above = texture(u_foliage_prev, v_uv + vec2(0.0, -texelSize.y * float(i)));
+    if (hasFoliage(above)) {
+      light -= LIGHT_BLOCK;
+    }
+    // Stop scanning if we hit matter (ceiling)
+    if (hasMatter(texture(u_matter, v_uv + vec2(0.0, -texelSize.y * float(i))))) {
       break;
     }
   }
+  light = max(light, 0.0);
 
-  // Count neighboring foliage (4-connected)
-  int neighborCount = 0;
-  if (hasFoliage(texture(u_foliage_prev, v_uv + vec2( texelSize.x, 0.0)))) neighborCount++;
-  if (hasFoliage(texture(u_foliage_prev, v_uv + vec2(-texelSize.x, 0.0)))) neighborCount++;
-  if (hasFoliage(texture(u_foliage_prev, v_uv + vec2(0.0,  texelSize.y)))) neighborCount++;
-  if (hasFoliage(texture(u_foliage_prev, v_uv + vec2(0.0, -texelSize.y)))) neighborCount++;
+  // ── Calculate ENERGY ───────────────────────────────────────────────────
+  float energy = nutrients * light;
 
   bool wasAlive = hasFoliage(fPrev);
 
   if (wasAlive) {
-    // ── Survival / decay ─────────────────────────────────────────────────
-    // Die if dirt was removed (no dirt within range and no neighbors)
-    if (distToDirt > 5.0 && neighborCount == 0) {
+    // ── Survival ─────────────────────────────────────────────────────────
+    // Die if energy too low (starving: no nutrients or no light)
+    if (energy < ENERGY_DEATH) {
       out_color = vec4(0.0);
       return;
     }
-    // Overcrowding decay (use STABLE RNG)
-    // Only kill if persistently overcrowded.
-    if (neighborCount >= 4 && rngStable < 0.05) {
+
+    // Always survive if touching dirt (roots are permanent)
+    if (isTouchingDirt) {
+      out_color = vec4(energy, nutrients, light, 1.0);
+      return;
+    }
+
+    // Isolated (< 2 neighbors) and not rooted → die
+    if (foliageNeighbors < 2) {
       out_color = vec4(0.0);
       return;
     }
-    // Random decay for far pixels (use STABLE RNG)
-    if (distToDirt > 3.0 && rngStable < 0.02) {
-      out_color = vec4(0.0);
-      return;
-    }
-    // Survive
-    out_color = fPrev;
+
+    // Survive with updated resources
+    out_color = vec4(energy, nutrients, light, 1.0);
   } else {
-    // ── Seeding / growth ─────────────────────────────────────────────────
-    // Direct seeding: air right above dirt (use STABLE RNG for fixed seed locations)
-    if (distToDirt == 1.0 && rngStable < 0.4) {
-      out_color = FOLIAGE_RGBA;
+    // ── Growth ───────────────────────────────────────────────────────────
+    // 1. Rooting: spawn adjacent to dirt
+    if (isTouchingDirt && rngStable < 0.25) {
+      out_color = vec4(energy, nutrients, light, 1.0);
       return;
     }
-    // Growth from neighbors: spread if adjacent to existing foliage
-    // Use STABLE RNG so growth is deterministic (but may stall if unlucky)
-    if (neighborCount >= 1 && distToDirt <= 5.0) {
-      // More neighbors = higher chance to grow (0.02 base * count)
-      float growChance = (0.52 * float(neighborCount)) / distToDirt;
-      if (rngStable < growChance) {
-        float alpha = 1.0 - (distToDirt - 1.0) * 0.15;
-        out_color = vec4(FOLIAGE_RGBA.rgb, alpha);
-        return;
+
+    // 2. Spreading: grow from neighbor with surplus energy
+    if (foliageNeighbors >= 1 && energy >= ENERGY_DEATH) {
+      // Check if any neighbor has enough energy to support growth
+      float maxNeighborEnergy = 0.0;
+      if (hasFoliage(fR)) maxNeighborEnergy = max(maxNeighborEnergy, fR.r);
+      if (hasFoliage(fL)) maxNeighborEnergy = max(maxNeighborEnergy, fL.r);
+      if (hasFoliage(fU)) maxNeighborEnergy = max(maxNeighborEnergy, fU.r);
+      if (hasFoliage(fD)) maxNeighborEnergy = max(maxNeighborEnergy, fD.r);
+
+      if (maxNeighborEnergy >= ENERGY_GROW_MIN) {
+        float chance = GROW_BASE_CHANCE * (float(foliageNeighbors) * 0.5);
+        if (rngStable < chance) {
+          out_color = vec4(energy, nutrients, light, 1.0);
+          return;
+        }
       }
     }
     out_color = vec4(0.0);
