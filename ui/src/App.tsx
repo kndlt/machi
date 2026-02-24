@@ -35,8 +35,6 @@ async function initApp(canvas: HTMLCanvasElement): Promise<() => void> {
 
   // 4b. Simulation renderer (produces foliage layer)
   const simulation = createSimulationRenderer(gl, world);
-  // Run initial simulation step so foliage is visible immediately
-  simulation.step();
 
   // 5. Controls
   const controls = createCameraControls(canvas, camera, layerRenderer);

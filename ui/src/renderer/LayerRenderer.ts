@@ -24,6 +24,8 @@ export interface LayerRenderer {
   viewMode: number;
   /** Toggle foliage rendering (default true) */
   foliageEnabled: boolean;
+  /** Toggle foliage outlines (default true) */
+  outlineEnabled: boolean;
   dispose(): void;
 }
 
@@ -46,10 +48,12 @@ export function createLayerRenderer(
   const u_foliage = gl.getUniformLocation(program, "u_foliage");
   const u_view_mode = gl.getUniformLocation(program, "u_view_mode");
   const u_foliage_enabled = gl.getUniformLocation(program, "u_foliage_enabled");
+  const u_outline_enabled = gl.getUniformLocation(program, "u_outline_enabled");
 
   // 0 = visual, 1 = matter, 2 = segmentation
   let viewMode = 0;
   let foliageEnabled = true;
+  let outlineEnabled = true;
 
   // ── Per-map GPU resources ────────────────────────────────────────────────
   const mapGPUs: MapGPU[] = world.mapPlacements.map((placement) => {
@@ -99,6 +103,7 @@ export function createLayerRenderer(
     gl.uniform1i(u_foliage, 5);
     gl.uniform1i(u_view_mode, viewMode);
     gl.uniform1i(u_foliage_enabled, foliageEnabled ? 1 : 0);
+    gl.uniform1i(u_outline_enabled, outlineEnabled ? 1 : 0);
 
     // Enable blending for correct alpha compositing
     gl.enable(gl.BLEND);
@@ -161,6 +166,8 @@ export function createLayerRenderer(
     set viewMode(v: number) { viewMode = v % 4; },
     get foliageEnabled() { return foliageEnabled; },
     set foliageEnabled(v: boolean) { foliageEnabled = v; },
+    get outlineEnabled() { return outlineEnabled; },
+    set outlineEnabled(v: boolean) { outlineEnabled = v; },
     dispose,
   };
 }

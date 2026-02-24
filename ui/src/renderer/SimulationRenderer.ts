@@ -97,13 +97,17 @@ export function createSimulationRenderer(
   });
 
   let stepCount = 0;
+  // Stable seed that changes rarely (every 60s)
+  // But for "predestined convergence", maybe we don't want it to change at all?
+  // Let's keep it stable for now.
   let currentSeed = Math.random();
   let lastSeedChange = performance.now();
-  const SEED_CHANGE_INTERVAL_MS = 5_000_000; // change seed every 60 seconds
+  const SEED_CHANGE_INTERVAL_MS = 60_000; 
 
   // ── Simulation step ──────────────────────────────────────────────────────
   function step(): void {
     const now = performance.now();
+    // Only update the seed if requested.
     if (now - lastSeedChange >= SEED_CHANGE_INTERVAL_MS) {
       currentSeed = Math.random();
       lastSeedChange = now;

@@ -28,19 +28,22 @@ uniform sampler2D u_matter;
 uniform sampler2D u_foliage;
 uniform int u_view_mode;       // 0 = visual, 1 = matter, 2 = segmentation, 3 = foliage
 uniform int u_foliage_enabled; // 1 = show foliage layer, 0 = hide
+uniform int u_outline_enabled; // 1 = show foliage outline, 0 = hide
 
 out vec4 out_color;
 
 // Outline color: darker green for foliage edges
 const vec3 OUTLINE_COLOR = vec3(0.15, 0.30, 0.10);
 
-// Check if a foliage pixel is on an edge (any 4-connected neighbor lacks foliage)
-bool isFoliageEdge(sampler2D folTex, vec2 uv, vec2 ts) {
-  if (texture(folTex, uv).a < 0.05) return false; // not foliage → not edge
-  if (texture(folTex, uv + vec2( ts.x, 0.0)).a < 0.05) return true;
-  if (texture(folTex, uv + vec2(-ts.x, 0.0)).a < 0.05) return true;
-  if (texture(folTex, uv + vec2(0.0,  ts.y)).a < 0.05) return true;
-  if (texture(folTex, uv + vec2(0.0, -ts.y)).a < 0.05) return true;
+// Check if a pixel is an outline (it has no foliage itself, but has a foliage neighbor)
+bool isFoliageOutline(sampler2D folTex, vec2 uv, vec2 ts) {
+  if (texture(folTex, uv).a > 0.05) return false; // is foliage → not outline (we want outset)
+  
+  // Check 4 neighbors
+  if (texture(folTex, uv + vec2( ts.x, 0.0)).a > 0.05) return true;
+  if (texture(folTex, uv + vec2(-ts.x, 0.0)).a > 0.05) return true;
+  if (texture(folTex, uv + vec2(0.0,  ts.y)).a > 0.05) return true;
+  if (texture(folTex, uv + vec2(0.0, -ts.y)).a > 0.05) return true;
   return false;
 }
 
@@ -81,10 +84,12 @@ void main() {
   if (u_view_mode == 3) {
     // Foliage-only view
     vec4 fol = texture(u_foliage, uv);
-    if (fol.a > 0.05 && isFoliageEdge(u_foliage, uv, folTexelSize)) {
-      out_color = vec4(OUTLINE_COLOR, 1.0);
+    if (fol.a > 0.05) {
+      out_color = vec4(fol.rgb, 1.0);
+    } else if (u_outline_enabled == 1 && isFoliageOutline(u_foliage, uv, folTexelSize)) {
+      out_color = vec4(OUTLINE_COLOR, 1.0); // Outset outline
     } else {
-      out_color = vec4(fol.rgb, fol.a > 0.05 ? 1.0 : 0.0);
+      out_color = vec4(0.0);
     }
     return;
   }
@@ -96,15 +101,19 @@ void main() {
   c = mix(c, sp.rgb, sp.a);
   c = mix(c, fg.rgb, fg.a);
 
-  // Composite foliage layer on top of foreground (with 1px outline)
+  // Composite foliage layer on top of foreground
   if (u_foliage_enabled == 1) {
     vec4 fol = texture(u_foliage, uv);
+    
+    // Draw outline first (behind foliage, or rather "around" it)
+    // Since we are checking current pixel, if it's an outline pixel, we draw outline.
+    // If it's a foliage pixel, we draw foliage.
     if (fol.a > 0.05) {
-      if (isFoliageEdge(u_foliage, uv, folTexelSize)) {
-        c = mix(c, OUTLINE_COLOR, fol.a);
-      } else {
-        c = mix(c, fol.rgb, fol.a);
-      }
+      c = mix(c, fol.rgb, fol.a);
+    } else if (u_outline_enabled == 1 && isFoliageOutline(u_foliage, uv, folTexelSize)) {
+      // Draw outline on non-foliage pixels that are adjacent to foliage
+      // We mix with 1.0 alpha because outline is opaque on top of whatever was below
+      c = mix(c, OUTLINE_COLOR, 1.0);
     }
   }
 
@@ -147,7 +156,7 @@ in vec2 v_uv;
 
 uniform sampler2D u_matter;
 uniform sampler2D u_foliage_prev;
-uniform float u_seed;  // changes each step for randomness
+uniform float u_seed;  // stable seed (changes rarely)
 
 out vec4 out_color;
 
@@ -159,8 +168,9 @@ const float DIRT_THRESHOLD = 0.12;
 const vec4 FOLIAGE_RGBA = vec4(0.30, 0.52, 0.22, 1.0);
 
 // ── Pseudo-random hash ───────────────────────────────────────────────────
-float hash(vec2 p) {
-  vec3 p3 = fract(vec3(p.xyx) * 0.1031 + u_seed);
+// Standard hash: depends on UV + input seed
+float hash(vec2 p, float seed) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031 + seed);
   p3 += dot(p3, p3.yzx + 33.33);
   return fract((p3.x + p3.y) * p3.z);
 }
@@ -181,7 +191,9 @@ void main() {
   vec4 mHere = texture(u_matter, v_uv);
   vec4 fPrev = texture(u_foliage_prev, v_uv);
   vec2 texelSize = 1.0 / vec2(textureSize(u_matter, 0));
-  float rng = hash(v_uv);
+  
+  // Stable RNG for survival (prevents flickering)
+  float rngStable = hash(v_uv, u_seed);
 
   // ── Dirt pixel: tint near-surface dirt ──────────────────────────────────
   if (isDirt(mHere)) {
@@ -193,12 +205,12 @@ void main() {
         break;
       }
     }
-    if (distToAir <= 2.0) {
-      float alpha = 0.7 - (distToAir - 1.0) * 0.25;
-      out_color = vec4(FOLIAGE_RGBA.rgb, alpha);
-    } else {
-      out_color = vec4(0.0);
-    }
+    // if (distToAir <= 2.0) {
+    //   float alpha = 0.7 - (distToAir - 1.0) * 0.25;
+    //   out_color = vec4(FOLIAGE_RGBA.rgb, alpha);
+    // } else {
+    //   out_color = vec4(0.0);
+    // }
     return;
   }
 
@@ -236,13 +248,14 @@ void main() {
       out_color = vec4(0.0);
       return;
     }
-    // Overcrowding decay
-    if (neighborCount >= 4 && rng < 0.05) {
+    // Overcrowding decay (use STABLE RNG)
+    // Only kill if persistently overcrowded.
+    if (neighborCount >= 4 && rngStable < 0.05) {
       out_color = vec4(0.0);
       return;
     }
-    // Random decay for far pixels (keeps edges organic)
-    if (distToDirt > 3.0 && rng < 0.03) {
+    // Random decay for far pixels (use STABLE RNG)
+    if (distToDirt > 3.0 && rngStable < 0.02) {
       out_color = vec4(0.0);
       return;
     }
@@ -250,15 +263,16 @@ void main() {
     out_color = fPrev;
   } else {
     // ── Seeding / growth ─────────────────────────────────────────────────
-    // Direct seeding: air right above dirt
-    if (distToDirt == 1.0 && rng < 0.4) {
+    // Direct seeding: air right above dirt (use STABLE RNG for fixed seed locations)
+    if (distToDirt == 1.0 && rngStable < 0.4) {
       out_color = FOLIAGE_RGBA;
       return;
     }
     // Growth from neighbors: spread if adjacent to existing foliage
+    // Use STABLE RNG so growth is deterministic (but may stall if unlucky)
     if (neighborCount >= 1 && distToDirt <= 5.0) {
-      float growChance = 0.15 / distToDirt;
-      if (rng < growChance) {
+      float growChance = 0.02 / distToDirt; // Slower growth
+      if (rngStable < growChance) {
         float alpha = 1.0 - (distToDirt - 1.0) * 0.15;
         out_color = vec4(FOLIAGE_RGBA.rgb, alpha);
         return;
