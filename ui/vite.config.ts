@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import svgr from "vite-plugin-svgr"
+import glsl from 'vite-plugin-glsl'
 import { cloudflare } from "@cloudflare/vite-plugin";
 import { resolve } from 'path'
 import pkg from './package.json'
@@ -43,6 +44,7 @@ export default defineConfig({
       },
     }),
     svgr(),
+    glsl(),
     // Cloudflare worker for API proxying
     cloudflare(),
   ],

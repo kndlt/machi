@@ -7,7 +7,9 @@
  */
 
 import type { World, MapPlacement } from "../world/types";
-import { LAYER_VERTEX, LAYER_FRAGMENT, createProgram } from "./shaders";
+import layerVert from "../shaders/layer.vert";
+import layerFrag from "../shaders/layer.frag";
+import { createProgram } from "../utils/gl-utils";
 import type { Camera } from "./Camera";
 import { buildCameraMatrix } from "./Camera";
 
@@ -34,7 +36,7 @@ export function createLayerRenderer(
   world: World
 ): LayerRenderer {
   // ── Program ──────────────────────────────────────────────────────────────
-  const program = createProgram(gl, LAYER_VERTEX, LAYER_FRAGMENT);
+  const program = createProgram(gl, layerVert, layerFrag);
 
   // Uniform locations
   const u_camera_matrix = gl.getUniformLocation(program, "u_camera_matrix");

@@ -1,19 +1,17 @@
 /**
  * sim-runner.ts — Headless-friendly WebGL2 simulation runner.
  *
- * Imports the SAME shaders used by the real app, runs them on a small
- * test grid, reads back pixel data, and logs ASCII + stats to console.
+ * Imports the SAME shaders used by the real app (via FoliageSim),
+ * runs them on a small test grid, reads back pixel data, and logs
+ * ASCII + stats to console.
  *
  * Usage:
  *   Browser:  open http://localhost:8588/sim.html
  *   Headless: pnpm sim:headless
  */
 
-import {
-  SIM_VERTEX,
-  SIM_FOLIAGE_FRAGMENT,
-  createProgram,
-} from "../renderer/shaders";
+import { createFoliageSim } from "../simulation/FoliageSim";
+import { createTexture } from "../utils/gl-utils";
 
 // ── Configuration ────────────────────────────────────────────────────────────
 const W = 16;
@@ -271,11 +269,12 @@ const canvas = document.getElementById("sim-canvas") as HTMLCanvasElement;
 canvas.width = W;
 canvas.height = H;
 
-const gl = canvas.getContext("webgl2", { antialias: false, preserveDrawingBuffer: true });
-if (!gl) {
+const glOrNull = canvas.getContext("webgl2", { antialias: false, preserveDrawingBuffer: true });
+if (!glOrNull) {
   log("ERROR: WebGL2 not available");
   throw new Error("WebGL2 not available");
 }
+const gl: WebGL2RenderingContext = glOrNull;
 
 // ── Create matter texture ────────────────────────────────────────────────────
 function createMatterTexture(): WebGLTexture {
@@ -283,7 +282,6 @@ function createMatterTexture(): WebGLTexture {
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       const idx = (y * W + x) * 4;
-      // In texture space: Y=0 is top row. Dirt in bottom DIRT_ROWS rows.
       const isDirt = y >= (H - DIRT_ROWS);
       const rgba = isDirt ? DIRT_RGBA : AIR_RGBA;
       pixels[idx + 0] = rgba[0];
@@ -292,59 +290,13 @@ function createMatterTexture(): WebGLTexture {
       pixels[idx + 3] = rgba[3];
     }
   }
-
-  const tex = gl.createTexture()!;
-  gl.bindTexture(gl.TEXTURE_2D, tex);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, W, H, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  return tex;
-}
-
-// ── Create empty foliage texture ─────────────────────────────────────────────
-function createFoliageTexture(): WebGLTexture {
-  const tex = gl.createTexture()!;
-  gl.bindTexture(gl.TEXTURE_2D, tex);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, W, H, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  return tex;
-}
-
-function createFBO(tex: WebGLTexture): WebGLFramebuffer {
-  const fbo = gl.createFramebuffer()!;
-  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
-  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
-  const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
-  if (status !== gl.FRAMEBUFFER_COMPLETE) {
-    throw new Error(`FBO incomplete: ${status}`);
-  }
-  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-  return fbo;
+  return createTexture(gl, W, H, pixels);
 }
 
 // ── Read back pixels ─────────────────────────────────────────────────────────
 interface PixelGrid {
   /** RGBA float values per pixel (energy, nutrients, light, alive) */
   data: Float32Array;
-}
-
-function readPixels(fbo: WebGLFramebuffer): PixelGrid {
-  const buf = new Uint8Array(W * H * 4);
-  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
-  gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, buf);
-  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-
-  // Convert to float (0–1)
-  const data = new Float32Array(W * H * 4);
-  for (let i = 0; i < buf.length; i++) {
-    data[i] = buf[i] / 255;
-  }
-  return { data };
 }
 
 // ── ASCII rendering ──────────────────────────────────────────────────────────
@@ -403,59 +355,23 @@ function run() {
   log(`Simulation Lab — ${W}×${H} grid, ${DIRT_ROWS} dirt rows, seed=${SEED}`);
   log(`Running ${NUM_STEPS} steps...\n`);
 
-  // Compile simulation program (uses the REAL shaders from shaders.ts)
-  const program = createProgram(gl, SIM_VERTEX, SIM_FOLIAGE_FRAGMENT);
-  const u_matter = gl.getUniformLocation(program, "u_matter");
-  const u_foliage_prev = gl.getUniformLocation(program, "u_foliage_prev");
-  const u_seed = gl.getUniformLocation(program, "u_seed");
-
-  const emptyVAO = gl.createVertexArray()!;
-
-  // Create textures
   const matterTex = createMatterTexture();
-  const folA = createFoliageTexture();
-  const folB = createFoliageTexture();
-  const fboA = createFBO(folA);
-  const fboB = createFBO(folB);
-
-  let readIdx = 0;
-  const textures = [folA, folB];
-  const fbos = [fboA, fboB];
+  const sim = createFoliageSim(gl, W, H);
 
   let prevAliveCount = -1;
   let convergedAt = -1;
 
   for (let step = 0; step < NUM_STEPS; step++) {
-    const readTex = textures[readIdx];
-    const writeIdx = 1 - readIdx;
-    const writeFbo = fbos[writeIdx];
-
-    // Run simulation shader
-    gl.useProgram(program);
-    gl.bindVertexArray(emptyVAO);
-    gl.disable(gl.BLEND);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, writeFbo);
-    gl.viewport(0, 0, W, H);
-
-    gl.uniform1i(u_matter, 0);
-    gl.uniform1i(u_foliage_prev, 1);
-    // Vary seed per step so RNG produces different values each tick
-    gl.uniform1f(u_seed, SEED);
-
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, matterTex);
-    gl.activeTexture(gl.TEXTURE1);
-    gl.bindTexture(gl.TEXTURE_2D, readTex);
-
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    sim.step(matterTex, SEED);
 
     // Read back result
-    const pixels = readPixels(writeFbo);
+    const data = sim.readPixels();
+    const pixels: PixelGrid = { data };
 
     // Count alive
     let aliveCount = 0;
     for (let i = 0; i < W * H; i++) {
-      if (pixels.data[i * 4 + 3] > 0.05) aliveCount++;
+      if (data[i * 4 + 3] > 0.05) aliveCount++;
     }
 
     // Check convergence
@@ -471,11 +387,10 @@ function run() {
     }
 
     // Snapshot raw pixel data for grid rendering at end
-    const copy = new Float32Array(pixels.data);
+    const copy = new Float32Array(data);
     snapshots.push({ data: copy });
 
     prevAliveCount = aliveCount;
-    readIdx = writeIdx;
 
     // Stop early if converged for 3 consecutive steps
     if (convergedAt >= 0 && step - convergedAt >= 3) {
@@ -486,12 +401,7 @@ function run() {
 
   // Cleanup
   gl.deleteTexture(matterTex);
-  gl.deleteTexture(folA);
-  gl.deleteTexture(folB);
-  gl.deleteFramebuffer(fboA);
-  gl.deleteFramebuffer(fboB);
-  gl.deleteVertexArray(emptyVAO);
-  gl.deleteProgram(program);
+  sim.dispose();
 
   // Render the composite grid image
   const gridDataUrl = renderGrid(snapshots);

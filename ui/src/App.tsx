@@ -3,7 +3,7 @@ import { Theme } from "@radix-ui/themes";
 import { createWebGLRenderer } from "./renderer/WebGLRenderer";
 import { createCamera } from "./renderer/Camera";
 import { createLayerRenderer } from "./renderer/LayerRenderer";
-import { createSimulationRenderer } from "./renderer/SimulationRenderer";
+import { createSimulationRenderer } from "./simulation/SimulationRenderer";
 import { createCameraControls } from "./controls/CameraControls";
 import { loadWorld } from "./world/WorldLoader";
 

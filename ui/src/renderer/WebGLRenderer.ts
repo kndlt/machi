@@ -4,7 +4,7 @@
 
 import type { Camera } from "./Camera";
 import type { LayerRenderer } from "./LayerRenderer";
-import type { SimulationRenderer } from "./SimulationRenderer";
+import type { SimulationRenderer } from "../simulation/SimulationRenderer";
 
 export interface WebGLRenderer {
   gl: WebGL2RenderingContext;
