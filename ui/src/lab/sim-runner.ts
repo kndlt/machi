@@ -7,7 +7,7 @@
  *
  * Usage:
  *   Browser:  open http://localhost:8588/sim.html
- *   Headless: pnpm sim:headless
+ *   Headless: npm run sim
  */
 
 import { createMapRenderer } from "../renderer/MapRenderer";
@@ -179,6 +179,141 @@ function renderGrid(
   return gridCanvas.toDataURL("image/png");
 }
 
+// ── Animated frame capture ───────────────────────────────────────────────────
+/**
+ * Data exposed to the headless runner for animated WebP assembly.
+ */
+interface AnimFrames {
+  /** One base64 PNG per step — each showing all layers in a horizontal strip */
+  gridFrames: string[];
+  /** Per-layer frames: layerName → array of base64 PNGs (one per step) */
+  perLayer: Record<string, string[]>;
+  /** Pixel dimensions of each grid frame */
+  gridWidth: number;
+  gridHeight: number;
+  /** Pixel dimensions of each per-layer frame */
+  cellWidth: number;
+  cellHeight: number;
+}
+
+const ANIM_SCALE = 4; // scale factor for animation frames (32px → 128px)
+
+/**
+ * Replay the simulation from scratch and capture per-step frames for
+ * animated WebP generation. Produces:
+ *   - gridFrames: each frame is a horizontal strip with all view modes
+ *   - perLayer: individual scaled frames per view mode
+ */
+function captureAnimationFrames(gl: WebGL2RenderingContext): AnimFrames {
+  const world = createSyntheticWorld(gl);
+  const mapRenderer = createMapRenderer(gl, world);
+  const simulation = createSimulationRenderer(gl, world, { seed: SEED });
+
+  const camera = createCamera();
+  camera.x = W / 2;
+  camera.y = H / 2;
+  camera.zoom = 1;
+  camera.viewportWidth = W;
+  camera.viewportHeight = H;
+
+  const readTex = createTexture(gl, W, H);
+  const readFbo = createFBO(gl, readTex);
+
+  const cellW = W * ANIM_SCALE;
+  const cellH = H * ANIM_SCALE;
+  const labelH = GLYPH_H + 6;
+  const stepLabelW = 32;
+  const numCols = GRID_COLUMNS.length;
+  const gridW = stepLabelW + numCols * (cellW + PAD);
+  const gridH = labelH + cellH + PAD;
+
+  const gridFrames: string[] = [];
+  const perLayer: Record<string, string[]> = {};
+  for (const col of GRID_COLUMNS) perLayer[col.label] = [];
+
+  // Scratch canvas for 1:1 pixel readback
+  const tmp = document.createElement("canvas");
+  tmp.width = W;
+  tmp.height = H;
+  const tmpCtx = tmp.getContext("2d")!;
+
+  for (let step = 0; step < NUM_STEPS; step++) {
+    simulation.step();
+
+    // ── Grid frame for this step ──────────────────────────────────────────
+    const gridCanvas = document.createElement("canvas");
+    gridCanvas.width = gridW;
+    gridCanvas.height = gridH;
+    const gctx = gridCanvas.getContext("2d")!;
+    gctx.imageSmoothingEnabled = false;
+    gctx.fillStyle = `rgb(${BG_COLOR[0]},${BG_COLOR[1]},${BG_COLOR[2]})`;
+    gctx.fillRect(0, 0, gridW, gridH);
+
+    // Step label (left side)
+    const stepLabel = `t${step}`;
+    const stw = pixelTextWidth(stepLabel);
+    drawPixelText(gctx, stepLabel, stepLabelW - 4 - stw, labelH + Math.floor((cellH - GLYPH_H) / 2), "#888");
+
+    for (let col = 0; col < numCols; col++) {
+      const { viewMode, label } = GRID_COLUMNS[col];
+      const x0 = stepLabelW + col * (cellW + PAD);
+
+      // Column header
+      const tw = pixelTextWidth(label);
+      drawPixelText(gctx, label, x0 + Math.floor((cellW - tw) / 2), 2, "#aaa");
+
+      // Render this view mode to FBO
+      gl.bindFramebuffer(gl.FRAMEBUFFER, readFbo);
+      gl.viewport(0, 0, W, H);
+      gl.clearColor(BG_COLOR[0] / 255, BG_COLOR[1] / 255, BG_COLOR[2] / 255, 1.0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+
+      mapRenderer.viewMode = viewMode;
+      mapRenderer.foliageEnabled = true;
+      mapRenderer.outlineEnabled = false;
+      mapRenderer.render(camera);
+
+      // Read back pixels
+      const buf = new Uint8Array(W * H * 4);
+      gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+
+      // Flip Y into Canvas2D
+      const imgData = tmpCtx.createImageData(W, H);
+      for (let py = 0; py < H; py++) {
+        const srcRow = (H - 1 - py) * W * 4;
+        const dstRow = py * W * 4;
+        for (let px = 0; px < W * 4; px++) {
+          imgData.data[dstRow + px] = buf[srcRow + px];
+        }
+      }
+      tmpCtx.putImageData(imgData, 0, 0);
+
+      // Scale into grid cell
+      gctx.drawImage(tmp, x0, labelH, cellW, cellH);
+
+      // ── Per-layer frame ─────────────────────────────────────────────────
+      const layerCanvas = document.createElement("canvas");
+      layerCanvas.width = cellW;
+      layerCanvas.height = cellH;
+      const lctx = layerCanvas.getContext("2d")!;
+      lctx.imageSmoothingEnabled = false;
+      lctx.drawImage(tmp, 0, 0, cellW, cellH);
+      perLayer[label].push(layerCanvas.toDataURL("image/png"));
+    }
+
+    gridFrames.push(gridCanvas.toDataURL("image/png"));
+  }
+
+  // Cleanup
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.deleteFramebuffer(readFbo);
+  gl.deleteTexture(readTex);
+  simulation.dispose();
+  mapRenderer.dispose();
+
+  return { gridFrames, perLayer, gridWidth: gridW, gridHeight: gridH, cellWidth: cellW, cellHeight: cellH };
+}
+
 // ── WebGL2 setup ─────────────────────────────────────────────────────────────
 const canvas = document.getElementById("sim-canvas") as HTMLCanvasElement;
 canvas.width = W;
@@ -312,6 +447,12 @@ function run() {
   // Render the composite grid image (creates its own world + renderer internally)
   const gridDataUrl = renderGrid(gl, snapshots, () => {});
   (window as unknown as Record<string, unknown>).__SIM_GRID__ = gridDataUrl;
+
+  // Capture per-step animation frames for animated WebP generation
+  log("Capturing animation frames...");
+  const animFrames = captureAnimationFrames(gl);
+  (window as unknown as Record<string, unknown>).__SIM_ANIM__ = animFrames;
+  log(`Captured ${animFrames.gridFrames.length} grid frames × ${Object.keys(animFrames.perLayer).length} layers`);
 
   log(`\n═══ Done — ${snapshots.length} steps captured ═══`);
 

@@ -15,6 +15,7 @@ import { createServer, type ViteDevServer } from "vite";
 import { chromium } from "playwright";
 import { resolve, join } from "path";
 import { mkdirSync, writeFileSync, rmSync } from "fs";
+import sharp from "sharp";
 
 const TIMEOUT_MS = 30_000;
 const ROOT = resolve(import.meta.dirname, "..");
@@ -89,6 +90,94 @@ async function main() {
         const buf = Buffer.from(base64, "base64");
         writeFileSync(join(DEBUG_DIR, "grid.png"), buf);
         console.log(`\n📁 Saved grid.png to debug/frames/`);
+      }
+
+      // ── 4b. Animated WebP generation ──────────────────────────────────
+      interface AnimFrames {
+        gridFrames: string[];
+        perLayer: Record<string, string[]>;
+        gridWidth: number;
+        gridHeight: number;
+        cellWidth: number;
+        cellHeight: number;
+      }
+
+      const animData = await page.evaluate(() => {
+        return (window as unknown as Record<string, unknown>).__SIM_ANIM__ as AnimFrames | undefined;
+      }) as AnimFrames | undefined;
+
+      if (animData) {
+        mkdirSync(DEBUG_DIR, { recursive: true });
+
+        /**
+         * Assemble base64 PNG frames into an animated WebP.
+         * Strategy: decode each frame to raw RGBA, stack vertically,
+         * then use sharp's `pageHeight` to split into animation frames.
+         */
+        async function createAnimatedWebP(
+          frames: string[],
+          width: number,
+          height: number,
+          outputPath: string,
+          delayMs = 200,
+        ): Promise<void> {
+          // Decode all frames to raw RGBA buffers
+          const rawFrames: Buffer[] = [];
+          for (const dataUrl of frames) {
+            const b64 = dataUrl.replace(/^data:image\/png;base64,/, "");
+            const pngBuf = Buffer.from(b64, "base64");
+            const { data } = await sharp(pngBuf)
+              .ensureAlpha()
+              .raw()
+              .toBuffer({ resolveWithObject: true });
+            rawFrames.push(data);
+          }
+
+          // Stack all frames into one tall image
+          const allPixels = Buffer.concat(rawFrames);
+          const totalHeight = height * rawFrames.length;
+
+          await sharp(allPixels, {
+            raw: { width, height: totalHeight, channels: 4 },
+          })
+            .webp({
+              loop: 0, // loop forever
+              delay: rawFrames.map(() => delayMs),
+              pageHeight: height,
+            })
+            .toFile(outputPath);
+        }
+
+        // Grid animated WebP (all layers side by side, one frame per step)
+        try {
+          await createAnimatedWebP(
+            animData.gridFrames,
+            animData.gridWidth,
+            animData.gridHeight,
+            join(DEBUG_DIR, "grid-animated.webp"),
+          );
+          console.log("📽  Saved grid-animated.webp");
+        } catch (err) {
+          console.error("Failed to create grid-animated.webp:", err);
+        }
+
+        // Per-layer animated WebPs
+        for (const [layerName, frames] of Object.entries(animData.perLayer)) {
+          const filename = layerName.toLowerCase().replace(/\s+/g, "-") + ".webp";
+          try {
+            await createAnimatedWebP(
+              frames,
+              animData.cellWidth,
+              animData.cellHeight,
+              join(DEBUG_DIR, filename),
+            );
+            console.log(`📽  Saved ${filename}`);
+          } catch (err) {
+            console.error(`Failed to create ${filename}:`, err);
+          }
+        }
+
+        console.log(`\n📁 All animated WebPs saved to debug/frames/`);
       }
     } catch (err) {
       console.error("Simulation timed out or failed:", err);

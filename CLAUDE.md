@@ -19,7 +19,7 @@ The long-term vision (see `docs/semantic-tile-*.md`) is "Semantic Tiles" — til
 - **UI**: Radix UI Themes, Emotion CSS (`css` prop via Babel plugin)
 - **Backend**: Cloudflare Workers (Hono), currently just a `/api/health` stub
 - **Persistence**: localStorage only (no server-side save yet)
-- **Package manager**: pnpm 10
+- **Package manager**: npm
 - **Deploy**: `wrangler deploy` to Cloudflare (SPA mode with worker)
 - **Tests**: vitest configured but **no tests exist yet**
 
@@ -78,13 +78,13 @@ machi/
 
 ```bash
 cd ui
-pnpm install          # Install dependencies
-pnpm dev              # Start dev server on port 8588
-pnpm build            # TypeScript check + Vite build
-pnpm test             # Run vitest (no tests exist yet)
-pnpm lint             # ESLint
-pnpm deploy           # Build + wrangler deploy to Cloudflare
-pnpm kill             # Kill process on port 8588
+npm install              # Install dependencies
+npm run dev              # Start dev server on port 8588
+npm run build            # TypeScript check + Vite build
+npm run test             # Run vitest (no tests exist yet)
+npm run lint             # ESLint
+npm run deploy           # Build + wrangler deploy to Cloudflare
+npm run kill             # Kill process on port 8588
 ```
 
 ## Architecture & Patterns
