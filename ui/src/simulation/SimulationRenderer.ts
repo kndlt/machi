@@ -39,6 +39,7 @@ export function createSimulationRenderer(
 
     // Expose initial (empty) foliage texture to the render pass
     placement.map.layers.foliage = sim.currentTexture();
+    placement.map.layers.noise = noise.currentTexture();
 
     return { placement, sim, noise };
   });
@@ -55,6 +56,7 @@ export function createSimulationRenderer(
       noise.step(stepCount);
       sim.step(placement.map.layers.matter!, noise.currentTexture());
       placement.map.layers.foliage = sim.currentTexture();
+      placement.map.layers.noise = noise.currentTexture();
     }
 
     // Restore previous framebuffer & viewport so the main render pass is unaffected
@@ -69,6 +71,7 @@ export function createSimulationRenderer(
       sim.dispose();
       noise.dispose();
       placement.map.layers.foliage = null;
+      placement.map.layers.noise = null;
     }
   }
 

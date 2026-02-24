@@ -9,7 +9,9 @@ uniform sampler2D u_foreground;
 uniform sampler2D u_support;
 uniform sampler2D u_matter;
 uniform sampler2D u_foliage;
-uniform int u_view_mode;       // 0 = visual, 1 = matter, 2 = segmentation, 3 = foliage
+uniform sampler2D u_noise;
+uniform int u_view_mode;       // 0=visual, 1=matter, 2=segmentation, 3=foliage,
+                               // 4=energy, 5=nutrients, 6=light, 7=alive, 8=noise
 uniform int u_foliage_enabled; // 1 = show foliage layer, 0 = hide
 uniform int u_outline_enabled; // 1 = show foliage outline, 0 = hide
 
@@ -21,6 +23,13 @@ const vec3 OUTLINE_COLOR = vec3(0.15, 0.30, 0.10);
 // Foliage visual colors — mapped from energy level
 const vec3 FOLIAGE_LUSH  = vec3(0.30, 0.55, 0.20); // high energy: vibrant green
 const vec3 FOLIAGE_WEAK  = vec3(0.50, 0.45, 0.15); // low energy: yellow-brown
+
+// Heatmap colors for data visualization modes
+const vec3 HUE_ENERGY    = vec3(1.0, 0.31, 0.08);  // warm orange-red
+const vec3 HUE_NUTRIENTS = vec3(0.08, 0.78, 0.24);  // green
+const vec3 HUE_LIGHT     = vec3(0.24, 0.55, 1.0);   // blue
+const vec3 HUE_ALIVE     = vec3(1.0, 1.0, 1.0);     // white
+const vec3 HUE_NOISE     = vec3(0.71, 0.47, 1.0);   // purple
 
 // Convert foliage resource channels to visual color
 vec3 foliageColor(vec4 fol) {
@@ -83,6 +92,43 @@ void main() {
       out_color = vec4(OUTLINE_COLOR, 1.0); // Outset outline
     } else {
       out_color = vec4(0.0);
+    }
+    return;
+  }
+
+  // ── Data visualization modes (4–8) ──────────────────────────────────────
+  // Show individual foliage resource channels as colored heatmaps.
+  // Background = composited world; foliage pixels = channel value × hue color.
+  if (u_view_mode >= 4 && u_view_mode <= 8) {
+    // Base world composite (dim background for contrast)
+    vec3 sky = texture(u_sky, uv).rgb;
+    vec3 base = sky;
+    base = mix(base, bg.rgb, bg.a);
+    base = mix(base, sp.rgb, sp.a);
+    base = mix(base, fg.rgb, fg.a);
+    base *= 0.3; // dim
+
+    vec4 fol = texture(u_foliage, uv);
+
+    if (u_view_mode == 8) {
+      // Noise: show everywhere (it's a spatial field, not just foliage)
+      float val = texture(u_noise, uv).r;
+      vec3 c = HUE_NOISE * val;
+      // Blend over dimmed base
+      out_color = vec4(mix(base, c, 0.8), 1.0);
+      return;
+    }
+
+    if (fol.a > 0.05) {
+      float val;
+      vec3 hue;
+      if (u_view_mode == 4)      { val = fol.r; hue = HUE_ENERGY; }
+      else if (u_view_mode == 5) { val = fol.g; hue = HUE_NUTRIENTS; }
+      else if (u_view_mode == 6) { val = fol.b; hue = HUE_LIGHT; }
+      else                       { val = 1.0;   hue = HUE_ALIVE; } // mode 7
+      out_color = vec4(hue * val, 1.0);
+    } else {
+      out_color = vec4(base, 1.0);
     }
     return;
   }

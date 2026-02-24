@@ -12,7 +12,9 @@
 
 import { createFoliageSim } from "../simulation/FoliageSim";
 import { createNoiseSim } from "../simulation/NoiseSim";
-import { createTexture } from "../utils/gl-utils";
+import { createTexture, createFBO, createProgram } from "../utils/gl-utils";
+import simVert from "../shaders/simulation.vert";
+import mapFrag from "../shaders/map.frag";
 
 // ── Configuration ────────────────────────────────────────────────────────────
 const W = 16;
@@ -33,67 +35,32 @@ function log(msg: string) {
 }
 
 // ── Snapshot storage ─────────────────────────────────────────────────────────
-// Collect raw pixel data per step; render the grid at the end
+// Collect raw textures per step; render the grid at the end
 interface Snapshot {
-  foliage: Float32Array;
-  noise: Float32Array;
+  foliageTex: WebGLTexture;
+  noiseTex: WebGLTexture;
+  /** CPU readback of foliage for ASCII rendering + convergence checking */
+  foliageData: Float32Array;
 }
 const snapshots: Snapshot[] = [];
 
-// ── Color mapping ────────────────────────────────────────────────────────────
-const DIRT_COLOR = [103, 82, 75] as const;
-const AIR_COLOR  = [20, 18, 22] as const;
+// ── Color mapping (for ASCII rendering only) ─────────────────────────────────
 const BG_COLOR   = [30, 28, 34] as const;
 
-/** Map foliage energy to a green→yellow→brown gradient */
-function foliageColor(energy: number): [number, number, number] {
-  const t = Math.max(0, Math.min(1, energy));
-  return [
-    Math.round(30 + (1 - t) * 120),
-    Math.round(140 + t * 80),
-    Math.round(20 + (1 - t) * 20),
-  ];
-}
-
-// ── Channel definitions ──────────────────────────────────────────────────────
-interface ChannelDef {
+// ── Grid column definitions ──────────────────────────────────────────────────
+// Each column maps to a u_view_mode value in map.frag
+interface GridColumn {
   label: string;
-  hue: [number, number, number];
-  /** Return the display value (0–1) for a pixel */
-  value: (data: Float32Array, idx: number) => number;
+  viewMode: number;
 }
 
-const CHANNELS: ChannelDef[] = [
-  {
-    label: "Visual",
-    hue: [0, 0, 0], // unused — special-cased
-    value: (d, i) => d[i],
-  },
-  {
-    label: "Energy",
-    hue: [255, 80, 20],
-    value: (d, i) => d[i + 0],
-  },
-  {
-    label: "Nutrients",
-    hue: [20, 200, 60],
-    value: (d, i) => d[i + 1],
-  },
-  {
-    label: "Light",
-    hue: [60, 140, 255],
-    value: (d, i) => d[i + 2],
-  },
-  {
-    label: "Alive",
-    hue: [255, 255, 255],
-    value: (d, i) => d[i + 3],
-  },
-  {
-    label: "Noise",
-    hue: [180, 120, 255],
-    value: (_d, _i) => 0, // special-cased in renderGrid
-  },
+const GRID_COLUMNS: GridColumn[] = [
+  { label: "Visual",    viewMode: 0 },
+  { label: "Energy",    viewMode: 4 },
+  { label: "Nutrients", viewMode: 5 },
+  { label: "Light",     viewMode: 6 },
+  { label: "Alive",     viewMode: 7 },
+  { label: "Noise",     viewMode: 8 },
 ];
 
 // ── Bitmap pixel font (5×7, no anti-aliasing) ───────────────────────────────
@@ -181,19 +148,19 @@ function pixelTextWidth(text: string, scale = 1): number {
   return text.length * (GLYPH_W + GLYPH_GAP) * scale - GLYPH_GAP * scale;
 }
 
-// ── Grid renderer ────────────────────────────────────────────────────────────
+// ── Grid renderer (uses map.frag shader for all visualization) ───────────────
 const CELL = 64;       // each cell is 64×64 px
 const PAD = 2;         // gap between cells
 const LABEL_H = 18;    // row label height
 const HEADER_H = 16;   // column header height
 
-function renderGrid(steps: Snapshot[]): string {
+function renderGrid(steps: Snapshot[], matterTex: WebGLTexture): string {
   const numSteps = steps.length;
-  const numChannels = CHANNELS.length;
+  const numCols = GRID_COLUMNS.length;
   const labelH = 14;   // top row for channel headers
   const rowLabelW = 24; // left column for t0, t1, ...
 
-  const gridW = rowLabelW + numChannels * (CELL + PAD);
+  const gridW = rowLabelW + numCols * (CELL + PAD);
   const gridH = labelH + numSteps * (CELL + PAD);
 
   const gridCanvas = document.createElement("canvas");
@@ -207,12 +174,35 @@ function renderGrid(steps: Snapshot[]): string {
   ctx.fillRect(0, 0, gridW, gridH);
 
   // Column headers (channel names) — pixel font
-  for (let c = 0; c < numChannels; c++) {
-    const label = CHANNELS[c].label;
+  for (let c = 0; c < numCols; c++) {
+    const label = GRID_COLUMNS[c].label;
     const tw = pixelTextWidth(label);
     const x = rowLabelW + c * (CELL + PAD) + Math.floor((CELL - tw) / 2);
     drawPixelText(ctx, label, x, 3, "#aaa");
   }
+
+  // ── Set up map shader for rendering cells ──────────────────────────────
+  const mapProgram = createProgram(gl, simVert, mapFrag);
+  const u_sky_loc = gl.getUniformLocation(mapProgram, "u_sky");
+  const u_bg_loc = gl.getUniformLocation(mapProgram, "u_background");
+  const u_fg_loc = gl.getUniformLocation(mapProgram, "u_foreground");
+  const u_sp_loc = gl.getUniformLocation(mapProgram, "u_support");
+  const u_matter_loc = gl.getUniformLocation(mapProgram, "u_matter");
+  const u_foliage_loc = gl.getUniformLocation(mapProgram, "u_foliage");
+  const u_noise_loc = gl.getUniformLocation(mapProgram, "u_noise");
+  const u_mode_loc = gl.getUniformLocation(mapProgram, "u_view_mode");
+  const u_fol_enabled_loc = gl.getUniformLocation(mapProgram, "u_foliage_enabled");
+  const u_outline_loc = gl.getUniformLocation(mapProgram, "u_outline_enabled");
+
+  // Dummy 1×1 transparent textures for unused world layers
+  const emptyPixel = new Uint8Array([0, 0, 0, 0]);
+  const dummyTex = createTexture(gl, 1, 1, emptyPixel);
+
+  // Readback FBO at simulation resolution
+  const readTex = createTexture(gl, W, H);
+  const readFbo = createFBO(gl, readTex);
+
+  const emptyVAO = gl.createVertexArray()!;
 
   // 1:1 scratch canvas for pixel data
   const tmp = document.createElement("canvas");
@@ -220,10 +210,9 @@ function renderGrid(steps: Snapshot[]): string {
   tmp.height = H;
   const tmpCtx = tmp.getContext("2d")!;
 
-  // Rows = timesteps, Columns = channels
+  // Rows = timesteps, Columns = view modes
   for (let row = 0; row < numSteps; row++) {
-    const { foliage: foliageData, noise: noiseData } = steps[row];
-    const foliage = { data: foliageData };
+    const snap = steps[row];
     const y0 = labelH + row * (CELL + PAD);
 
     // Row label (t0, t1, ...) — pixel font, right-aligned
@@ -231,49 +220,54 @@ function renderGrid(steps: Snapshot[]): string {
     const tw = pixelTextWidth(label);
     drawPixelText(ctx, label, rowLabelW - 4 - tw, y0 + Math.floor((CELL - GLYPH_H) / 2), "#888");
 
-    for (let col = 0; col < numChannels; col++) {
-      const ch = CHANNELS[col];
+    for (let col = 0; col < numCols; col++) {
+      const { viewMode } = GRID_COLUMNS[col];
       const x0 = rowLabelW + col * (CELL + PAD);
+
+      // Render to FBO using map.frag with the given view mode
+      gl.bindFramebuffer(gl.FRAMEBUFFER, readFbo);
+      gl.viewport(0, 0, W, H);
+      gl.clearColor(BG_COLOR[0] / 255, BG_COLOR[1] / 255, BG_COLOR[2] / 255, 1.0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+
+      gl.useProgram(mapProgram);
+      gl.bindVertexArray(emptyVAO);
+      gl.disable(gl.BLEND);
+
+      gl.uniform1i(u_mode_loc, viewMode);
+      gl.uniform1i(u_fol_enabled_loc, 1);
+      gl.uniform1i(u_outline_loc, 0);
+
+      // Bind textures: dummy for unused world layers, real for simulation data
+      gl.uniform1i(u_sky_loc, 0);
+      gl.uniform1i(u_bg_loc, 1);
+      gl.uniform1i(u_fg_loc, 2);
+      gl.uniform1i(u_sp_loc, 3);
+      gl.uniform1i(u_matter_loc, 4);
+      gl.uniform1i(u_foliage_loc, 5);
+      gl.uniform1i(u_noise_loc, 6);
+
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, dummyTex);
+      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, dummyTex);
+      gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, dummyTex);
+      gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, dummyTex);
+      gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, matterTex);
+      gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, snap.foliageTex);
+      gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_2D, snap.noiseTex);
+
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+      // Read back rendered pixels
+      const buf = new Uint8Array(W * H * 4);
+      gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+
+      // Copy to Canvas2D ImageData (flip Y since GL reads bottom-up)
       const imgData = tmpCtx.createImageData(W, H);
-
       for (let py = 0; py < H; py++) {
-        for (let px = 0; px < W; px++) {
-          const idx = (py * W + px) * 4;
-          const alive = foliage.data[idx + 3];
-          const isDirt = py >= (H - DIRT_ROWS);
-
-          let r: number, g: number, b: number;
-          if (ch.label === "Noise") {
-            // Noise is independent of foliage alive state
-            const val = noiseData[idx]; // R channel
-            r = Math.round(ch.hue[0] * val);
-            g = Math.round(ch.hue[1] * val);
-            b = Math.round(ch.hue[2] * val);
-            if (isDirt) {
-              // Dim noise over dirt regions
-              r = Math.round(r * 0.4 + DIRT_COLOR[0] * 0.6);
-              g = Math.round(g * 0.4 + DIRT_COLOR[1] * 0.6);
-              b = Math.round(b * 0.4 + DIRT_COLOR[2] * 0.6);
-            }
-          } else if (isDirt) {
-            [r, g, b] = DIRT_COLOR;
-          } else if (alive > 0.05) {
-            if (ch.label === "Visual") {
-              [r, g, b] = foliageColor(foliage.data[idx + 0]);
-            } else {
-              const val = ch.value(foliage.data, idx);
-              r = Math.round(ch.hue[0] * val);
-              g = Math.round(ch.hue[1] * val);
-              b = Math.round(ch.hue[2] * val);
-            }
-          } else {
-            [r, g, b] = AIR_COLOR;
-          }
-
-          imgData.data[idx + 0] = r;
-          imgData.data[idx + 1] = g;
-          imgData.data[idx + 2] = b;
-          imgData.data[idx + 3] = 255;
+        const srcRow = (H - 1 - py) * W * 4;
+        const dstRow = py * W * 4;
+        for (let px = 0; px < W * 4; px++) {
+          imgData.data[dstRow + px] = buf[srcRow + px];
         }
       }
 
@@ -282,6 +276,14 @@ function renderGrid(steps: Snapshot[]): string {
       ctx.drawImage(tmp, x0, y0, CELL, CELL);
     }
   }
+
+  // Cleanup rendering resources
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.deleteFramebuffer(readFbo);
+  gl.deleteTexture(readTex);
+  gl.deleteTexture(dummyTex);
+  gl.deleteVertexArray(emptyVAO);
+  gl.deleteProgram(mapProgram);
 
   return gridCanvas.toDataURL("image/png");
 }
@@ -373,6 +375,19 @@ function renderASCII(foliage: PixelGrid, step: number): string {
 }
 
 // ── RUN SIMULATION ───────────────────────────────────────────────────────────
+
+/** Copy a GPU texture to a new texture (for snapshotting ping-pong buffers) */
+function copyTexture(src: WebGLTexture, w: number, h: number): WebGLTexture {
+  const dst = createTexture(gl, w, h);
+  const fbo = createFBO(gl, src);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.bindTexture(gl.TEXTURE_2D, dst);
+  gl.copyTexSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 0, 0, w, h);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.deleteFramebuffer(fbo);
+  return dst;
+}
+
 function run() {
   log(`Simulation Lab — ${W}×${H} grid, ${DIRT_ROWS} dirt rows`);
   log(`Running ${NUM_STEPS} steps...\n`);
@@ -388,7 +403,7 @@ function run() {
     noise.step(step);
     sim.step(matterTex, noise.currentTexture());
 
-    // Read back result
+    // Read back result for ASCII rendering + convergence
     const data = sim.readPixels();
     const pixels: PixelGrid = { data };
 
@@ -410,10 +425,12 @@ function run() {
       log(renderASCII(pixels, step));
     }
 
-    // Snapshot raw pixel data for grid rendering at end
-    const foliageCopy = new Float32Array(data);
-    const noiseCopy = new Float32Array(noise.readPixels());
-    snapshots.push({ foliage: foliageCopy, noise: noiseCopy });
+    // Snapshot GPU textures for grid rendering (copy because ping-pong swaps)
+    snapshots.push({
+      foliageTex: copyTexture(sim.currentTexture(), W, H),
+      noiseTex: copyTexture(noise.currentTexture(), W, H),
+      foliageData: new Float32Array(data),
+    });
 
     prevAliveCount = aliveCount;
 
@@ -424,14 +441,18 @@ function run() {
     }
   }
 
+  // Render the composite grid image (needs matterTex still alive)
+  const gridDataUrl = renderGrid(snapshots, matterTex);
+  (window as unknown as Record<string, unknown>).__SIM_GRID__ = gridDataUrl;
+
   // Cleanup
+  for (const snap of snapshots) {
+    gl.deleteTexture(snap.foliageTex);
+    gl.deleteTexture(snap.noiseTex);
+  }
   gl.deleteTexture(matterTex);
   sim.dispose();
   noise.dispose();
-
-  // Render the composite grid image
-  const gridDataUrl = renderGrid(snapshots);
-  (window as unknown as Record<string, unknown>).__SIM_GRID__ = gridDataUrl;
 
   log(`\n═══ Done — ${snapshots.length} steps captured ═══`);
 
