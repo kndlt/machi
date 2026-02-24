@@ -46,7 +46,9 @@ void main() {
   float diffused = mix(current, neighborAvg, DIFFUSION_RATE);
 
   // Perturb: small hash-based nudge in [-1, 1] range
-  float nudge = hash(v_uv, u_time) * 2.0 - 1.0;
+  // Use pixel coordinates (not UVs) so the hash produces uncorrelated values
+  vec2 pixelCoord = v_uv * vec2(textureSize(u_prev, 0));
+  float nudge = hash(pixelCoord, u_time) * 2.0 - 1.0;
   float result = diffused + nudge * PERTURBATION;
 
   out_color = vec4(clamp(result, 0.0, 1.0), 0.0, 0.0, 1.0);

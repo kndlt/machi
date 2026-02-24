@@ -25,26 +25,38 @@ uniform sampler2D u_noise;   // slowly-evolving stable noise field
 
 out vec4 out_color;
 
-// Dirt matter color: (103, 82, 75) / 255
-const vec3 DIRT_COLOR = vec3(0.404, 0.322, 0.294);
-const float DIRT_THRESHOLD = 0.12;
+// Matter colors (from matter.png palette)
+const vec3 DIRT_COLOR  = vec3(0.404, 0.322, 0.294);  // (103, 82, 75)
+const vec3 STONE_COLOR = vec3(0.647, 0.592, 0.561);  // (165, 151, 143)
+const vec3 WATER_COLOR = vec3(0.200, 0.600, 0.800);  // (51, 153, 204)
+const float COLOR_THRESHOLD = 0.12;
 
 // ── Resource constants ───────────────────────────────────────────────────
-const float NUTRIENT_ROOT  = 1.0;      // Max nutrients at dirt contact
-const float NUTRIENT_DECAY = 0.15;     // Nutrient loss per hop through foliage
-const float LIGHT_FULL     = 1.0;      // Full light (no canopy above)
-const float LIGHT_BLOCK    = 0.2;      // Light lost per foliage pixel above
-const float ENERGY_DEATH   = 0.05;     // Below this energy → die
-const float ENERGY_GROW_MIN = 0.3;     // Neighbor needs this energy to spread
+const float NUTRIENT_ROOT        = 1.0;   // Max nutrients at dirt contact
+const float NUTRIENT_ROOT_STONE  = 0.00;  // Stone provides very few nutrients
+const float NUTRIENT_DECAY       = 0.15;  // Nutrient loss per hop through foliage
+const float LIGHT_FULL           = 1.0;   // Full light (no canopy above)
+const float LIGHT_BLOCK          = 0.2;   // Light lost per foliage pixel above
+const float ENERGY_DEATH         = 0.05;  // Below this energy → die
+const float ENERGY_GROW_MIN      = 0.3;   // Neighbor needs this energy to spread
 
 // ── Growth thresholds (fixed — no step counter) ──────────────────────────
-const float SEED_NOISE_MAX   = 0.40;   // Max noise for dirt-adjacent seeding
-const float SPREAD_NOISE_MAX = 0.50;   // Max noise for neighbor spreading
-const float ENERGY_BLEND     = 0.10;   // Energy convergence rate per step
-const float ENERGY_INITIAL   = 0.35;   // New cells start at 35% of potential
+const float SEED_NOISE_MAX       = 0.40;  // Max noise for dirt-adjacent seeding
+const float SEED_NOISE_MAX_STONE = 0.12;  // Much tighter noise gate for stone seeding
+const float SPREAD_NOISE_MAX     = 0.50;  // Max noise for neighbor spreading
+const float ENERGY_BLEND         = 0.10;  // Energy convergence rate per step
+const float ENERGY_INITIAL       = 0.35;  // New cells start at 35% of potential
 
 bool isDirt(vec4 m) {
-  return m.a > 0.5 && distance(m.rgb, DIRT_COLOR) < DIRT_THRESHOLD;
+  return m.a > 0.5 && distance(m.rgb, DIRT_COLOR) < COLOR_THRESHOLD;
+}
+
+bool isStone(vec4 m) {
+  return m.a > 0.5 && distance(m.rgb, STONE_COLOR) < COLOR_THRESHOLD;
+}
+
+bool isWater(vec4 m) {
+  return m.a > 0.5 && distance(m.rgb, WATER_COLOR) < COLOR_THRESHOLD;
 }
 
 bool isAir(vec4 m) {
@@ -78,11 +90,33 @@ void main() {
   vec2 offU = vec2(0.0, -texelSize.y); // up in texture = -Y
   vec2 offD = vec2(0.0,  texelSize.y); // down in texture = +Y
 
-  bool touchDirtR = hasMatter(texture(u_matter, v_uv + offR));
-  bool touchDirtL = hasMatter(texture(u_matter, v_uv + offL));
-  bool touchDirtU = hasMatter(texture(u_matter, v_uv + offU));
-  bool touchDirtD = hasMatter(texture(u_matter, v_uv + offD));
+  vec4 mR = texture(u_matter, v_uv + offR);
+  vec4 mL = texture(u_matter, v_uv + offL);
+  vec4 mU = texture(u_matter, v_uv + offU);
+  vec4 mD = texture(u_matter, v_uv + offD);
+
+  // ── Water kills foliage — no growth adjacent to water at all ───────────
+  bool touchingWater = isWater(mR) || isWater(mL) || isWater(mU) || isWater(mD);
+  if (touchingWater) {
+    out_color = vec4(0.0);
+    return;
+  }
+
+  // Classify neighbor surfaces
+  bool touchDirtR = isDirt(mR);
+  bool touchDirtL = isDirt(mL);
+  bool touchDirtU = isDirt(mU);
+  bool touchDirtD = isDirt(mD);
   bool touchingDirt = touchDirtR || touchDirtL || touchDirtU || touchDirtD;
+
+  bool touchStoneR = isStone(mR);
+  bool touchStoneL = isStone(mL);
+  bool touchStoneU = isStone(mU);
+  bool touchStoneD = isStone(mD);
+  bool touchingStone = touchStoneR || touchStoneL || touchStoneU || touchStoneD;
+
+  // touchingSurface = dirt or stone (for foliage anchor purposes)
+  bool touchingSurface = touchingDirt || touchingStone;
 
   vec4 fR = texture(u_foliage_prev, v_uv + offR);
   vec4 fL = texture(u_foliage_prev, v_uv + offL);
@@ -99,6 +133,8 @@ void main() {
   float nutrients = 0.0;
   if (touchingDirt) {
     nutrients = NUTRIENT_ROOT;
+  } else if (touchingStone) {
+    nutrients = NUTRIENT_ROOT_STONE;  // stone provides very little nutrients
   } else {
     if (hasFoliage(fR)) nutrients = max(nutrients, fR.g - NUTRIENT_DECAY);
     if (hasFoliage(fL)) nutrients = max(nutrients, fL.g - NUTRIENT_DECAY);
@@ -138,11 +174,15 @@ void main() {
     out_color = vec4(energy, nutrients, light, 1.0);
   } else {
     // ── GROW ─────────────────────────────────────────────────────────────
-    // Rule 1: Seed from dirt — air cell touching dirt with low noise
-    if (touchingDirt && noise < SEED_NOISE_MAX) {
-      float energy = potential * ENERGY_INITIAL;
-      out_color = vec4(energy, nutrients, light, 1.0);
-      return;
+    // Rule 1: Seed from surface — air cell touching dirt or stone with low noise
+    //         Stone gets a much tighter noise gate so growth is rare
+    if (touchingSurface) {
+      float noiseGate = touchingDirt ? SEED_NOISE_MAX : SEED_NOISE_MAX_STONE;
+      if (noise < noiseGate) {
+        float energy = potential * ENERGY_INITIAL;
+        out_color = vec4(energy, nutrients, light, 1.0);
+        return;
+      }
     }
 
     // Rule 2: Spread from neighbors — need ≥1 foliage neighbor with
