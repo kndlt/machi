@@ -22,9 +22,9 @@ export interface SimWorldConfig {
 }
 
 export const DEFAULT_SIM_WORLD: SimWorldConfig = {
-  width: 16,
-  height: 16,
-  dirtRows: 8,
+  width: 32,
+  height: 32,
+  dirtRows: 16,
 };
 
 // Dirt color must match shader: (103, 82, 75, 255)
