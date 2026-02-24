@@ -7,7 +7,7 @@ import { createSimulationRenderer } from "./simulation/SimulationRenderer";
 import { createCameraControls } from "./controls/CameraControls";
 import { loadWorld } from "./world/WorldLoader";
 
-const WORLD_PATH = "/worlds/world0";
+const WORLD_PATH = "/worlds/world1";
 
 async function initApp(canvas: HTMLCanvasElement): Promise<() => void> {
   console.log("Initializing app...");
