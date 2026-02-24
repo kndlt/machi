@@ -96,13 +96,12 @@ export function createSimulationRenderer(
     };
   });
 
-  let stepCount = 0;
   // Stable seed that changes rarely (every 60s)
   // But for "predestined convergence", maybe we don't want it to change at all?
   // Let's keep it stable for now.
   let currentSeed = Math.random();
   let lastSeedChange = performance.now();
-  const SEED_CHANGE_INTERVAL_MS = 60_000; 
+  const SEED_CHANGE_INTERVAL_MS = 10_000; 
 
   // ── Simulation step ──────────────────────────────────────────────────────
   function step(): void {
@@ -122,8 +121,7 @@ export function createSimulationRenderer(
     gl.uniform1i(u_matter, 0);
     gl.uniform1i(u_foliage_prev, 1);
     gl.uniform1f(u_seed, currentSeed);
-    stepCount++;
-
+    
     for (const sim of mapSims) {
       const readTex = sim.textures[sim.readIdx];
       const writeIdx = 1 - sim.readIdx;
