@@ -22,6 +22,8 @@ export interface LayerRenderer {
   render(camera: Camera): void;
   /** 0 = visual, 1 = matter, 2 = segmentation */
   viewMode: number;
+  /** Toggle foliage rendering (default true) */
+  foliageEnabled: boolean;
   dispose(): void;
 }
 
@@ -41,10 +43,13 @@ export function createLayerRenderer(
   const u_foreground = gl.getUniformLocation(program, "u_foreground");
   const u_support = gl.getUniformLocation(program, "u_support");
   const u_matter = gl.getUniformLocation(program, "u_matter");
+  const u_foliage = gl.getUniformLocation(program, "u_foliage");
   const u_view_mode = gl.getUniformLocation(program, "u_view_mode");
+  const u_foliage_enabled = gl.getUniformLocation(program, "u_foliage_enabled");
 
   // 0 = visual, 1 = matter, 2 = segmentation
   let viewMode = 0;
+  let foliageEnabled = true;
 
   // ── Per-map GPU resources ────────────────────────────────────────────────
   const mapGPUs: MapGPU[] = world.mapPlacements.map((placement) => {
@@ -91,7 +96,9 @@ export function createLayerRenderer(
     gl.uniform1i(u_foreground, 2);
     gl.uniform1i(u_support, 3);
     gl.uniform1i(u_matter, 4);
+    gl.uniform1i(u_foliage, 5);
     gl.uniform1i(u_view_mode, viewMode);
+    gl.uniform1i(u_foliage_enabled, foliageEnabled ? 1 : 0);
 
     // Enable blending for correct alpha compositing
     gl.enable(gl.BLEND);
@@ -120,6 +127,9 @@ export function createLayerRenderer(
       gl.activeTexture(gl.TEXTURE4);
       gl.bindTexture(gl.TEXTURE_2D, layers.matter);
 
+      gl.activeTexture(gl.TEXTURE5);
+      gl.bindTexture(gl.TEXTURE_2D, layers.foliage);
+
       // Draw quad
       gl.bindVertexArray(vao);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
@@ -140,6 +150,7 @@ export function createLayerRenderer(
       gl.deleteTexture(layers.foreground);
       gl.deleteTexture(layers.support);
       gl.deleteTexture(layers.matter);
+      // foliage texture is owned by SimulationRenderer, don't delete here
     }
     gl.deleteProgram(program);
   }
@@ -148,6 +159,8 @@ export function createLayerRenderer(
     render,
     get viewMode() { return viewMode; },
     set viewMode(v: number) { viewMode = v % 3; },
+    get foliageEnabled() { return foliageEnabled; },
+    set foliageEnabled(v: boolean) { foliageEnabled = v; },
     dispose,
   };
 }

@@ -1,4 +1,4 @@
-/** World & Map type definitions for Phase 01 */
+/** World & Map type definitions */
 
 export interface World {
   title: string;
@@ -27,4 +27,6 @@ export interface MapLayers {
   foreground: WebGLTexture | null;
   support: WebGLTexture | null;
   matter: WebGLTexture | null;
+  /** Simulation-produced foliage layer (GPU texture, written by SimulationRenderer) */
+  foliage: WebGLTexture | null;
 }

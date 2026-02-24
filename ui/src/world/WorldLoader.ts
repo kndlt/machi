@@ -86,7 +86,7 @@ async function loadMap(
     loadTexture(gl, `${mapDir}/matter.png`),
   ]);
 
-  const layers: MapLayers = { sky, background, foreground, support, matter };
+  const layers: MapLayers = { sky, background, foreground, support, matter, foliage: null };
 
   return { map: { title, description, width, height, layers } };
 }

@@ -46,7 +46,7 @@ export function createWebGLRenderer(canvas: HTMLCanvasElement): WebGLRenderer {
 
   const MODE_NAMES = ["visual", "matter", "segmentation"];
 
-  function updateFps(frameMs: number, viewMode: number) {
+  function updateFps(frameMs: number, viewMode: number, foliageEnabled: boolean) {
     frameCount++;
     frameTimes.push(frameMs);
     const now = performance.now();
@@ -56,7 +56,8 @@ export function createWebGLRenderer(canvas: HTMLCanvasElement): WebGLRenderer {
       const avg = frameTimes.reduce((a, b) => a + b, 0) / frameTimes.length;
       const max = Math.max(...frameTimes);
       const mode = MODE_NAMES[viewMode] ?? `mode ${viewMode}`;
-      fpsEl.textContent = `${fps} FPS | ${avg.toFixed(2)}ms avg | ${max.toFixed(1)}ms max | ${mode}`;
+      const foliage = foliageEnabled ? "foliage ON" : "foliage OFF";
+      fpsEl.textContent = `${fps} FPS | ${avg.toFixed(2)}ms avg | ${max.toFixed(1)}ms max | ${mode} | ${foliage}`;
       frameCount = 0;
       lastFpsTime = now;
       frameTimes = [];
@@ -82,7 +83,7 @@ export function createWebGLRenderer(canvas: HTMLCanvasElement): WebGLRenderer {
       layerRenderer.render(camera);
 
       const t1 = performance.now();
-      updateFps(t1 - t0, layerRenderer.viewMode);
+      updateFps(t1 - t0, layerRenderer.viewMode, layerRenderer.foliageEnabled);
 
       rafId = requestAnimationFrame(tick);
     };

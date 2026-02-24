@@ -31,6 +31,10 @@ export function createCameraControls(
       layerRenderer.viewMode = layerRenderer.viewMode + 1; // cycles 0→1→2→0
       return;
     }
+    if (e.key === "f" || e.key === "F") {
+      layerRenderer.foliageEnabled = !layerRenderer.foliageEnabled;
+      return;
+    }
     keys.add(e.key);
   };
   const onKeyUp = (e: KeyboardEvent) => {

@@ -3,6 +3,7 @@ import { Theme } from "@radix-ui/themes";
 import { createWebGLRenderer } from "./renderer/WebGLRenderer";
 import { createCamera } from "./renderer/Camera";
 import { createLayerRenderer } from "./renderer/LayerRenderer";
+import { createSimulationRenderer } from "./renderer/SimulationRenderer";
 import { createCameraControls } from "./controls/CameraControls";
 import { loadWorld } from "./world/WorldLoader";
 
@@ -32,6 +33,11 @@ async function initApp(canvas: HTMLCanvasElement): Promise<() => void> {
   // 4. Layer renderer
   const layerRenderer = createLayerRenderer(gl, world);
 
+  // 4b. Simulation renderer (produces foliage layer)
+  const simulation = createSimulationRenderer(gl, world);
+  // Run initial simulation step so foliage is visible immediately
+  simulation.step();
+
   // 5. Controls
   const controls = createCameraControls(canvas, camera, layerRenderer);
 
@@ -44,6 +50,7 @@ async function initApp(canvas: HTMLCanvasElement): Promise<() => void> {
   return () => {
     stopLoop();
     controls.dispose();
+    simulation.dispose();
     layerRenderer.dispose();
     renderer.dispose();
   };
