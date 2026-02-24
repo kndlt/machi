@@ -8,7 +8,7 @@ import { createCameraControls } from "./controls/CameraControls";
 import { loadWorld } from "./world/WorldLoader";
 import { createCanvasWebpRecorder } from "./utils/canvasWebpRecorder";
 
-const WORLD_PATH = "/worlds/world1";
+const DEFAULT_WORLD_NAME = "world1";
 
 interface AppRuntime {
   startRecording(): void;
@@ -25,6 +25,18 @@ function readLocationParam(name: string): string | null {
   const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
   return hashParams.get(name)
     ?? new URLSearchParams(window.location.search).get(name);
+}
+
+function readWorldName(): string {
+  const raw = readLocationParam("world");
+  if (!raw) return DEFAULT_WORLD_NAME;
+
+  const trimmed = raw.trim();
+  if (!trimmed) return DEFAULT_WORLD_NAME;
+
+  if (!/^[a-zA-Z0-9_-]+$/.test(trimmed)) return DEFAULT_WORLD_NAME;
+
+  return trimmed;
 }
 
 function readPerturbNoiseSpeed(): number | null {
@@ -59,7 +71,10 @@ async function initApp(canvas: HTMLCanvasElement, callbacks: InitAppCallbacks): 
   const camera = createCamera();
 
   // 3. Load world assets
-  const world = await loadWorld(gl, WORLD_PATH);
+  const worldName = readWorldName();
+  const worldPath = `/worlds/${worldName}`;
+  const world = await loadWorld(gl, worldPath);
+  console.log(`Loaded world: ${worldName}`);
 
   // Center camera on first map
   if (world.mapPlacements.length > 0) {
