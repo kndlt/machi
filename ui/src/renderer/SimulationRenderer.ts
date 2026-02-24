@@ -101,7 +101,7 @@ export function createSimulationRenderer(
   // Let's keep it stable for now.
   let currentSeed = Math.random();
   let lastSeedChange = performance.now();
-  const SEED_CHANGE_INTERVAL_MS = 10_000; 
+  const SEED_CHANGE_INTERVAL_MS = 20_000; 
 
   // ── Simulation step ──────────────────────────────────────────────────────
   function step(): void {
