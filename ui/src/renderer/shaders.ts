@@ -271,7 +271,8 @@ void main() {
     // Growth from neighbors: spread if adjacent to existing foliage
     // Use STABLE RNG so growth is deterministic (but may stall if unlucky)
     if (neighborCount >= 1 && distToDirt <= 5.0) {
-      float growChance = 0.02 / distToDirt; // Slower growth
+      // More neighbors = higher chance to grow (0.02 base * count)
+      float growChance = (0.52 * float(neighborCount)) / distToDirt;
       if (rngStable < growChance) {
         float alpha = 1.0 - (distToDirt - 1.0) * 0.15;
         out_color = vec4(FOLIAGE_RGBA.rgb, alpha);
