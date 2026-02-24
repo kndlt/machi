@@ -1,6 +1,6 @@
 /** World & Map asset loader — parses XML, loads PNG textures into WebGL */
 
-import type { World, MapPlacement, GameMap, MapLayers } from "./types";
+import type { World, MapPlacement, WorldMap, MapLayers } from "./types";
 
 // ── XML helpers ──────────────────────────────────────────────────────────────
 
@@ -60,7 +60,7 @@ async function loadMap(
   gl: WebGL2RenderingContext,
   basePath: string,
   mapPath: string
-): Promise<{ map: GameMap }> {
+): Promise<{ map: WorldMap }> {
   const fullMapUrl = `${basePath}/${mapPath}`;
   const mapDir = `${basePath}/${dirname(mapPath)}`;
 

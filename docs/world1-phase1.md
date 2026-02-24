@@ -120,10 +120,10 @@ interface MapPlacement {
   path: string;       // relative path to map.xml
   x: number;          // world-space X position
   y: number;          // world-space Y position
-  map: GameMap;       // loaded map data
+  map: WorldMap;       // loaded map data
 }
 
-interface GameMap {
+interface WorldMap {
   title: string;
   width: number;       // map width in pixels (512)
   height: number;      // map height in pixels (256)
@@ -284,7 +284,7 @@ function startLoop(render: () => void): () => void {
 ## Implementation Order
 
 1. **Refactor App.tsx** - Extract WebGL init into separate renderer module
-2. **World/Map types** - Define World, MapPlacement, GameMap, MapLayers types
+2. **World/Map types** - Define World, MapPlacement, WorldMap, MapLayers types
 3. **Asset loader** - XML parsing + PNG texture loading pipeline
 4. **Camera module** - Implement camera state and matrix building
 5. **Layer shader** - Write multi-layer compositing shader (sky texture + bg + fg)
@@ -302,7 +302,7 @@ ui/src/
     LayerRenderer.ts     # Multi-layer rendering logic
     shaders.ts           # Vertex and fragment shaders
   world/
-    types.ts            # World, MapPlacement, GameMap, MapLayers
+    types.ts            # World, MapPlacement, WorldMap, MapLayers
     WorldLoader.ts      # XML parsing + PNG texture loading
   controls/
     CameraControls.ts   # Keyboard and mouse input handling

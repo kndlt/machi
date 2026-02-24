@@ -38,7 +38,7 @@ machi/
 │   │   │   ├── LayerRenderer.ts  # Multi-layer texture compositing (5 layers)
 │   │   │   └── shaders.ts       # GLSL vertex/fragment shaders, compile helpers
 │   │   ├── world/             # World data loading
-│   │   │   ├── types.ts          # World, MapPlacement, GameMap, MapLayers interfaces
+│   │   │   ├── types.ts          # World, MapPlacement, WorldMap, MapLayers interfaces
 │   │   │   └── WorldLoader.ts    # XML parsing, PNG→WebGL texture loading
 │   │   ├── controls/
 │   │   │   └── CameraControls.ts # Keyboard/mouse pan, zoom, view mode toggle
@@ -141,8 +141,8 @@ const camera = createCamera();                  // returns Camera interface
 
 ```
 World
-  └── MapPlacement[] (x, y position + GameMap ref)
-        └── GameMap (title, width, height)
+  └── MapPlacement[] (x, y position + WorldMap ref)
+        └── WorldMap (title, width, height)
               └── MapLayers (sky, background, foreground, support, matter — all WebGLTexture | null)
 
 TileMap (editor)

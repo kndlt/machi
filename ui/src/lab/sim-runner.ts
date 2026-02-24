@@ -15,16 +15,12 @@ import { createNoiseSim } from "../simulation/NoiseSim";
 import { createTexture, createFBO, createProgram } from "../utils/gl-utils";
 import simVert from "../shaders/simulation.vert";
 import mapFrag from "../shaders/map.frag";
+import { createMatterTexture, DEFAULT_SIM_WORLD } from "./sim-world";
+import { drawPixelText, pixelTextWidth, GLYPH_H } from "../utils/gl-text-utils";
 
 // ── Configuration ────────────────────────────────────────────────────────────
-const W = 16;
-const H = 16;
-const DIRT_ROWS = 8;        // bottom 8 rows are dirt
+const { width: W, height: H, dirtRows: DIRT_ROWS } = DEFAULT_SIM_WORLD;
 const NUM_STEPS = 40;       // how many simulation steps to run
-
-// Dirt color must match shader: (103, 82, 75, 255)
-const DIRT_RGBA = [103, 82, 75, 255] as const;
-const AIR_RGBA = [0, 0, 0, 0] as const;
 
 // ── Output helper ────────────────────────────────────────────────────────────
 const outputEl = document.getElementById("output");
@@ -62,91 +58,6 @@ const GRID_COLUMNS: GridColumn[] = [
   { label: "Alive",     viewMode: 7 },
   { label: "Noise",     viewMode: 8 },
 ];
-
-// ── Bitmap pixel font (5×7, no anti-aliasing) ───────────────────────────────
-const GLYPH_W = 5;
-const GLYPH_H = 7;
-const GLYPH_GAP = 1;
-
-// Each glyph is 7 rows of 5-bit bitmasks (MSB = leftmost pixel)
-const GLYPHS: Record<string, number[]> = {
-  A: [0b01110,0b10001,0b10001,0b11111,0b10001,0b10001,0b10001],
-  B: [0b11110,0b10001,0b10001,0b11110,0b10001,0b10001,0b11110],
-  C: [0b01110,0b10001,0b10000,0b10000,0b10000,0b10001,0b01110],
-  D: [0b11110,0b10001,0b10001,0b10001,0b10001,0b10001,0b11110],
-  E: [0b11111,0b10000,0b10000,0b11110,0b10000,0b10000,0b11111],
-  F: [0b11111,0b10000,0b10000,0b11110,0b10000,0b10000,0b10000],
-  G: [0b01110,0b10001,0b10000,0b10111,0b10001,0b10001,0b01110],
-  H: [0b10001,0b10001,0b10001,0b11111,0b10001,0b10001,0b10001],
-  I: [0b01110,0b00100,0b00100,0b00100,0b00100,0b00100,0b01110],
-  K: [0b10001,0b10010,0b10100,0b11000,0b10100,0b10010,0b10001],
-  L: [0b10000,0b10000,0b10000,0b10000,0b10000,0b10000,0b11111],
-  N: [0b10001,0b11001,0b10101,0b10011,0b10001,0b10001,0b10001],
-  O: [0b01110,0b10001,0b10001,0b10001,0b10001,0b10001,0b01110],
-  R: [0b11110,0b10001,0b10001,0b11110,0b10100,0b10010,0b10001],
-  S: [0b01110,0b10001,0b10000,0b01110,0b00001,0b10001,0b01110],
-  T: [0b11111,0b00100,0b00100,0b00100,0b00100,0b00100,0b00100],
-  U: [0b10001,0b10001,0b10001,0b10001,0b10001,0b10001,0b01110],
-  V: [0b10001,0b10001,0b10001,0b10001,0b01010,0b01010,0b00100],
-  W: [0b10001,0b10001,0b10001,0b10101,0b10101,0b11011,0b10001],
-  Y: [0b10001,0b10001,0b01010,0b00100,0b00100,0b00100,0b00100],
-  a: [0b00000,0b00000,0b01110,0b00001,0b01111,0b10001,0b01111],
-  b: [0b10000,0b10000,0b11110,0b10001,0b10001,0b10001,0b11110],
-  e: [0b00000,0b00000,0b01110,0b10001,0b11111,0b10000,0b01110],
-  g: [0b00000,0b00000,0b01111,0b10001,0b01111,0b00001,0b01110],
-  h: [0b10000,0b10000,0b10110,0b11001,0b10001,0b10001,0b10001],
-  i: [0b00100,0b00000,0b01100,0b00100,0b00100,0b00100,0b01110],
-  l: [0b01100,0b00100,0b00100,0b00100,0b00100,0b00100,0b01110],
-  n: [0b00000,0b00000,0b10110,0b11001,0b10001,0b10001,0b10001],
-  o: [0b00000,0b00000,0b01110,0b10001,0b10001,0b10001,0b01110],
-  r: [0b00000,0b00000,0b10110,0b11001,0b10000,0b10000,0b10000],
-  s: [0b00000,0b00000,0b01110,0b10000,0b01110,0b00001,0b11110],
-  t: [0b00100,0b00100,0b01110,0b00100,0b00100,0b00100,0b00010],
-  u: [0b00000,0b00000,0b10001,0b10001,0b10001,0b10011,0b01101],
-  v: [0b00000,0b00000,0b10001,0b10001,0b10001,0b01010,0b00100],
-  y: [0b00000,0b00000,0b10001,0b10001,0b01111,0b00001,0b01110],
-  "0": [0b01110,0b10001,0b10011,0b10101,0b11001,0b10001,0b01110],
-  "1": [0b00100,0b01100,0b00100,0b00100,0b00100,0b00100,0b01110],
-  "2": [0b01110,0b10001,0b00001,0b00010,0b00100,0b01000,0b11111],
-  "3": [0b01110,0b10001,0b00001,0b00110,0b00001,0b10001,0b01110],
-  "4": [0b00010,0b00110,0b01010,0b10010,0b11111,0b00010,0b00010],
-  "5": [0b11111,0b10000,0b11110,0b00001,0b00001,0b10001,0b01110],
-  "6": [0b01110,0b10000,0b11110,0b10001,0b10001,0b10001,0b01110],
-  "7": [0b11111,0b00001,0b00010,0b00100,0b01000,0b01000,0b01000],
-  "8": [0b01110,0b10001,0b10001,0b01110,0b10001,0b10001,0b01110],
-  "9": [0b01110,0b10001,0b10001,0b01111,0b00001,0b00001,0b01110],
-  " ": [0b00000,0b00000,0b00000,0b00000,0b00000,0b00000,0b00000],
-};
-
-/** Draw a pixel-font string onto a canvas 2d context (no anti-aliasing) */
-function drawPixelText(
-  ctx: CanvasRenderingContext2D,
-  text: string,
-  x: number,
-  y: number,
-  color: string,
-  scale = 1,
-) {
-  ctx.fillStyle = color;
-  let cx = x;
-  for (const ch of text) {
-    const glyph = GLYPHS[ch];
-    if (!glyph) { cx += (GLYPH_W + GLYPH_GAP) * scale; continue; }
-    for (let row = 0; row < GLYPH_H; row++) {
-      for (let col = 0; col < GLYPH_W; col++) {
-        if (glyph[row] & (1 << (GLYPH_W - 1 - col))) {
-          ctx.fillRect(cx + col * scale, y + row * scale, scale, scale);
-        }
-      }
-    }
-    cx += (GLYPH_W + GLYPH_GAP) * scale;
-  }
-}
-
-/** Measure pixel-font string width */
-function pixelTextWidth(text: string, scale = 1): number {
-  return text.length * (GLYPH_W + GLYPH_GAP) * scale - GLYPH_GAP * scale;
-}
 
 // ── Grid renderer (uses map.frag shader for all visualization) ───────────────
 const CELL = 64;       // each cell is 64×64 px
@@ -300,23 +211,6 @@ if (!glOrNull) {
 }
 const gl: WebGL2RenderingContext = glOrNull;
 
-// ── Create matter texture ────────────────────────────────────────────────────
-function createMatterTexture(): WebGLTexture {
-  const pixels = new Uint8Array(W * H * 4);
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
-      const idx = (y * W + x) * 4;
-      const isDirt = y >= (H - DIRT_ROWS);
-      const rgba = isDirt ? DIRT_RGBA : AIR_RGBA;
-      pixels[idx + 0] = rgba[0];
-      pixels[idx + 1] = rgba[1];
-      pixels[idx + 2] = rgba[2];
-      pixels[idx + 3] = rgba[3];
-    }
-  }
-  return createTexture(gl, W, H, pixels);
-}
-
 // ── Read back pixels ─────────────────────────────────────────────────────────
 interface PixelGrid {
   /** RGBA float values per pixel (energy, nutrients, light, alive) */
@@ -392,7 +286,7 @@ function run() {
   log(`Simulation Lab — ${W}×${H} grid, ${DIRT_ROWS} dirt rows`);
   log(`Running ${NUM_STEPS} steps...\n`);
 
-  const matterTex = createMatterTexture();
+  const matterTex = createMatterTexture(gl);
   const sim = createFoliageSim(gl, W, H);
   const noise = createNoiseSim(gl, W, H);
 

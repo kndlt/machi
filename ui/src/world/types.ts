@@ -10,10 +10,10 @@ export interface MapPlacement {
   path: string;       // relative path to map.xml
   x: number;          // world-space X position
   y: number;          // world-space Y position
-  map: GameMap;       // loaded map data
+  map: WorldMap;       // loaded map data
 }
 
-export interface GameMap {
+export interface WorldMap {
   title: string;
   description: string;
   width: number;      // map width in pixels
