@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Machi Simulation Lab</title>
+  <style>
+    body { margin: 0; background: #111; color: #0f0; font: 12px monospace; }
+    canvas { display: none; }
+    #output { white-space: pre; padding: 16px; }
+  </style>
+</head>
+<body>
+  <canvas id="sim-canvas" width="16" height="16"></canvas>
+  <canvas id="viz-canvas" width="256" height="256"></canvas>
+  <div id="output"></div>
+  <script type="module" src="/src/lab/sim-runner.ts"></script>
+</body>
+</html>
