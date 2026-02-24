@@ -69,7 +69,7 @@ export function createWebGLRenderer(canvas: HTMLCanvasElement): WebGLRenderer {
   function start(camera: Camera, layerRenderer: LayerRenderer, simulation?: SimulationRenderer): () => void {
     let rafId = 0;
     let lastSimTime = 0;
-    const SIM_INTERVAL_MS = 200; // run simulation every 200ms
+    const SIM_INTERVAL_MS = 1000; // run simulation every 1 second
 
     const onResize = () => resize(camera);
     window.addEventListener("resize", onResize);
