@@ -285,7 +285,7 @@ function run() {
       if (data[i * 4 + 3] > 0.05) aliveCount++;
     }
 
-    // Check convergence
+    // Check convergence (alive count stable for several steps)
     if (aliveCount === prevAliveCount && convergedAt < 0) {
       convergedAt = step;
     } else if (aliveCount !== prevAliveCount) {
@@ -300,8 +300,8 @@ function run() {
     snapshots.push({ foliageData: new Float32Array(data) });
     prevAliveCount = aliveCount;
 
-    // Stop early if converged for 3 consecutive steps
-    if (convergedAt >= 0 && step - convergedAt >= 3) {
+    // Stop early if converged for 10 consecutive steps
+    if (convergedAt >= 0 && step - convergedAt >= 10) {
       log(`\n✓ Converged at step ${convergedAt} (alive=${aliveCount})`);
       break;
     }
