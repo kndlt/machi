@@ -116,7 +116,7 @@ void main() {
   bool touchingStone = touchStoneR || touchStoneL || touchStoneU || touchStoneD;
 
   // touchingSurface = dirt or stone (for foliage anchor purposes)
-  bool touchingSurface = touchingDirt || touchingStone;
+  bool touchingSurface = touchingDirt;
 
   vec4 fR = texture(u_foliage_prev, v_uv + offR);
   vec4 fL = texture(u_foliage_prev, v_uv + offL);
