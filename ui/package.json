@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest",
-    "sim:headless": "npx tsx scripts/run-headless-sim.ts",
+    "sim": "npx tsx scripts/run-headless-sim.ts",
     "deploy": "npm run build && wrangler deploy",
     "kill": "kill-port 8588"
   },

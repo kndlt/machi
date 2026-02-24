@@ -5,7 +5,7 @@
  * test grid, reads back pixel data, and logs ASCII + stats to console.
  *
  * Usage:
- *   Browser:  open http://localhost:8588/sim-lab.html
+ *   Browser:  open http://localhost:8588/sim.html
  *   Headless: pnpm sim:headless
  */
 

@@ -25,7 +25,7 @@ export default defineConfig({
         rollupOptions: {
           input: {
             main: resolve(__dirname, 'index.html'),
-            'sim-lab': resolve(__dirname, 'sim-lab.html'),
+            'sim': resolve(__dirname, 'sim.html'),
           },
         },
       },

@@ -2,7 +2,7 @@
  * run-headless-sim.ts — Self-contained headless simulation runner.
  *
  * Spins up its own Vite dev server, launches headless Chrome via Playwright,
- * runs the sim-lab page, captures console output, then tears everything down.
+ * runs the sim page, captures console output, then tears everything down.
  *
  * Usage:
  *   npx tsx scripts/run-headless-sim.ts
@@ -34,7 +34,7 @@ async function main() {
     if (!address || typeof address === "string") {
       throw new Error("Failed to get server address");
     }
-    const url = `http://localhost:${address.port}/sim-lab.html`;
+    const url = `http://localhost:${address.port}/sim.html`;
     console.log(`\n🔬 Vite server on port ${address.port}`);
     console.log(`   Loading ${url}\n`);
 
