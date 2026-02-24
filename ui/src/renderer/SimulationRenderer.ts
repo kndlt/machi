@@ -97,9 +97,18 @@ export function createSimulationRenderer(
   });
 
   let stepCount = 0;
+  let currentSeed = Math.random();
+  let lastSeedChange = performance.now();
+  const SEED_CHANGE_INTERVAL_MS = 5_000_000; // change seed every 60 seconds
 
   // ── Simulation step ──────────────────────────────────────────────────────
   function step(): void {
+    const now = performance.now();
+    if (now - lastSeedChange >= SEED_CHANGE_INTERVAL_MS) {
+      currentSeed = Math.random();
+      lastSeedChange = now;
+    }
+
     const prevViewport = gl.getParameter(gl.VIEWPORT) as Int32Array;
 
     gl.useProgram(program);
@@ -108,7 +117,7 @@ export function createSimulationRenderer(
 
     gl.uniform1i(u_matter, 0);
     gl.uniform1i(u_foliage_prev, 1);
-    gl.uniform1f(u_seed, Math.sin(stepCount * 127.1 + 311.7) * 43758.5453 % 1.0);
+    gl.uniform1f(u_seed, currentSeed);
     stepCount++;
 
     for (const sim of mapSims) {

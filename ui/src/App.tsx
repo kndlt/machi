@@ -7,7 +7,7 @@ import { createSimulationRenderer } from "./renderer/SimulationRenderer";
 import { createCameraControls } from "./controls/CameraControls";
 import { loadWorld } from "./world/WorldLoader";
 
-const WORLD_PATH = "/worlds/world1";
+const WORLD_PATH = "/worlds/world0";
 
 async function initApp(canvas: HTMLCanvasElement): Promise<() => void> {
   console.log("Initializing app...");
@@ -27,7 +27,7 @@ async function initApp(canvas: HTMLCanvasElement): Promise<() => void> {
     const p = world.mapPlacements[0];
     camera.x = p.x + p.map.width / 2;
     camera.y = p.y + p.map.height / 2;
-    camera.zoom = 3; // default zoom so 512x256 map fills more of the screen
+    camera.zoom = 8; // default zoom so 512x256 map fills more of the screen
   }
 
   // 4. Layer renderer

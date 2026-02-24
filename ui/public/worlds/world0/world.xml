@@ -1,0 +1,6 @@
+<world
+  title="World 0"
+  description="A tiny 8x8 test world with a thin dirt layer."
+>
+  <map path="maps/map0/map.xml" x="0" y="0" />
+</world>
