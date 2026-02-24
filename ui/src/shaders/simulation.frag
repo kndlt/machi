@@ -166,10 +166,11 @@ void main() {
     // Blend energy toward current potential — gradual strengthening/weakening
     float energy = mix(fPrev.r, potential, ENERGY_BLEND);
 
-    if (energy < ENERGY_DEATH) {
-      out_color = vec4(0.0);  // starved
-      return;
-    }
+    // DISABLED FOR NOW
+    // if (energy < ENERGY_DEATH) {
+    //   out_color = vec4(0.0);  // starved
+    //   return;
+    // }
 
     out_color = vec4(energy, nutrients, light, 1.0);
   } else {

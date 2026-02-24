@@ -71,6 +71,16 @@ function readSimulationStartDelayMs(): number | null {
   return Math.round(seconds * 1000);
 }
 
+function readSimulationSeed(): number | undefined {
+  const raw = readLocationParam("seed");
+  if (raw == null) return undefined;
+
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return undefined;
+
+  return Math.trunc(parsed);
+}
+
 async function initApp(canvas: HTMLCanvasElement, callbacks: InitAppCallbacks): Promise<AppRuntime> {
   console.log("Initializing app...");
 
@@ -99,7 +109,8 @@ async function initApp(canvas: HTMLCanvasElement, callbacks: InitAppCallbacks): 
   const mapRenderer = createMapRenderer(gl, world);
 
   // 4b. Simulation renderer (produces foliage layer)
-  const simulation = createSimulationRenderer(gl, world);
+  const simulationSeed = readSimulationSeed();
+  const simulation = createSimulationRenderer(gl, world, { seed: simulationSeed });
 
   const BASE_SIM_INTERVAL_MS = 1000;
 
@@ -112,7 +123,7 @@ async function initApp(canvas: HTMLCanvasElement, callbacks: InitAppCallbacks): 
     renderer.simStartDelayMs = readSimulationStartDelayMs() ?? 0;
 
     console.log(
-      `Location controls applied: perturb=${simulation.noiseSpeed}, speed=${speedMultiplier}, simInterval=${renderer.simInterval}ms, delay=${renderer.simStartDelayMs}ms`,
+      `Location controls applied: perturb=${simulation.noiseSpeed}, speed=${speedMultiplier}, simInterval=${renderer.simInterval}ms, delay=${renderer.simStartDelayMs}ms, seed=${simulationSeed ?? "random"}`,
     );
   };
   applyLocationControls();
