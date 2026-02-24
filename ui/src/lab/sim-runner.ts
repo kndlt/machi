@@ -21,6 +21,10 @@ import { drawPixelText, pixelTextWidth, GLYPH_H } from "../utils/gl-text-utils";
 const { width: W, height: H, dirtRows: DIRT_ROWS } = DEFAULT_SIM_WORLD;
 const NUM_STEPS = 40;       // how many simulation steps to run
 
+// Read seed from URL query param: ?seed=42
+const urlSeed = new URLSearchParams(window.location.search).get("seed");
+const SEED: number | undefined = urlSeed != null ? Number(urlSeed) : undefined;
+
 // ── Output helper ────────────────────────────────────────────────────────────
 const outputEl = document.getElementById("output");
 
@@ -94,14 +98,10 @@ function renderGrid(
     drawPixelText(ctx, label, x, 3, "#aaa");
   }
 
-  // Build a fresh world + renderer per grid render so each row can replay
-  // the simulation up to that step. Instead, we render each view mode by
-  // creating a new world per row and stepping the sim to that point.
-  // For efficiency, we create one world and re-render it at each step.
-
+  // Build a fresh world + renderer to replay the simulation step-by-step.
   const world = createSyntheticWorld(gl);
   const mapRenderer = createMapRenderer(gl, world);
-  const simulation = createSimulationRenderer(gl, world);
+  const simulation = createSimulationRenderer(gl, world, { seed: SEED });
 
   // Camera set up to look at the entire map (1:1 pixels)
   const camera = createCamera();
@@ -246,12 +246,12 @@ function renderASCII(foliage: PixelGrid, step: number): string {
 // ── RUN SIMULATION ───────────────────────────────────────────────────────────
 
 function run() {
-  log(`Simulation Lab — ${W}×${H} grid, ${DIRT_ROWS} dirt rows`);
+  log(`Simulation Lab — ${W}×${H} grid, ${DIRT_ROWS} dirt rows${SEED != null ? `, seed=${SEED}` : ""}`);
   log(`Running ${NUM_STEPS} steps...\n`);
 
   // Build a synthetic world and wire up simulation — same as App.tsx
   const world = createSyntheticWorld(gl);
-  const simulation = createSimulationRenderer(gl, world);
+  const simulation = createSimulationRenderer(gl, world, { seed: SEED });
 
   // Access the per-map foliage sim for readPixels (via the World's layers)
   const placement = world.mapPlacements[0];

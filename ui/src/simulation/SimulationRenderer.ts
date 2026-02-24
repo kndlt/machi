@@ -27,15 +27,21 @@ export interface SimulationRenderer {
   dispose(): void;
 }
 
+export interface SimulationOptions {
+  /** Numeric seed for deterministic noise. Omit for random. */
+  seed?: number;
+}
+
 export function createSimulationRenderer(
   gl: WebGL2RenderingContext,
   world: World,
+  options?: SimulationOptions,
 ): SimulationRenderer {
   // ── Per-map FoliageSim + NoiseSim instances ──────────────────────────────
   const mapSims: MapSim[] = world.mapPlacements.map((placement) => {
     const { width, height } = placement.map;
     const sim = createFoliageSim(gl, width, height);
-    const noise = createNoiseSim(gl, width, height);
+    const noise = createNoiseSim(gl, width, height, options?.seed);
 
     // Expose initial (empty) foliage texture to the render pass
     placement.map.layers.foliage = sim.currentTexture();

@@ -27,11 +27,28 @@ export interface NoiseSim {
   dispose(): void;
 }
 
+/**
+ * Simple seeded PRNG (mulberry32). Returns a function that produces
+ * deterministic floats in [0, 1) when given a numeric seed.
+ * Falls back to Math.random when no seed is provided.
+ */
+function createRng(seed?: number): () => number {
+  if (seed == null) return Math.random;
+  let s = seed | 0;
+  return () => {
+    s = (s + 0x6d2b79f5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 /** Seed a texture with uniformly-distributed random noise in [0, 1]. */
-function generateInitialNoise(width: number, height: number): Uint8Array {
+function generateInitialNoise(width: number, height: number, seed?: number): Uint8Array {
+  const rng = createRng(seed);
   const data = new Uint8Array(width * height * 4);
   for (let i = 0; i < data.length; i += 4) {
-    const v = (Math.random() * 255) | 0;
+    const v = (rng() * 255) | 0;
     data[i] = v;       // R — noise value
     data[i + 1] = 0;   // G — unused
     data[i + 2] = 0;   // B — unused
@@ -44,6 +61,7 @@ export function createNoiseSim(
   gl: WebGL2RenderingContext,
   width: number,
   height: number,
+  seed?: number,
 ): NoiseSim {
   const program = createProgram(gl, simVert, noiseFrag);
   const u_prev = gl.getUniformLocation(program, "u_prev");
@@ -52,8 +70,9 @@ export function createNoiseSim(
   const emptyVAO = gl.createVertexArray()!;
 
   // Seed both textures with random noise so the first step has data to diffuse
-  const initialA = generateInitialNoise(width, height);
-  const initialB = generateInitialNoise(width, height);
+  // When a numeric seed is given, use deterministic PRNG with offset seeds
+  const initialA = generateInitialNoise(width, height, seed);
+  const initialB = generateInitialNoise(width, height, seed != null ? seed + 1 : undefined);
   const texA = createTexture(gl, width, height, initialA);
   const texB = createTexture(gl, width, height, initialB);
   const fboA = createFBO(gl, texA);

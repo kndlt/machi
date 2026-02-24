@@ -20,6 +20,15 @@ const TIMEOUT_MS = 30_000;
 const ROOT = resolve(import.meta.dirname, "..");
 const DEBUG_DIR = join(ROOT, "debug", "frames");
 
+// Parse --seed argument: npx tsx scripts/run-headless-sim.ts --seed 42
+function parseSeed(): number | undefined {
+  const idx = process.argv.indexOf("--seed");
+  if (idx < 0 || idx + 1 >= process.argv.length) return undefined;
+  const val = Number(process.argv[idx + 1]);
+  return Number.isFinite(val) ? val : undefined;
+}
+const SEED = parseSeed();
+
 async function main() {
   // ── 1. Start a temporary Vite server ─────────────────────────────────────
   let server: ViteDevServer | undefined;
@@ -34,8 +43,9 @@ async function main() {
     if (!address || typeof address === "string") {
       throw new Error("Failed to get server address");
     }
-    const url = `http://localhost:${address.port}/sim.html`;
-    console.log(`\n🔬 Vite server on port ${address.port}`);
+    const seedParam = SEED != null ? `?seed=${SEED}` : "";
+    const url = `http://localhost:${address.port}/sim.html${seedParam}`;
+    console.log(`\n🔬 Vite server on port ${address.port}${SEED != null ? ` (seed=${SEED})` : ""}`);
     console.log(`   Loading ${url}\n`);
 
     // ── 2. Launch headless Chrome ────────────────────────────────────────────
