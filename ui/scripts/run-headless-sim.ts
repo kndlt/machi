@@ -66,26 +66,19 @@ async function main() {
         { timeout: TIMEOUT_MS }
       );
 
-      // ── 4. Save frames as PNGs ──────────────────────────────────────────
-      const frames = await page.evaluate(() => {
-        return (window as unknown as Record<string, unknown>).__SIM_FRAMES__ as Array<{
-          step: number;
-          dataUrl: string;
-        }>;
+      // ── 4. Save grid image ───────────────────────────────────────────────
+      const gridDataUrl = await page.evaluate(() => {
+        return (window as unknown as Record<string, unknown>).__SIM_GRID__ as string;
       });
 
-      if (frames && frames.length > 0) {
-        // Clean and recreate debug directory
+      if (gridDataUrl) {
         rmSync(DEBUG_DIR, { recursive: true, force: true });
         mkdirSync(DEBUG_DIR, { recursive: true });
 
-        for (const frame of frames) {
-          const base64 = frame.dataUrl.replace(/^data:image\/png;base64,/, "");
-          const buf = Buffer.from(base64, "base64");
-          const filename = `step-${String(frame.step).padStart(3, "0")}.png`;
-          writeFileSync(join(DEBUG_DIR, filename), buf);
-        }
-        console.log(`\n📁 Saved ${frames.length} frames to debug/frames/`);
+        const base64 = gridDataUrl.replace(/^data:image\/png;base64,/, "");
+        const buf = Buffer.from(base64, "base64");
+        writeFileSync(join(DEBUG_DIR, "grid.png"), buf);
+        console.log(`\n📁 Saved grid.png to debug/frames/`);
       }
     } catch (err) {
       console.error("Simulation timed out or failed:", err);

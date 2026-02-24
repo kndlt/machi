@@ -34,75 +34,236 @@ function log(msg: string) {
   if (outputEl) outputEl.textContent += msg + "\n";
 }
 
-// ── Visualization canvas (scaled-up color render) ────────────────────────────
-const SCALE = 16;  // 16x16 grid → 256x256 image
-const vizCanvas = document.getElementById("viz-canvas") as HTMLCanvasElement;
-vizCanvas.width = W * SCALE;
-vizCanvas.height = H * SCALE;
-const vizCtx = vizCanvas.getContext("2d")!;
-vizCtx.imageSmoothingEnabled = false;
-
-// Global array of { step, dataUrl } for Playwright to collect
-const frameStore: Array<{ step: number; dataUrl: string }> = [];
-(window as unknown as Record<string, unknown>).__SIM_FRAMES__ = frameStore;
+// ── Snapshot storage ─────────────────────────────────────────────────────────
+// Collect raw pixel data per step; render the grid at the end
+const snapshots: PixelGrid[] = [];
 
 // ── Color mapping ────────────────────────────────────────────────────────────
 const DIRT_COLOR = [103, 82, 75] as const;
-const AIR_COLOR = [20, 18, 22] as const;
+const AIR_COLOR  = [20, 18, 22] as const;
+const BG_COLOR   = [30, 28, 34] as const;
 
 /** Map foliage energy to a green→yellow→brown gradient */
 function foliageColor(energy: number): [number, number, number] {
-  // Lush green (high energy) → yellow-brown (low energy)
   const t = Math.max(0, Math.min(1, energy));
-  const r = Math.round(30 + (1 - t) * 120);   // 30 (green) → 150 (brown)
-  const g = Math.round(140 + t * 80);          // 140 (weak) → 220 (lush)
-  const b = Math.round(20 + (1 - t) * 20);     // 20 → 40
-  return [r, g, b];
+  return [
+    Math.round(30 + (1 - t) * 120),
+    Math.round(140 + t * 80),
+    Math.round(20 + (1 - t) * 20),
+  ];
 }
 
-/** Render a color visualization of foliage + matter to the viz canvas */
-function renderVizFrame(foliage: PixelGrid, step: number): string {
-  const imgData = vizCtx.createImageData(W, H);
+// ── Channel definitions ──────────────────────────────────────────────────────
+interface ChannelDef {
+  label: string;
+  hue: [number, number, number];
+  /** Return the display value (0–1) for a pixel */
+  value: (data: Float32Array, idx: number) => number;
+}
 
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
-      const idx = (y * W + x) * 4;
-      const energy = foliage.data[idx + 0];
-      const alive = foliage.data[idx + 3];
-      const isDirt = y >= (H - DIRT_ROWS);
+const CHANNELS: ChannelDef[] = [
+  {
+    label: "Visual",
+    hue: [0, 0, 0], // unused — special-cased
+    value: (d, i) => d[i],
+  },
+  {
+    label: "Energy",
+    hue: [255, 80, 20],
+    value: (d, i) => d[i + 0],
+  },
+  {
+    label: "Nutrients",
+    hue: [20, 200, 60],
+    value: (d, i) => d[i + 1],
+  },
+  {
+    label: "Light",
+    hue: [60, 140, 255],
+    value: (d, i) => d[i + 2],
+  },
+  {
+    label: "Alive",
+    hue: [255, 255, 255],
+    value: (d, i) => d[i + 3],
+  },
+];
 
-      let r: number, g: number, b: number;
-      if (isDirt) {
-        [r, g, b] = DIRT_COLOR;
-      } else if (alive > 0.05) {
-        [r, g, b] = foliageColor(energy);
-      } else {
-        [r, g, b] = AIR_COLOR;
+// ── Bitmap pixel font (5×7, no anti-aliasing) ───────────────────────────────
+const GLYPH_W = 5;
+const GLYPH_H = 7;
+const GLYPH_GAP = 1;
+
+// Each glyph is 7 rows of 5-bit bitmasks (MSB = leftmost pixel)
+const GLYPHS: Record<string, number[]> = {
+  A: [0b01110,0b10001,0b10001,0b11111,0b10001,0b10001,0b10001],
+  B: [0b11110,0b10001,0b10001,0b11110,0b10001,0b10001,0b11110],
+  C: [0b01110,0b10001,0b10000,0b10000,0b10000,0b10001,0b01110],
+  D: [0b11110,0b10001,0b10001,0b10001,0b10001,0b10001,0b11110],
+  E: [0b11111,0b10000,0b10000,0b11110,0b10000,0b10000,0b11111],
+  F: [0b11111,0b10000,0b10000,0b11110,0b10000,0b10000,0b10000],
+  G: [0b01110,0b10001,0b10000,0b10111,0b10001,0b10001,0b01110],
+  H: [0b10001,0b10001,0b10001,0b11111,0b10001,0b10001,0b10001],
+  I: [0b01110,0b00100,0b00100,0b00100,0b00100,0b00100,0b01110],
+  K: [0b10001,0b10010,0b10100,0b11000,0b10100,0b10010,0b10001],
+  L: [0b10000,0b10000,0b10000,0b10000,0b10000,0b10000,0b11111],
+  N: [0b10001,0b11001,0b10101,0b10011,0b10001,0b10001,0b10001],
+  O: [0b01110,0b10001,0b10001,0b10001,0b10001,0b10001,0b01110],
+  R: [0b11110,0b10001,0b10001,0b11110,0b10100,0b10010,0b10001],
+  S: [0b01110,0b10001,0b10000,0b01110,0b00001,0b10001,0b01110],
+  T: [0b11111,0b00100,0b00100,0b00100,0b00100,0b00100,0b00100],
+  U: [0b10001,0b10001,0b10001,0b10001,0b10001,0b10001,0b01110],
+  V: [0b10001,0b10001,0b10001,0b10001,0b01010,0b01010,0b00100],
+  W: [0b10001,0b10001,0b10001,0b10101,0b10101,0b11011,0b10001],
+  Y: [0b10001,0b10001,0b01010,0b00100,0b00100,0b00100,0b00100],
+  a: [0b00000,0b00000,0b01110,0b00001,0b01111,0b10001,0b01111],
+  b: [0b10000,0b10000,0b11110,0b10001,0b10001,0b10001,0b11110],
+  e: [0b00000,0b00000,0b01110,0b10001,0b11111,0b10000,0b01110],
+  g: [0b00000,0b00000,0b01111,0b10001,0b01111,0b00001,0b01110],
+  h: [0b10000,0b10000,0b10110,0b11001,0b10001,0b10001,0b10001],
+  i: [0b00100,0b00000,0b01100,0b00100,0b00100,0b00100,0b01110],
+  l: [0b01100,0b00100,0b00100,0b00100,0b00100,0b00100,0b01110],
+  n: [0b00000,0b00000,0b10110,0b11001,0b10001,0b10001,0b10001],
+  o: [0b00000,0b00000,0b01110,0b10001,0b10001,0b10001,0b01110],
+  r: [0b00000,0b00000,0b10110,0b11001,0b10000,0b10000,0b10000],
+  s: [0b00000,0b00000,0b01110,0b10000,0b01110,0b00001,0b11110],
+  t: [0b00100,0b00100,0b01110,0b00100,0b00100,0b00100,0b00010],
+  u: [0b00000,0b00000,0b10001,0b10001,0b10001,0b10011,0b01101],
+  v: [0b00000,0b00000,0b10001,0b10001,0b10001,0b01010,0b00100],
+  y: [0b00000,0b00000,0b10001,0b10001,0b01111,0b00001,0b01110],
+  "0": [0b01110,0b10001,0b10011,0b10101,0b11001,0b10001,0b01110],
+  "1": [0b00100,0b01100,0b00100,0b00100,0b00100,0b00100,0b01110],
+  "2": [0b01110,0b10001,0b00001,0b00010,0b00100,0b01000,0b11111],
+  "3": [0b01110,0b10001,0b00001,0b00110,0b00001,0b10001,0b01110],
+  "4": [0b00010,0b00110,0b01010,0b10010,0b11111,0b00010,0b00010],
+  "5": [0b11111,0b10000,0b11110,0b00001,0b00001,0b10001,0b01110],
+  "6": [0b01110,0b10000,0b11110,0b10001,0b10001,0b10001,0b01110],
+  "7": [0b11111,0b00001,0b00010,0b00100,0b01000,0b01000,0b01000],
+  "8": [0b01110,0b10001,0b10001,0b01110,0b10001,0b10001,0b01110],
+  "9": [0b01110,0b10001,0b10001,0b01111,0b00001,0b00001,0b01110],
+  " ": [0b00000,0b00000,0b00000,0b00000,0b00000,0b00000,0b00000],
+};
+
+/** Draw a pixel-font string onto a canvas 2d context (no anti-aliasing) */
+function drawPixelText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  color: string,
+  scale = 1,
+) {
+  ctx.fillStyle = color;
+  let cx = x;
+  for (const ch of text) {
+    const glyph = GLYPHS[ch];
+    if (!glyph) { cx += (GLYPH_W + GLYPH_GAP) * scale; continue; }
+    for (let row = 0; row < GLYPH_H; row++) {
+      for (let col = 0; col < GLYPH_W; col++) {
+        if (glyph[row] & (1 << (GLYPH_W - 1 - col))) {
+          ctx.fillRect(cx + col * scale, y + row * scale, scale, scale);
+        }
+      }
+    }
+    cx += (GLYPH_W + GLYPH_GAP) * scale;
+  }
+}
+
+/** Measure pixel-font string width */
+function pixelTextWidth(text: string, scale = 1): number {
+  return text.length * (GLYPH_W + GLYPH_GAP) * scale - GLYPH_GAP * scale;
+}
+
+// ── Grid renderer ────────────────────────────────────────────────────────────
+const CELL = 64;       // each cell is 64×64 px
+const PAD = 2;         // gap between cells
+const LABEL_H = 18;    // row label height
+const HEADER_H = 16;   // column header height
+
+function renderGrid(steps: PixelGrid[]): string {
+  const numSteps = steps.length;
+  const numChannels = CHANNELS.length;
+  const labelH = 14;   // top row for channel headers
+  const rowLabelW = 24; // left column for t0, t1, ...
+
+  const gridW = rowLabelW + numChannels * (CELL + PAD);
+  const gridH = labelH + numSteps * (CELL + PAD);
+
+  const gridCanvas = document.createElement("canvas");
+  gridCanvas.width = gridW;
+  gridCanvas.height = gridH;
+  const ctx = gridCanvas.getContext("2d")!;
+  ctx.imageSmoothingEnabled = false;
+
+  // Background
+  ctx.fillStyle = `rgb(${BG_COLOR[0]},${BG_COLOR[1]},${BG_COLOR[2]})`;
+  ctx.fillRect(0, 0, gridW, gridH);
+
+  // Column headers (channel names) — pixel font
+  for (let c = 0; c < numChannels; c++) {
+    const label = CHANNELS[c].label;
+    const tw = pixelTextWidth(label);
+    const x = rowLabelW + c * (CELL + PAD) + Math.floor((CELL - tw) / 2);
+    drawPixelText(ctx, label, x, 3, "#aaa");
+  }
+
+  // 1:1 scratch canvas for pixel data
+  const tmp = document.createElement("canvas");
+  tmp.width = W;
+  tmp.height = H;
+  const tmpCtx = tmp.getContext("2d")!;
+
+  // Rows = timesteps, Columns = channels
+  for (let row = 0; row < numSteps; row++) {
+    const foliage = steps[row];
+    const y0 = labelH + row * (CELL + PAD);
+
+    // Row label (t0, t1, ...) — pixel font, right-aligned
+    const label = `t${row}`;
+    const tw = pixelTextWidth(label);
+    drawPixelText(ctx, label, rowLabelW - 4 - tw, y0 + Math.floor((CELL - GLYPH_H) / 2), "#888");
+
+    for (let col = 0; col < numChannels; col++) {
+      const ch = CHANNELS[col];
+      const x0 = rowLabelW + col * (CELL + PAD);
+      const imgData = tmpCtx.createImageData(W, H);
+
+      for (let py = 0; py < H; py++) {
+        for (let px = 0; px < W; px++) {
+          const idx = (py * W + px) * 4;
+          const alive = foliage.data[idx + 3];
+          const isDirt = py >= (H - DIRT_ROWS);
+
+          let r: number, g: number, b: number;
+          if (isDirt) {
+            [r, g, b] = DIRT_COLOR;
+          } else if (alive > 0.05) {
+            if (ch.label === "Visual") {
+              [r, g, b] = foliageColor(foliage.data[idx + 0]);
+            } else {
+              const val = ch.value(foliage.data, idx);
+              r = Math.round(ch.hue[0] * val);
+              g = Math.round(ch.hue[1] * val);
+              b = Math.round(ch.hue[2] * val);
+            }
+          } else {
+            [r, g, b] = AIR_COLOR;
+          }
+
+          imgData.data[idx + 0] = r;
+          imgData.data[idx + 1] = g;
+          imgData.data[idx + 2] = b;
+          imgData.data[idx + 3] = 255;
+        }
       }
 
-      imgData.data[idx + 0] = r;
-      imgData.data[idx + 1] = g;
-      imgData.data[idx + 2] = b;
-      imgData.data[idx + 3] = 255;
+      // Draw 1:1 then scale into grid cell
+      tmpCtx.putImageData(imgData, 0, 0);
+      ctx.drawImage(tmp, x0, y0, CELL, CELL);
     }
   }
 
-  // Draw at 1:1 then scale up with nearest-neighbor
-  const tmpCanvas = document.createElement("canvas");
-  tmpCanvas.width = W;
-  tmpCanvas.height = H;
-  const tmpCtx = tmpCanvas.getContext("2d")!;
-  tmpCtx.putImageData(imgData, 0, 0);
-
-  vizCtx.clearRect(0, 0, vizCanvas.width, vizCanvas.height);
-  vizCtx.drawImage(tmpCanvas, 0, 0, W * SCALE, H * SCALE);
-
-  // Add step label
-  vizCtx.fillStyle = "#fff";
-  vizCtx.font = "bold 14px monospace";
-  vizCtx.fillText(`Step ${step}`, 4, 16);
-
-  return vizCanvas.toDataURL("image/png");
+  return gridCanvas.toDataURL("image/png");
 }
 
 // ── WebGL2 setup ─────────────────────────────────────────────────────────────
@@ -309,9 +470,9 @@ function run() {
       log(renderASCII(pixels, step));
     }
 
-    // Save color frame for every step
-    const dataUrl = renderVizFrame(pixels, step);
-    frameStore.push({ step, dataUrl });
+    // Snapshot raw pixel data for grid rendering at end
+    const copy = new Float32Array(pixels.data);
+    snapshots.push({ data: copy });
 
     prevAliveCount = aliveCount;
     readIdx = writeIdx;
@@ -332,7 +493,11 @@ function run() {
   gl.deleteVertexArray(emptyVAO);
   gl.deleteProgram(program);
 
-  log("\n═══ Done ═══");
+  // Render the composite grid image
+  const gridDataUrl = renderGrid(snapshots);
+  (window as unknown as Record<string, unknown>).__SIM_GRID__ = gridDataUrl;
+
+  log(`\n═══ Done — ${snapshots.length} steps captured ═══`);
 
   // Signal to headless runner that we're done
   (window as unknown as Record<string, boolean>).__SIM_DONE__ = true;
