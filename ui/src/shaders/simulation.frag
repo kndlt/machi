@@ -42,7 +42,7 @@ const float ENERGY_GROW_MIN      = 0.3;   // Neighbor needs this energy to sprea
 
 // ── Growth thresholds (fixed — no step counter) ──────────────────────────
 const float SEED_NOISE_MAX       = 0.40;  // Max noise for dirt-adjacent seeding
-const float SEED_NOISE_MAX_STONE = 0.12;  // Much tighter noise gate for stone seeding
+const float SEED_NOISE_MAX_STONE = 0.01;  // Much tighter noise gate for stone seeding
 const float SPREAD_NOISE_MAX     = 0.50;  // Max noise for neighbor spreading
 const float ENERGY_BLEND         = 0.10;  // Energy convergence rate per step
 const float ENERGY_INITIAL       = 0.35;  // New cells start at 35% of potential
