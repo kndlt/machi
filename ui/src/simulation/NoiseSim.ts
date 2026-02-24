@@ -23,6 +23,12 @@ export interface NoiseSim {
   /** Read back the current noise FBO as normalized floats (0–1). */
   readPixels(): Float32Array;
 
+  /** Iterations per step() call (1 = default). */
+  speed: number;
+
+  /** Rate magnitude multiplier (scales diffusion & perturbation per pass). */
+  magnitude: number;
+
   /** Clean up all GPU resources. */
   dispose(): void;
 }
@@ -66,6 +72,13 @@ export function createNoiseSim(
   const program = createProgram(gl, simVert, noiseFrag);
   const u_prev = gl.getUniformLocation(program, "u_prev");
   const u_time = gl.getUniformLocation(program, "u_time");
+  const u_diffusion = gl.getUniformLocation(program, "u_diffusion");
+  const u_perturbation = gl.getUniformLocation(program, "u_perturbation");
+
+  const BASE_DIFFUSION = 0.04;
+  const BASE_PERTURBATION = 0.08;
+  let speed = 1;      // iterations per step() call
+  let magnitude = 1;  // multiplier on diffusion/perturbation rates
 
   const emptyVAO = gl.createVertexArray()!;
 
@@ -82,7 +95,8 @@ export function createNoiseSim(
   const fbos: [WebGLFramebuffer, WebGLFramebuffer] = [fboA, fboB];
   let readIdx = 0;
 
-  function step(time: number): void {
+  /** Run a single GPU pass (internal). */
+  function singlePass(time: number): void {
     const readTex = textures[readIdx];
     const writeIdx = 1 - readIdx;
     const writeFbo = fbos[writeIdx];
@@ -95,6 +109,8 @@ export function createNoiseSim(
 
     gl.uniform1i(u_prev, 0);
     gl.uniform1f(u_time, time);
+    gl.uniform1f(u_diffusion, BASE_DIFFUSION * magnitude);
+    gl.uniform1f(u_perturbation, BASE_PERTURBATION * magnitude);
 
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, readTex);
@@ -102,6 +118,13 @@ export function createNoiseSim(
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 
     readIdx = writeIdx;
+  }
+
+  /** Run `speed` iterations of noise evolution. */
+  function step(time: number): void {
+    for (let i = 0; i < speed; i++) {
+      singlePass(time + i * 0.1);
+    }
   }
 
   function currentTexture(): WebGLTexture {
@@ -131,5 +154,14 @@ export function createNoiseSim(
     gl.deleteProgram(program);
   }
 
-  return { step, currentTexture, readPixels: readPixelsOut, dispose };
+  return {
+    step,
+    currentTexture,
+    readPixels: readPixelsOut,
+    get speed() { return speed; },
+    set speed(v: number) { speed = Math.max(1, Math.round(v)); },
+    get magnitude() { return magnitude; },
+    set magnitude(v: number) { magnitude = Math.max(0.01, v); },
+    dispose,
+  };
 }

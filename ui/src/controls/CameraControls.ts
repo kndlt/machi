@@ -7,6 +7,7 @@
 import type { Camera } from "../renderer/Camera";
 import { screenToWorld } from "../renderer/Camera";
 import type { MapRenderer } from "../renderer/MapRenderer";
+import type { SimulationRenderer } from "../simulation/SimulationRenderer";
 
 const PAN_SPEED = 5;         // pixels per frame at 1× zoom
 
@@ -20,7 +21,8 @@ export interface CameraControls {
 export function createCameraControls(
   canvas: HTMLCanvasElement,
   camera: Camera,
-  mapRenderer: MapRenderer
+  mapRenderer: MapRenderer,
+  simulation?: SimulationRenderer,
 ): CameraControls {
   // ── Keyboard state ─────────────────────────────────────────────────────
   const keys = new Set<string>();
@@ -37,6 +39,16 @@ export function createCameraControls(
     }
     if (e.key === "o" || e.key === "O") {
       mapRenderer.outlineEnabled = !mapRenderer.outlineEnabled;
+      return;
+    }
+    if (e.key === "]" && simulation) {
+      simulation.noiseSpeed = Math.min(simulation.noiseSpeed * 2, 64);
+      console.log(`Noise speed: ${simulation.noiseSpeed}×`);
+      return;
+    }
+    if (e.key === "[" && simulation) {
+      simulation.noiseSpeed = Math.max(simulation.noiseSpeed / 2, 0.125);
+      console.log(`Noise speed: ${simulation.noiseSpeed}×`);
       return;
     }
     keys.add(e.key);

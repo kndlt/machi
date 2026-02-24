@@ -24,6 +24,10 @@ interface MapSim {
 export interface SimulationRenderer {
   /** Run one simulation step for all maps */
   step(): void;
+  /** Noise iterations per step (1 = default) */
+  noiseSpeed: number;
+  /** Noise rate magnitude multiplier (1.0 = default) */
+  noiseMagnitude: number;
   dispose(): void;
 }
 
@@ -81,5 +85,12 @@ export function createSimulationRenderer(
     }
   }
 
-  return { step, dispose };
+  return {
+    step,
+    get noiseSpeed() { return mapSims[0]?.noise.speed ?? 1; },
+    set noiseSpeed(v: number) { for (const ms of mapSims) ms.noise.speed = v; },
+    get noiseMagnitude() { return mapSims[0]?.noise.magnitude ?? 1; },
+    set noiseMagnitude(v: number) { for (const ms of mapSims) ms.noise.magnitude = v; },
+    dispose,
+  };
 }

@@ -58,7 +58,7 @@ export function createWebGLRenderer(canvas: HTMLCanvasElement): WebGLRenderer {
       const max = Math.max(...frameTimes);
       const mode = MODE_NAMES[viewMode] ?? `mode ${viewMode}`;
       const foliage = foliageEnabled ? "foliage ON" : "foliage OFF";
-      fpsEl.textContent = `${fps} FPS | ${avg.toFixed(2)}ms avg | ${max.toFixed(1)}ms max | ${mode} | ${foliage}`;
+      fpsEl.textContent = `${fps} FPS | ${avg.toFixed(1)}ms avg | ${max.toFixed(1)}ms max | ${mode} | ${foliage}`;
       frameCount = 0;
       lastFpsTime = now;
       frameTimes = [];

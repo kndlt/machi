@@ -14,12 +14,10 @@ in vec2 v_uv;
 
 uniform sampler2D u_prev;   // previous noise state
 uniform float u_time;        // incrementing time value (for hash variation)
+uniform float u_diffusion;   // blend rate toward neighbors (default 0.10)
+uniform float u_perturbation; // random nudge amplitude (default 0.02)
 
 out vec4 out_color;
-
-// ── Tuning ──────────────────────────────────────────────────────────────
-const float DIFFUSION_RATE  = 0.05;  // 5% blend toward neighbors per step
-const float PERTURBATION    = 0.01;  // ±1% random nudge per step
 
 // ── Hash ────────────────────────────────────────────────────────────────
 float hash(vec2 p, float seed) {
@@ -43,13 +41,13 @@ void main() {
   float neighborAvg = (r + l + u + d) * 0.25;
 
   // Diffuse: blend toward neighbor average
-  float diffused = mix(current, neighborAvg, DIFFUSION_RATE);
+  float diffused = mix(current, neighborAvg, u_diffusion);
 
   // Perturb: small hash-based nudge in [-1, 1] range
   // Use pixel coordinates (not UVs) so the hash produces uncorrelated values
   vec2 pixelCoord = v_uv * vec2(textureSize(u_prev, 0));
   float nudge = hash(pixelCoord, u_time) * 2.0 - 1.0;
-  float result = diffused + nudge * PERTURBATION;
+  float result = diffused + nudge * u_perturbation;
 
   out_color = vec4(clamp(result, 0.0, 1.0), 0.0, 0.0, 1.0);
 }
