@@ -23,7 +23,7 @@ export interface NoiseSim {
   /** Read back the current noise FBO as normalized floats (0–1). */
   readPixels(): Float32Array;
 
-  /** Iterations per step() call (1 = default). */
+  /** Iterations per step() call (1 = default, 0 = paused). */
   speed: number;
 
   /** Rate magnitude multiplier (scales diffusion & perturbation per pass). */
@@ -159,7 +159,7 @@ export function createNoiseSim(
     currentTexture,
     readPixels: readPixelsOut,
     get speed() { return speed; },
-    set speed(v: number) { speed = Math.max(1, Math.round(v)); },
+    set speed(v: number) { speed = Math.max(0, Math.round(v)); },
     get magnitude() { return magnitude; },
     set magnitude(v: number) { magnitude = Math.max(0.01, v); },
     dispose,

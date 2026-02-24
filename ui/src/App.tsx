@@ -21,6 +21,33 @@ interface InitAppCallbacks {
   onAutoStopComplete: (error?: unknown) => void;
 }
 
+function readLocationParam(name: string): string | null {
+  const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  return hashParams.get(name)
+    ?? new URLSearchParams(window.location.search).get(name);
+}
+
+function readPerturbNoiseSpeed(): number | null {
+  const raw = readLocationParam("perturb");
+
+  if (raw == null) return null;
+
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return null;
+
+  return Math.max(0, Math.round(parsed));
+}
+
+function readSimulationSpeedMultiplier(): number | null {
+  const raw = readLocationParam("speed");
+  if (raw == null) return null;
+
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+
+  return parsed;
+}
+
 async function initApp(canvas: HTMLCanvasElement, callbacks: InitAppCallbacks): Promise<AppRuntime> {
   console.log("Initializing app...");
 
@@ -48,6 +75,26 @@ async function initApp(canvas: HTMLCanvasElement, callbacks: InitAppCallbacks): 
   // 4b. Simulation renderer (produces foliage layer)
   const simulation = createSimulationRenderer(gl, world);
 
+  const BASE_SIM_INTERVAL_MS = 1000;
+
+  const applyLocationControls = () => {
+    const perturbNoiseSpeed = readPerturbNoiseSpeed();
+    simulation.noiseSpeed = perturbNoiseSpeed ?? 1;
+
+    const speedMultiplier = readSimulationSpeedMultiplier() ?? 1;
+    renderer.simInterval = Math.round(BASE_SIM_INTERVAL_MS / speedMultiplier);
+
+    console.log(
+      `Location controls applied: perturb=${simulation.noiseSpeed}, speed=${speedMultiplier}, simInterval=${renderer.simInterval}ms`,
+    );
+  };
+  applyLocationControls();
+
+  const onHashChange = () => {
+    applyLocationControls();
+  };
+  window.addEventListener("hashchange", onHashChange);
+
   // 5. Controls
   const controls = createCameraControls(canvas, camera, mapRenderer, simulation, renderer);
 
@@ -73,6 +120,7 @@ async function initApp(canvas: HTMLCanvasElement, callbacks: InitAppCallbacks): 
       return recorder.stopAndDownload();
     },
     dispose() {
+      window.removeEventListener("hashchange", onHashChange);
       recorder.dispose();
       stopLoop();
       controls.dispose();
