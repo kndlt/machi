@@ -37,7 +37,7 @@ async function initApp(canvas: HTMLCanvasElement): Promise<() => void> {
   const simulation = createSimulationRenderer(gl, world);
 
   // 5. Controls
-  const controls = createCameraControls(canvas, camera, mapRenderer, simulation);
+  const controls = createCameraControls(canvas, camera, mapRenderer, simulation, renderer);
 
   // 6. Start animation loop (simulation ticks inside at 200ms intervals)
   const stopLoop = renderer.start(camera, mapRenderer, simulation);

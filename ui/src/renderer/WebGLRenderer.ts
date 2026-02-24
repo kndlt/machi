@@ -13,6 +13,8 @@ export interface WebGLRenderer {
   start(camera: Camera, mapRenderer: MapRenderer, simulation?: SimulationRenderer): () => void;
   /** Resize viewport to match canvas CSS size. */
   resize(camera: Camera): void;
+  /** Simulation tick interval in ms (lower = faster). */
+  simInterval: number;
   dispose(): void;
 }
 
@@ -58,7 +60,7 @@ export function createWebGLRenderer(canvas: HTMLCanvasElement): WebGLRenderer {
       const max = Math.max(...frameTimes);
       const mode = MODE_NAMES[viewMode] ?? `mode ${viewMode}`;
       const foliage = foliageEnabled ? "foliage ON" : "foliage OFF";
-      fpsEl.textContent = `${fps} FPS | ${avg.toFixed(1)}ms avg | ${max.toFixed(1)}ms max | ${mode} | ${foliage}`;
+      fpsEl.textContent = `${fps} FPS | ${avg.toFixed(1)}ms avg | ${max.toFixed(1)}ms max | ${mode} | ${foliage} | sim ${simInterval}ms`;
       frameCount = 0;
       lastFpsTime = now;
       frameTimes = [];
@@ -66,10 +68,11 @@ export function createWebGLRenderer(canvas: HTMLCanvasElement): WebGLRenderer {
   }
 
   // ── Animation loop ────────────────────────────────────────────────────────
+  let simInterval = 1000; // ms between simulation steps
+
   function start(camera: Camera, mapRenderer: MapRenderer, simulation?: SimulationRenderer): () => void {
     let rafId = 0;
     let lastSimTime = 0;
-    const SIM_INTERVAL_MS = 1000; // run simulation every 3 seconds for debugging
 
     const onResize = () => resize(camera);
     window.addEventListener("resize", onResize);
@@ -81,7 +84,7 @@ export function createWebGLRenderer(canvas: HTMLCanvasElement): WebGLRenderer {
       const t0 = performance.now();
 
       // Tick simulation on a timer
-      if (simulation && t0 - lastSimTime >= SIM_INTERVAL_MS) {
+      if (simulation && t0 - lastSimTime >= simInterval) {
         simulation.step();
         lastSimTime = t0;
       }
@@ -111,5 +114,13 @@ export function createWebGLRenderer(canvas: HTMLCanvasElement): WebGLRenderer {
     ext?.loseContext();
   }
 
-  return { gl, canvas, start, resize, dispose };
+  return {
+    gl,
+    canvas,
+    start,
+    resize,
+    get simInterval() { return simInterval; },
+    set simInterval(v: number) { simInterval = Math.max(50, v); },
+    dispose,
+  };
 }

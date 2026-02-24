@@ -63,7 +63,9 @@ export function createSimulationRenderer(
 
     for (const { placement, sim, noise } of mapSims) {
       // Evolve noise first, then feed it to foliage sim
-      noise.step(stepCount);
+      // Use fractional time so the hash seed actually varies between steps
+      // (fract(x + integer) ≡ fract(x), so integer stepCount produces a constant hash)
+      noise.step(stepCount * 0.7123);
       sim.step(placement.map.layers.matter!, noise.currentTexture());
       placement.map.layers.foliage = sim.currentTexture();
       placement.map.layers.noise = noise.currentTexture();

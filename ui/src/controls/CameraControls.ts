@@ -8,6 +8,7 @@ import type { Camera } from "../renderer/Camera";
 import { screenToWorld } from "../renderer/Camera";
 import type { MapRenderer } from "../renderer/MapRenderer";
 import type { SimulationRenderer } from "../simulation/SimulationRenderer";
+import type { WebGLRenderer } from "../renderer/WebGLRenderer";
 
 const PAN_SPEED = 5;         // pixels per frame at 1× zoom
 
@@ -23,6 +24,7 @@ export function createCameraControls(
   camera: Camera,
   mapRenderer: MapRenderer,
   simulation?: SimulationRenderer,
+  renderer?: WebGLRenderer,
 ): CameraControls {
   // ── Keyboard state ─────────────────────────────────────────────────────
   const keys = new Set<string>();
@@ -41,14 +43,14 @@ export function createCameraControls(
       mapRenderer.outlineEnabled = !mapRenderer.outlineEnabled;
       return;
     }
-    if (e.key === "]" && simulation) {
-      simulation.noiseSpeed = Math.min(simulation.noiseSpeed * 2, 64);
-      console.log(`Noise speed: ${simulation.noiseSpeed}×`);
+    if (e.key === "]" && renderer) {
+      renderer.simInterval = Math.max(50, renderer.simInterval / 2);
+      console.log(`Sim interval: ${renderer.simInterval}ms`);
       return;
     }
-    if (e.key === "[" && simulation) {
-      simulation.noiseSpeed = Math.max(simulation.noiseSpeed / 2, 0.125);
-      console.log(`Noise speed: ${simulation.noiseSpeed}×`);
+    if (e.key === "[" && renderer) {
+      renderer.simInterval = Math.min(8000, renderer.simInterval * 2);
+      console.log(`Sim interval: ${renderer.simInterval}ms`);
       return;
     }
     keys.add(e.key);
