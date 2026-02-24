@@ -15,6 +15,8 @@ export interface WebGLRenderer {
   resize(camera: Camera): void;
   /** Simulation tick interval in ms (lower = faster). */
   simInterval: number;
+  /** Delay in ms before first simulation tick starts after loop start. */
+  simStartDelayMs: number;
   dispose(): void;
 }
 
@@ -69,10 +71,12 @@ export function createWebGLRenderer(canvas: HTMLCanvasElement): WebGLRenderer {
 
   // ── Animation loop ────────────────────────────────────────────────────────
   let simInterval = 1000; // ms between simulation steps
+  let simStartDelayMs = 0;
 
   function start(camera: Camera, mapRenderer: MapRenderer, simulation?: SimulationRenderer): () => void {
     let rafId = 0;
-    let lastSimTime = 0;
+    const simStartAt = performance.now() + simStartDelayMs;
+    let lastSimTime = simStartAt - simInterval;
 
     const onResize = () => resize(camera);
     window.addEventListener("resize", onResize);
@@ -84,7 +88,7 @@ export function createWebGLRenderer(canvas: HTMLCanvasElement): WebGLRenderer {
       const t0 = performance.now();
 
       // Tick simulation on a timer
-      if (simulation && t0 - lastSimTime >= simInterval) {
+      if (simulation && t0 >= simStartAt && t0 - lastSimTime >= simInterval) {
         simulation.step();
         lastSimTime = t0;
       }
@@ -121,6 +125,8 @@ export function createWebGLRenderer(canvas: HTMLCanvasElement): WebGLRenderer {
     resize,
     get simInterval() { return simInterval; },
     set simInterval(v: number) { simInterval = Math.max(50, v); },
+    get simStartDelayMs() { return simStartDelayMs; },
+    set simStartDelayMs(v: number) { simStartDelayMs = Math.max(0, Math.round(v)); },
     dispose,
   };
 }

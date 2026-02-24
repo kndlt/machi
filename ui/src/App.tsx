@@ -60,6 +60,17 @@ function readSimulationSpeedMultiplier(): number | null {
   return parsed;
 }
 
+function readSimulationStartDelayMs(): number | null {
+  const raw = readLocationParam("delay");
+  if (raw == null) return null;
+
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return null;
+
+  const seconds = Math.max(0, parsed);
+  return Math.round(seconds * 1000);
+}
+
 async function initApp(canvas: HTMLCanvasElement, callbacks: InitAppCallbacks): Promise<AppRuntime> {
   console.log("Initializing app...");
 
@@ -98,9 +109,10 @@ async function initApp(canvas: HTMLCanvasElement, callbacks: InitAppCallbacks): 
 
     const speedMultiplier = readSimulationSpeedMultiplier() ?? 1;
     renderer.simInterval = Math.round(BASE_SIM_INTERVAL_MS / speedMultiplier);
+    renderer.simStartDelayMs = readSimulationStartDelayMs() ?? 0;
 
     console.log(
-      `Location controls applied: perturb=${simulation.noiseSpeed}, speed=${speedMultiplier}, simInterval=${renderer.simInterval}ms`,
+      `Location controls applied: perturb=${simulation.noiseSpeed}, speed=${speedMultiplier}, simInterval=${renderer.simInterval}ms, delay=${renderer.simStartDelayMs}ms`,
     );
   };
   applyLocationControls();
