@@ -195,24 +195,24 @@ void main() {
   // Stable RNG for survival (prevents flickering)
   float rngStable = hash(v_uv, u_seed);
 
-  // ── Dirt pixel: tint near-surface dirt ──────────────────────────────────
-  if (isDirt(mHere)) {
-    float distToAir = 3.0;
-    for (int i = 1; i <= 2; i++) {
-      vec4 mAbove = texture(u_matter, v_uv - vec2(0.0, texelSize.y * float(i)));
-      if (isAir(mAbove)) {
-        distToAir = float(i);
-        break;
-      }
-    }
-    // if (distToAir <= 2.0) {
-    //   float alpha = 0.7 - (distToAir - 1.0) * 0.25;
-    //   out_color = vec4(FOLIAGE_RGBA.rgb, alpha);
-    // } else {
-    //   out_color = vec4(0.0);
-    // }
-    return;
-  }
+  // // ── Dirt pixel: tint near-surface dirt ──────────────────────────────────
+  // if (isDirt(mHere)) {
+  //   float distToAir = 3.0;
+  //   for (int i = 1; i <= 2; i++) {
+  //     vec4 mAbove = texture(u_matter, v_uv - vec2(0.0, texelSize.y * float(i)));
+  //     if (isAir(mAbove)) {
+  //       distToAir = float(i);
+  //       break;
+  //     }
+  //   }
+  //   if (distToAir <= 2.0) {
+  //     float alpha = 0.7 - (distToAir - 1.0) * 0.25;
+  //     out_color = vec4(FOLIAGE_RGBA.rgb, alpha);
+  //   } else {
+  //     out_color = vec4(0.0);
+  //   }
+  //   return;
+  // }
 
   // ── Non-air, non-dirt: no foliage ──────────────────────────────────────
   if (!isAir(mHere)) {
