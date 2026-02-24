@@ -31,6 +31,19 @@ uniform int u_foliage_enabled; // 1 = show foliage layer, 0 = hide
 
 out vec4 out_color;
 
+// Outline color: darker green for foliage edges
+const vec3 OUTLINE_COLOR = vec3(0.15, 0.30, 0.10);
+
+// Check if a foliage pixel is on an edge (any 4-connected neighbor lacks foliage)
+bool isFoliageEdge(sampler2D folTex, vec2 uv, vec2 ts) {
+  if (texture(folTex, uv).a < 0.05) return false; // not foliage → not edge
+  if (texture(folTex, uv + vec2( ts.x, 0.0)).a < 0.05) return true;
+  if (texture(folTex, uv + vec2(-ts.x, 0.0)).a < 0.05) return true;
+  if (texture(folTex, uv + vec2(0.0,  ts.y)).a < 0.05) return true;
+  if (texture(folTex, uv + vec2(0.0, -ts.y)).a < 0.05) return true;
+  return false;
+}
+
 void main() {
   // Flip V: PNG top-left origin → OpenGL bottom-left origin
   vec2 uv = vec2(v_uv.x, 1.0 - v_uv.y);
@@ -62,10 +75,17 @@ void main() {
     return;
   }
 
+  // Texel size for foliage edge detection
+  vec2 folTexelSize = 1.0 / vec2(textureSize(u_foliage, 0));
+
   if (u_view_mode == 3) {
     // Foliage-only view
     vec4 fol = texture(u_foliage, uv);
-    out_color = vec4(fol.rgb, 1.0);
+    if (fol.a > 0.05 && isFoliageEdge(u_foliage, uv, folTexelSize)) {
+      out_color = vec4(OUTLINE_COLOR, 1.0);
+    } else {
+      out_color = vec4(fol.rgb, fol.a > 0.05 ? 1.0 : 0.0);
+    }
     return;
   }
 
@@ -76,10 +96,16 @@ void main() {
   c = mix(c, sp.rgb, sp.a);
   c = mix(c, fg.rgb, fg.a);
 
-  // Composite foliage layer on top of foreground
+  // Composite foliage layer on top of foreground (with 1px outline)
   if (u_foliage_enabled == 1) {
     vec4 fol = texture(u_foliage, uv);
-    c = mix(c, fol.rgb, fol.a);
+    if (fol.a > 0.05) {
+      if (isFoliageEdge(u_foliage, uv, folTexelSize)) {
+        c = mix(c, OUTLINE_COLOR, fol.a);
+      } else {
+        c = mix(c, fol.rgb, fol.a);
+      }
+    }
   }
 
   out_color = vec4(c, 1.0);
