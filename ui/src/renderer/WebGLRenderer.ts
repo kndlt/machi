@@ -4,12 +4,13 @@
 
 import type { Camera } from "./Camera";
 import type { LayerRenderer } from "./LayerRenderer";
+import type { SimulationRenderer } from "./SimulationRenderer";
 
 export interface WebGLRenderer {
   gl: WebGL2RenderingContext;
   canvas: HTMLCanvasElement;
   /** Start the rAF loop. Returns a stop function. */
-  start(camera: Camera, layerRenderer: LayerRenderer): () => void;
+  start(camera: Camera, layerRenderer: LayerRenderer, simulation?: SimulationRenderer): () => void;
   /** Resize viewport to match canvas CSS size. */
   resize(camera: Camera): void;
   dispose(): void;
@@ -65,8 +66,10 @@ export function createWebGLRenderer(canvas: HTMLCanvasElement): WebGLRenderer {
   }
 
   // ── Animation loop ────────────────────────────────────────────────────────
-  function start(camera: Camera, layerRenderer: LayerRenderer): () => void {
+  function start(camera: Camera, layerRenderer: LayerRenderer, simulation?: SimulationRenderer): () => void {
     let rafId = 0;
+    let lastSimTime = 0;
+    const SIM_INTERVAL_MS = 200; // run simulation every 200ms
 
     const onResize = () => resize(camera);
     window.addEventListener("resize", onResize);
@@ -76,6 +79,12 @@ export function createWebGLRenderer(canvas: HTMLCanvasElement): WebGLRenderer {
 
     const tick = () => {
       const t0 = performance.now();
+
+      // Tick simulation on a timer
+      if (simulation && t0 - lastSimTime >= SIM_INTERVAL_MS) {
+        simulation.step();
+        lastSimTime = t0;
+      }
 
       gl.clearColor(0.08, 0.08, 0.10, 1.0);
       gl.clear(gl.COLOR_BUFFER_BIT);

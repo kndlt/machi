@@ -41,8 +41,8 @@ async function initApp(canvas: HTMLCanvasElement): Promise<() => void> {
   // 5. Controls
   const controls = createCameraControls(canvas, camera, layerRenderer);
 
-  // 6. Start animation loop
-  const stopLoop = renderer.start(camera, layerRenderer);
+  // 6. Start animation loop (simulation ticks inside at 200ms intervals)
+  const stopLoop = renderer.start(camera, layerRenderer, simulation);
 
   console.log("World rendered!");
 

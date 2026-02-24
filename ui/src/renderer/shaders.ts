@@ -103,12 +103,16 @@ void main() {
 /**
  * Foliage simulation fragment shader.
  *
- * IN:  all layer textures (sky, bg, fg, support, matter) + previous foliage
+ * IN:  matter texture + previous foliage state
  * OUT: new foliage RGBA
  *
- * Rule: air pixel (in matter) with dirt directly below → green foliage pixel.
- * Note: textures are in PNG orientation (top-left origin), no Y-flip needed
- * because simulation works entirely in texture space.
+ * Rules:
+ * - Seeding: air pixel near dirt surface → spawn foliage
+ * - Growth: air pixel adjacent to existing foliage → spread (with probability)
+ * - Decay: foliage too far from dirt or too crowded → die
+ * - Dirt tinting: shallow dirt pixels near air get a green tint
+ *
+ * Uses u_seed for per-step randomness (hash-based pseudo-random).
  */
 export const SIM_FOLIAGE_FRAGMENT = `#version 300 es
 precision highp float;
@@ -117,6 +121,7 @@ in vec2 v_uv;
 
 uniform sampler2D u_matter;
 uniform sampler2D u_foliage_prev;
+uniform float u_seed;  // changes each step for randomness
 
 out vec4 out_color;
 
@@ -127,6 +132,13 @@ const float DIRT_THRESHOLD = 0.12;
 // Foliage rendering color
 const vec4 FOLIAGE_RGBA = vec4(0.30, 0.52, 0.22, 1.0);
 
+// ── Pseudo-random hash ───────────────────────────────────────────────────
+float hash(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031 + u_seed);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
 bool isDirt(vec4 m) {
   return m.a > 0.5 && distance(m.rgb, DIRT_COLOR) < DIRT_THRESHOLD;
 }
@@ -135,32 +147,97 @@ bool isAir(vec4 m) {
   return m.a < 0.1;
 }
 
+bool hasFoliage(vec4 f) {
+  return f.a > 0.05;
+}
+
 void main() {
   vec4 mHere = texture(u_matter, v_uv);
+  vec4 fPrev = texture(u_foliage_prev, v_uv);
+  vec2 texelSize = 1.0 / vec2(textureSize(u_matter, 0));
+  float rng = hash(v_uv);
 
-  // If this pixel is not air, no foliage
+  // ── Dirt pixel: tint near-surface dirt ──────────────────────────────────
+  if (isDirt(mHere)) {
+    float distToAir = 3.0;
+    for (int i = 1; i <= 2; i++) {
+      vec4 mAbove = texture(u_matter, v_uv - vec2(0.0, texelSize.y * float(i)));
+      if (isAir(mAbove)) {
+        distToAir = float(i);
+        break;
+      }
+    }
+    if (distToAir <= 2.0) {
+      float alpha = 0.7 - (distToAir - 1.0) * 0.25;
+      out_color = vec4(FOLIAGE_RGBA.rgb, alpha);
+    } else {
+      out_color = vec4(0.0);
+    }
+    return;
+  }
+
+  // ── Non-air, non-dirt: no foliage ──────────────────────────────────────
   if (!isAir(mHere)) {
     out_color = vec4(0.0);
     return;
   }
 
-  // In PNG/texture space: Y increases downward.
-  // Check if there's dirt within 5 pixels below → thicker foliage stroke.
-  vec2 texelSize = 1.0 / vec2(textureSize(u_matter, 0));
-  float minDist = 6.0; // distance to nearest dirt below (in pixels)
+  // ── Air pixel logic ────────────────────────────────────────────────────
+
+  // Find distance to nearest dirt below (up to 5px)
+  float distToDirt = 6.0;
   for (int i = 1; i <= 5; i++) {
     vec4 mBelow = texture(u_matter, v_uv + vec2(0.0, texelSize.y * float(i)));
     if (isDirt(mBelow)) {
-      minDist = float(i);
+      distToDirt = float(i);
       break;
     }
   }
 
-  if (minDist <= 5.0) {
-    // Fade foliage alpha with distance from dirt surface
-    float alpha = 1.0 - (minDist - 1.0) * 0.15;
-    out_color = vec4(FOLIAGE_RGBA.rgb, alpha);
+  // Count neighboring foliage (4-connected)
+  int neighborCount = 0;
+  if (hasFoliage(texture(u_foliage_prev, v_uv + vec2( texelSize.x, 0.0)))) neighborCount++;
+  if (hasFoliage(texture(u_foliage_prev, v_uv + vec2(-texelSize.x, 0.0)))) neighborCount++;
+  if (hasFoliage(texture(u_foliage_prev, v_uv + vec2(0.0,  texelSize.y)))) neighborCount++;
+  if (hasFoliage(texture(u_foliage_prev, v_uv + vec2(0.0, -texelSize.y)))) neighborCount++;
+
+  bool wasAlive = hasFoliage(fPrev);
+
+  if (wasAlive) {
+    // ── Survival / decay ─────────────────────────────────────────────────
+    // Die if dirt was removed (no dirt within range and no neighbors)
+    if (distToDirt > 5.0 && neighborCount == 0) {
+      out_color = vec4(0.0);
+      return;
+    }
+    // Overcrowding decay
+    if (neighborCount >= 4 && rng < 0.05) {
+      out_color = vec4(0.0);
+      return;
+    }
+    // Random decay for far pixels (keeps edges organic)
+    if (distToDirt > 3.0 && rng < 0.03) {
+      out_color = vec4(0.0);
+      return;
+    }
+    // Survive
+    out_color = fPrev;
   } else {
+    // ── Seeding / growth ─────────────────────────────────────────────────
+    // Direct seeding: air right above dirt
+    if (distToDirt == 1.0 && rng < 0.4) {
+      out_color = FOLIAGE_RGBA;
+      return;
+    }
+    // Growth from neighbors: spread if adjacent to existing foliage
+    if (neighborCount >= 1 && distToDirt <= 5.0) {
+      float growChance = 0.15 / distToDirt;
+      if (rng < growChance) {
+        float alpha = 1.0 - (distToDirt - 1.0) * 0.15;
+        out_color = vec4(FOLIAGE_RGBA.rgb, alpha);
+        return;
+      }
+    }
     out_color = vec4(0.0);
   }
 }
