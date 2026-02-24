@@ -158,7 +158,7 @@ export function createLayerRenderer(
   return {
     render,
     get viewMode() { return viewMode; },
-    set viewMode(v: number) { viewMode = v % 3; },
+    set viewMode(v: number) { viewMode = v % 4; },
     get foliageEnabled() { return foliageEnabled; },
     set foliageEnabled(v: boolean) { foliageEnabled = v; },
     dispose,

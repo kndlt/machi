@@ -26,7 +26,7 @@ uniform sampler2D u_foreground;
 uniform sampler2D u_support;
 uniform sampler2D u_matter;
 uniform sampler2D u_foliage;
-uniform int u_view_mode;       // 0 = visual, 1 = matter, 2 = segmentation
+uniform int u_view_mode;       // 0 = visual, 1 = matter, 2 = segmentation, 3 = foliage
 uniform int u_foliage_enabled; // 1 = show foliage layer, 0 = hide
 
 out vec4 out_color;
@@ -59,6 +59,13 @@ void main() {
       segColor = vec3(0.3, 0.3, 0.3);   // gray = sky
     }
     out_color = vec4(segColor, 1.0);
+    return;
+  }
+
+  if (u_view_mode == 3) {
+    // Foliage-only view
+    vec4 fol = texture(u_foliage, uv);
+    out_color = vec4(fol.rgb, 1.0);
     return;
   }
 
