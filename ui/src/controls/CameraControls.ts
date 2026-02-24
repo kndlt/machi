@@ -6,7 +6,7 @@
 
 import type { Camera } from "../renderer/Camera";
 import { screenToWorld } from "../renderer/Camera";
-import type { LayerRenderer } from "../renderer/LayerRenderer";
+import type { MapRenderer } from "../renderer/MapRenderer";
 
 const PAN_SPEED = 5;         // pixels per frame at 1× zoom
 
@@ -20,7 +20,7 @@ export interface CameraControls {
 export function createCameraControls(
   canvas: HTMLCanvasElement,
   camera: Camera,
-  layerRenderer: LayerRenderer
+  mapRenderer: MapRenderer
 ): CameraControls {
   // ── Keyboard state ─────────────────────────────────────────────────────
   const keys = new Set<string>();
@@ -28,15 +28,15 @@ export function createCameraControls(
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === "Tab") {
       e.preventDefault();
-      layerRenderer.viewMode = layerRenderer.viewMode + 1; // cycles 0→1→2→0
+      mapRenderer.viewMode = mapRenderer.viewMode + 1; // cycles 0→1→2→0
       return;
     }
     if (e.key === "f" || e.key === "F") {
-      layerRenderer.foliageEnabled = !layerRenderer.foliageEnabled;
+      mapRenderer.foliageEnabled = !mapRenderer.foliageEnabled;
       return;
     }
     if (e.key === "o" || e.key === "O") {
-      layerRenderer.outlineEnabled = !layerRenderer.outlineEnabled;
+      mapRenderer.outlineEnabled = !mapRenderer.outlineEnabled;
       return;
     }
     keys.add(e.key);

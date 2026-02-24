@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Theme } from "@radix-ui/themes";
 import { createWebGLRenderer } from "./renderer/WebGLRenderer";
 import { createCamera } from "./renderer/Camera";
-import { createLayerRenderer } from "./renderer/LayerRenderer";
+import { createMapRenderer } from "./renderer/MapRenderer";
 import { createSimulationRenderer } from "./simulation/SimulationRenderer";
 import { createCameraControls } from "./controls/CameraControls";
 import { loadWorld } from "./world/WorldLoader";
@@ -30,17 +30,17 @@ async function initApp(canvas: HTMLCanvasElement): Promise<() => void> {
     camera.zoom = 8; // default zoom so 512x256 map fills more of the screen
   }
 
-  // 4. Layer renderer
-  const layerRenderer = createLayerRenderer(gl, world);
+  // 4. Map renderer
+  const mapRenderer = createMapRenderer(gl, world);
 
   // 4b. Simulation renderer (produces foliage layer)
   const simulation = createSimulationRenderer(gl, world);
 
   // 5. Controls
-  const controls = createCameraControls(canvas, camera, layerRenderer);
+  const controls = createCameraControls(canvas, camera, mapRenderer);
 
   // 6. Start animation loop (simulation ticks inside at 200ms intervals)
-  const stopLoop = renderer.start(camera, layerRenderer, simulation);
+  const stopLoop = renderer.start(camera, mapRenderer, simulation);
 
   console.log("World rendered!");
 
@@ -49,7 +49,7 @@ async function initApp(canvas: HTMLCanvasElement): Promise<() => void> {
     stopLoop();
     controls.dispose();
     simulation.dispose();
-    layerRenderer.dispose();
+    mapRenderer.dispose();
     renderer.dispose();
   };
 }

@@ -1,5 +1,5 @@
 /**
- * LayerRenderer — renders map placements as composited world-space quads.
+ * MapRenderer — renders map placements as composited world-space quads.
  *
  * Each MapPlacement gets a quad at (placement.x, placement.y) sized to the
  * map dimensions.  The fragment shader composites sky → background → foreground
@@ -7,8 +7,8 @@
  */
 
 import type { World, MapPlacement } from "../world/types";
-import layerVert from "../shaders/layer.vert";
-import layerFrag from "../shaders/layer.frag";
+import mapVert from "../shaders/map.vert";
+import mapFrag from "../shaders/map.frag";
 import { createProgram } from "../utils/gl-utils";
 import type { Camera } from "./Camera";
 import { buildCameraMatrix } from "./Camera";
@@ -20,7 +20,7 @@ interface MapGPU {
   placement: MapPlacement;
 }
 
-export interface LayerRenderer {
+export interface MapRenderer {
   render(camera: Camera): void;
   /** 0 = visual, 1 = matter, 2 = segmentation */
   viewMode: number;
@@ -31,12 +31,12 @@ export interface LayerRenderer {
   dispose(): void;
 }
 
-export function createLayerRenderer(
+export function createMapRenderer(
   gl: WebGL2RenderingContext,
   world: World
-): LayerRenderer {
+): MapRenderer {
   // ── Program ──────────────────────────────────────────────────────────────
-  const program = createProgram(gl, layerVert, layerFrag);
+  const program = createProgram(gl, mapVert, mapFrag);
 
   // Uniform locations
   const u_camera_matrix = gl.getUniformLocation(program, "u_camera_matrix");

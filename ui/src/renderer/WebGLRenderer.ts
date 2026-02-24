@@ -3,14 +3,14 @@
  */
 
 import type { Camera } from "./Camera";
-import type { LayerRenderer } from "./LayerRenderer";
+import type { MapRenderer } from "./MapRenderer";
 import type { SimulationRenderer } from "../simulation/SimulationRenderer";
 
 export interface WebGLRenderer {
   gl: WebGL2RenderingContext;
   canvas: HTMLCanvasElement;
   /** Start the rAF loop. Returns a stop function. */
-  start(camera: Camera, layerRenderer: LayerRenderer, simulation?: SimulationRenderer): () => void;
+  start(camera: Camera, mapRenderer: MapRenderer, simulation?: SimulationRenderer): () => void;
   /** Resize viewport to match canvas CSS size. */
   resize(camera: Camera): void;
   dispose(): void;
@@ -66,7 +66,7 @@ export function createWebGLRenderer(canvas: HTMLCanvasElement): WebGLRenderer {
   }
 
   // ── Animation loop ────────────────────────────────────────────────────────
-  function start(camera: Camera, layerRenderer: LayerRenderer, simulation?: SimulationRenderer): () => void {
+  function start(camera: Camera, mapRenderer: MapRenderer, simulation?: SimulationRenderer): () => void {
     let rafId = 0;
     let lastSimTime = 0;
     const SIM_INTERVAL_MS = 1000; // run simulation every 3 seconds for debugging
@@ -89,10 +89,10 @@ export function createWebGLRenderer(canvas: HTMLCanvasElement): WebGLRenderer {
       gl.clearColor(0.08, 0.08, 0.10, 1.0);
       gl.clear(gl.COLOR_BUFFER_BIT);
 
-      layerRenderer.render(camera);
+      mapRenderer.render(camera);
 
       const t1 = performance.now();
-      updateFps(t1 - t0, layerRenderer.viewMode, layerRenderer.foliageEnabled);
+      updateFps(t1 - t0, mapRenderer.viewMode, mapRenderer.foliageEnabled);
 
       rafId = requestAnimationFrame(tick);
     };
