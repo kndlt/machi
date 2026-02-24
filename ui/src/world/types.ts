@@ -1,4 +1,4 @@
-/** World & Map type definitions */
+/** World & Map type definitions for Phase 01 */
 
 export interface World {
   title: string;
