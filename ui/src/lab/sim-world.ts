@@ -1,11 +1,14 @@
 /**
  * sim-world.ts — Synthetic world builder for simulation testing.
  *
- * Creates a simple matter texture (dirt + air) that the simulation
- * can run on without needing real world XML/PNG assets.
+ * Builds a World object (same type used by App.tsx) with a simple
+ * dirt-and-air matter texture, so the simulation lab can reuse
+ * createMapRenderer / createSimulationRenderer instead of
+ * reimplementing rendering and simulation from scratch.
  */
 
 import { createTexture } from "../utils/gl-utils";
+import type { World, MapLayers, WorldMap, MapPlacement } from "../world/types";
 
 // ── Configuration ────────────────────────────────────────────────────────────
 
@@ -34,9 +37,9 @@ export const AIR_RGBA = [0, 0, 0, 0] as const;
  * Create a matter texture for the synthetic world.
  * Bottom `dirtRows` rows are filled with dirt; everything above is air.
  */
-export function createMatterTexture(
+function createMatterTexture(
   gl: WebGL2RenderingContext,
-  config: SimWorldConfig = DEFAULT_SIM_WORLD,
+  config: SimWorldConfig,
 ): WebGLTexture {
   const { width, height, dirtRows } = config;
   const pixels = new Uint8Array(width * height * 4);
@@ -54,4 +57,52 @@ export function createMatterTexture(
   }
 
   return createTexture(gl, width, height, pixels);
+}
+
+// ── World builder ────────────────────────────────────────────────────────────
+
+/**
+ * Build a synthetic World object suitable for createMapRenderer and
+ * createSimulationRenderer. Uses a programmatic dirt/air matter texture
+ * with all other layers set to a 1×1 transparent dummy.
+ */
+export function createSyntheticWorld(
+  gl: WebGL2RenderingContext,
+  config: SimWorldConfig = DEFAULT_SIM_WORLD,
+): World {
+  const { width, height } = config;
+
+  // 1×1 transparent dummy for unused layers
+  const dummy = createTexture(gl, 1, 1, new Uint8Array([0, 0, 0, 0]));
+
+  const layers: MapLayers = {
+    sky: dummy,
+    background: dummy,
+    foreground: dummy,
+    support: dummy,
+    matter: createMatterTexture(gl, config),
+    foliage: null,   // populated by SimulationRenderer
+    noise: null,      // populated by SimulationRenderer
+  };
+
+  const map: WorldMap = {
+    title: "Synthetic",
+    description: "Programmatic dirt/air test grid",
+    width,
+    height,
+    layers,
+  };
+
+  const placement: MapPlacement = {
+    path: "synthetic",
+    x: 0,
+    y: 0,
+    map,
+  };
+
+  return {
+    title: "Sim Lab World",
+    description: `${width}×${height} synthetic world`,
+    mapPlacements: [placement],
+  };
 }
