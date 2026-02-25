@@ -18,7 +18,6 @@ precision highp float;
 // - Existing branches persist.
 // - Empty AIR cells may grow only from exactly one neighboring branch source.
 // - No dirt-based automatic seeding.
-// - Sources may occasionally emit a side branch.
 
 in vec2 v_uv;
 
@@ -39,8 +38,6 @@ const float PI = 3.141592653589793;
 const float TAU = 6.283185307179586;
 
 const float BRANCH_ALPHA_MIN = 0.5;
-const float BRANCH_SIDE_RATE = 0.30;
-const float BRANCH_SIDE_ANGLE = PI / 6.0; // 30 deg
 
 bool isWater(vec4 m) {
   return m.a > 0.5 && distance(m.rgb, WATER_COLOR) < COLOR_THRESHOLD;
@@ -65,12 +62,6 @@ float encodeDir(vec2 direction) {
   return angle / TAU;
 }
 
-vec2 rotateVec(vec2 v, float angle) {
-  float c = cos(angle);
-  float s = sin(angle);
-  return vec2(v.x * c - v.y * s, v.x * s + v.y * c);
-}
-
 float hash12(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * 0.1031);
   p3 += dot(p3, p3.yzx + 33.33);
@@ -87,30 +78,6 @@ vec4 emptyCell() {
 
 bool sameStep(vec2 a, vec2 b) {
   return distance(a, b) < 0.25;
-}
-
-vec2 nearestStep8(vec2 dir) {
-  vec2 steps[8] = vec2[8](
-    vec2(0.0, -1.0),
-    vec2(1.0, -1.0),
-    vec2(1.0, 0.0),
-    vec2(1.0, 1.0),
-    vec2(0.0, 1.0),
-    vec2(-1.0, 1.0),
-    vec2(-1.0, 0.0),
-    vec2(-1.0, -1.0)
-  );
-
-  float bestDot = -2.0;
-  int bestIdx = 0;
-  for (int i = 0; i < 8; i++) {
-    float s = dot(normalize(steps[i]), normalize(dir));
-    if (s > bestDot) {
-      bestDot = s;
-      bestIdx = i;
-    }
-  }
-  return steps[bestIdx];
 }
 
 void lineStepper(vec2 dir, out vec2 primaryStep, out vec2 secondaryStep, out float slopeMix) {
@@ -201,14 +168,7 @@ void main() {
   vec2 sourceUV = v_uv + offsets[sourceIdx];
   vec4 sourceBranch = texture(u_foliage_prev, sourceUV);
   vec2 sourceDir = dirFromEncoded(sourceBranch.g);
-  float fertility = texture(u_noise, sourceUV).r;
-  float branchGate = BRANCH_SIDE_RATE * max(fertility, 0.35);
 
-  vec2 parentStep = nearestStep8(-sourceDir);
-  vec2 parentUV = sourceUV + vec2(parentStep.x * texelSize.x, parentStep.y * texelSize.y);
-  bool hasParent = isBranch(texture(u_foliage_prev, parentUV));
-
-  // Main path stepping for this source.
   vec2 primaryStep;
   vec2 secondaryStep;
   float slopeMix;
@@ -220,39 +180,14 @@ void main() {
   vec2 expectedStep = takeSecondary ? secondaryStep : primaryStep;
   float childErr = takeSecondary ? (errNext - 1.0) : errNext;
 
-  // Tip-like gating: only branch when source has no occupied forward cell.
-  vec2 mainStepUV = sourceUV + vec2(primaryStep.x * texelSize.x, primaryStep.y * texelSize.y);
-  bool forwardOccupied = isBranch(texture(u_foliage_prev, mainStepUV));
-
-  // Side branch candidate from source.
-  float sideHash = hash12(sourceUV * vec2(2048.0, 4096.0) + sourceBranch.g * 257.0);
-  float sideSign = hash12(sourceUV * vec2(997.0, 733.0) + sourceBranch.b * 911.0) < 0.5 ? -1.0 : 1.0;
-  bool emitSide = hasParent && (!forwardOccupied) && (sideHash < branchGate);
-
-  vec2 sideStep = vec2(999.0);
-  float sideEncodedDir = 0.0;
-  float sideChildErr = 0.0;
-  if (emitSide) {
-    vec2 sideDir = normalize(rotateVec(sourceDir, sideSign * BRANCH_SIDE_ANGLE));
-    sideStep = nearestStep8(sideDir);
-    sideChildErr = 0.0;
-    sideEncodedDir = encodeDir(sideDir);
-  }
-
   // Direction from source cell toward current candidate cell.
   vec2 toCurrent = -latticeOffsets[sourceIdx];
 
   // Deterministic straight raster growth from source based on heading + error accumulator.
-  if (sameStep(toCurrent, expectedStep)) {
-    out_color = makeBranch(sourceBranch.g, childErr);
-    return;
-  }
-
-  // Optional side branch spawn.
-  if (!emitSide || !sameStep(toCurrent, sideStep)) {
+  if (!sameStep(toCurrent, expectedStep)) {
     out_color = emptyCell();
     return;
   }
 
-  out_color = makeBranch(sideEncodedDir, sideChildErr);
+  out_color = makeBranch(sourceBranch.g, childErr);
 }
