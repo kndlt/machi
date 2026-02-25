@@ -47,12 +47,61 @@ export function createSimulationRenderer(
 ): SimulationRenderer {
   const LIGHT_PREWARM_ITERATIONS = 100;
 
+  function readTexturePixels(
+    tex: WebGLTexture,
+    width: number,
+    height: number,
+  ): Uint8Array {
+    const fbo = gl.createFramebuffer();
+    if (!fbo) throw new Error("Failed to create framebuffer for seed readback");
+
+    const prevFbo = gl.getParameter(gl.FRAMEBUFFER_BINDING) as WebGLFramebuffer | null;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+
+    const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+    if (status !== gl.FRAMEBUFFER_COMPLETE) {
+      gl.deleteFramebuffer(fbo);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, prevFbo);
+      throw new Error(`Seed FBO incomplete: ${status}`);
+    }
+
+    const data = new Uint8Array(width * height * 4);
+    gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, data);
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, prevFbo);
+    gl.deleteFramebuffer(fbo);
+    return data;
+  }
+
   // ── Per-map FoliageSim + NoiseSim instances ──────────────────────────────
   const mapSims: MapSim[] = world.mapPlacements.map((placement) => {
     const { width, height } = placement.map;
     const sim = createFoliageSim(gl, width, height);
     const noise = createNoiseSim(gl, width, height, options?.seed);
     const light = createLightTransportSim(gl, width, height);
+
+    const initialBranchTex = placement.map.layers.foliage;
+
+    if (placement.path === "synthetic") {
+      const initialState = new Uint8Array(width * height * 4);
+      const cx = Math.floor(width * 0.5);
+      const cy = Math.floor(height * 0.5);
+      const idx = (cy * width + cx) * 4;
+
+      // Single manual branch seed at center:
+      // R=1 (occupied), G=0 (upward direction), B=1 (occupied mirror), A=1 (occupied)
+      initialState[idx + 0] = 255;
+      initialState[idx + 1] = 0;
+      initialState[idx + 2] = 255;
+      initialState[idx + 3] = 255;
+
+      sim.setInitialState(initialState);
+    } else if (initialBranchTex) {
+      const initialState = readTexturePixels(initialBranchTex, width, height);
+      sim.setInitialState(initialState);
+      gl.deleteTexture(initialBranchTex);
+    }
 
     // Expose initial (empty) foliage texture to the render pass
     placement.map.layers.foliage = sim.currentTexture();

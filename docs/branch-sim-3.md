@@ -112,4 +112,3 @@ Seeding works similarly:
 if `likelihood < u_gaussian * u_noise`, create a branch.
 
 something like that.
-

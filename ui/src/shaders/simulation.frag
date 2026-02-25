@@ -1,26 +1,30 @@
 #version 300 es
 precision highp float;
 
-// Branch simulation shader (readable rule-based v0.4).
+// Branch simulation shader (v0.3 directional growth model).
 //
 // IN:
 //   - u_matter      : world occupancy/materials
-//   - u_foliage_prev: previous branch_state RGBA
-//   - u_light       : packed directional light transport field
-//   - u_noise       : spatial gating field
+//   - u_foliage_prev: previous branch map
+//   - u_noise       : slowly evolving fertility noise
 //
-// OUT (branch_state RGBA):
-//   R = energy
-//   G = nutrients
-//   B = structure
-//   A = mode (0.0 empty, 0.5 living, 1.0 zombie)
+// OUT (branch map RGBA):
+//   R = occupancy (1.0 branch, 0.0 empty)
+//   G = direction (0..1 angle, 0=up, 0.25=right, 0.5=down)
+//   B = occupancy mirror (debug/useful for existing structure view)
+//   A = occupancy alpha
+//
+// Growth logic (no auto-seeding mode):
+// - Existing branches persist.
+// - Empty AIR cells may grow only from exactly one neighboring branch source.
+// - No dirt-based automatic seeding.
 
 in vec2 v_uv;
 
 uniform sampler2D u_matter;
 uniform sampler2D u_foliage_prev;
-uniform sampler2D u_light;
-uniform sampler2D u_noise;   // slowly-evolving stable noise field
+uniform sampler2D u_light;   // currently unused in v0.3 model
+uniform sampler2D u_noise;
 
 out vec4 out_color;
 
@@ -30,49 +34,16 @@ const vec3 STONE_COLOR = vec3(0.647, 0.592, 0.561);  // (165, 151, 143)
 const vec3 WATER_COLOR = vec3(0.200, 0.600, 0.800);  // (51, 153, 204)
 const float COLOR_THRESHOLD = 0.12;
 
-// ── Mode encoding (branch_state A) ───────────────────────────────────────
-const float MODE_EMPTY = 0.0;
-const float MODE_LIVING = 0.5;
-const float MODE_ZOMBIE = 1.0;
+const float PI = 3.141592653589793;
+const float TAU = 6.283185307179586;
 
-// ── Growth + transport constants (readable defaults) ─────────────────────
-const float SEED_NOISE_MAX = 0.20;
-const float SPREAD_BAND_CENTER = 0.20;
-const float SPREAD_BAND_WIDTH = 0.20;
-const float GROWTH_SCORE_MIN = 0.12;
-
-const float SUPPORT_FROM_BELOW = 1.00;
-const float SUPPORT_FROM_SIDE = 0.80;
-const float SUPPORT_FROM_ABOVE = 0.30;
-const float ZOMBIE_SUPPORT_SCALE = 0.55;
-
-const float LIGHT_RESPONSE_MIN = 0.95;
-const float LIGHT_RESPONSE_MAX = 1.20;
-const float LIGHT_UPWARD_WEIGHT = 0.10;
-const float LIGHT_SIDE_WEIGHT = 0.25;
-const float LIGHT_BASE_WEIGHT = 0.65;
-
-const float UPWARD_BONUS = 0.50;
-
-const float NUTRIENT_ROOT = 1.0;
-const float NUTRIENT_DIFFUSE_RATE = 0.35;
-const float NUTRIENT_FROM_LIVING = 0.60;
-const float NUTRIENT_FROM_ZOMBIE = 1.00;
-
-const float METABOLIC_COST = 0.01;
-const float ENERGY_BLEND = 0.15;
-const float E_LIVE_MIN = 0.04;
-
-const float B_GROW_RATE = 0.04;
-const float B_ROTT_RATE = 0.0;
-const float B_EMPTY_THRESH = 0.02;
+const float BRANCH_ALPHA_MIN = 0.5;
+const float NOISE_FERTILITY_MIN = 0.05;
+const float GROWTH_BASE_CHANCE = 0.90;
+const float DIRECTION_JITTER_MAX = 0.04;
 
 bool isDirt(vec4 m) {
   return m.a > 0.5 && distance(m.rgb, DIRT_COLOR) < COLOR_THRESHOLD;
-}
-
-bool isStone(vec4 m) {
-  return m.a > 0.5 && distance(m.rgb, STONE_COLOR) < COLOR_THRESHOLD;
 }
 
 bool isWater(vec4 m) {
@@ -83,219 +54,119 @@ bool isAir(vec4 m) {
   return m.a < 0.1;
 }
 
-bool isLiving(vec4 s) {
-  return s.a >= 0.33 && s.a < 0.66;
+bool isBranch(vec4 b) {
+  return b.a > BRANCH_ALPHA_MIN;
 }
 
-bool isZombie(vec4 s) {
-  return s.a >= 0.66;
+vec2 dirFromEncoded(float encoded) {
+  float angle = encoded * TAU;
+  return vec2(sin(angle), -cos(angle));
 }
 
-bool hasTissue(vec4 s) {
-  return isLiving(s) || isZombie(s);
+float encodeDir(vec2 direction) {
+  float angle = atan(direction.x, -direction.y);
+  if (angle < 0.0) angle += TAU;
+  return angle / TAU;
 }
 
-float modeToAlpha(float mode) {
-  if (mode > 0.75) return MODE_ZOMBIE;
-  if (mode > 0.25) return MODE_LIVING;
-  return MODE_EMPTY;
+float hash12(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
 }
 
-float supportWeight(vec4 s, float baseWeight) {
-  if (isLiving(s)) return baseWeight;
-  if (isZombie(s)) return baseWeight * ZOMBIE_SUPPORT_SCALE;
-  return 0.0;
+vec4 makeBranch(float encodedDir) {
+  return vec4(1.0, fract(encodedDir), 1.0, 1.0);
 }
 
-float decodeNibble(vec4 packed, int dir) {
-  vec4 bytes = floor(packed * 255.0 + 0.5);
-  float b;
-  if (dir == 0 || dir == 1) b = bytes.r;
-  else if (dir == 2 || dir == 3) b = bytes.g;
-  else if (dir == 4 || dir == 5) b = bytes.b;
-  else b = bytes.a;
-
-  float nibble = mod(floor(b / (dir % 2 == 0 ? 1.0 : 16.0)), 16.0);
-  return nibble / 15.0;
+vec4 emptyCell() {
+  return vec4(0.0);
 }
 
 void main() {
   vec4 mHere = texture(u_matter, v_uv);
-  vec4 prev = texture(u_foliage_prev, v_uv);
+  vec4 branchPrev = texture(u_foliage_prev, v_uv);
   vec2 texelSize = 1.0 / vec2(textureSize(u_matter, 0));
-  float noise = texture(u_noise, v_uv).r;
 
-  // Rule 0 — occupancy
+  // Branches only exist in air.
   if (!isAir(mHere)) {
-    out_color = vec4(0.0);
+    out_color = emptyCell();
     return;
   }
 
-  // 4-neighbor sampling
-  vec2 offR = vec2( texelSize.x, 0.0);
-  vec2 offL = vec2(-texelSize.x, 0.0);
-  vec2 offU = vec2(0.0, -texelSize.y); // up in texture = -Y
-  vec2 offD = vec2(0.0,  texelSize.y); // down in texture = +Y
-
-  vec4 mR = texture(u_matter, v_uv + offR);
-  vec4 mL = texture(u_matter, v_uv + offL);
-  vec4 mU = texture(u_matter, v_uv + offU);
-  vec4 mD = texture(u_matter, v_uv + offD);
-
-  // keep water as hard exclusion zone
-  bool touchingWater = isWater(mR) || isWater(mL) || isWater(mU) || isWater(mD);
-  if (touchingWater) {
-    out_color = vec4(0.0);
+  // Existing branch persists (no decay in this phase).
+  if (isBranch(branchPrev)) {
+    out_color = branchPrev;
     return;
   }
 
-  // Classify neighbor surfaces
-  bool touchDirtR = isDirt(mR);
-  bool touchDirtL = isDirt(mL);
-  bool touchDirtU = isDirt(mU);
-  bool touchDirtD = isDirt(mD);
-  bool touchingDirt = touchDirtR || touchDirtL || touchDirtU || touchDirtD;
-
-  bool touchStoneR = isStone(mR);
-  bool touchStoneL = isStone(mL);
-  bool touchStoneU = isStone(mU);
-  bool touchStoneD = isStone(mD);
-  bool touchingStone = touchStoneR || touchStoneL || touchStoneU || touchStoneD;
-
-  vec4 sR = texture(u_foliage_prev, v_uv + offR);
-  vec4 sL = texture(u_foliage_prev, v_uv + offL);
-  vec4 sU = texture(u_foliage_prev, v_uv + offU);
-  vec4 sD = texture(u_foliage_prev, v_uv + offD);
-
-  bool livingPrev = isLiving(prev);
-  bool zombiePrev = isZombie(prev);
-  bool emptyPrev = !livingPrev && !zombiePrev;
-
-  bool tissueR = hasTissue(sR);
-  bool tissueL = hasTissue(sL);
-  bool tissueU = hasTissue(sU);
-  bool tissueD = hasTissue(sD);
-
-  int tissueNeighbors = 0;
-  if (tissueR) tissueNeighbors++;
-  if (tissueL) tissueNeighbors++;
-  if (tissueU) tissueNeighbors++;
-  if (tissueD) tissueNeighbors++;
-
-  int livingNeighbors = 0;
-  if (isLiving(sR)) livingNeighbors++;
-  if (isLiving(sL)) livingNeighbors++;
-  if (isLiving(sU)) livingNeighbors++;
-  if (isLiving(sD)) livingNeighbors++;
-
-  bool oppositeConnector = (tissueL && tissueR) || (tissueU && tissueD);
-  bool isConnector = (tissueNeighbors >= 3) || (oppositeConnector && tissueNeighbors >= 3);
-
-  // Rule 1 + Rule 2
-  bool fertilityPass = abs(noise - SPREAD_BAND_CENTER) < SPREAD_BAND_WIDTH;
-  bool seedPass = touchingDirt && noise < SEED_NOISE_MAX;
-
-  // Rule 3 support model
-  float supportBelow = supportWeight(sD, SUPPORT_FROM_BELOW);
-  float supportAbove = supportWeight(sU, SUPPORT_FROM_ABOVE);
-  float supportSides = supportWeight(sL, SUPPORT_FROM_SIDE) + supportWeight(sR, SUPPORT_FROM_SIDE);
-  float baseSupport = supportBelow + supportSides + supportAbove;
-  float upwardFactor = 1.0 + UPWARD_BONUS * clamp(supportBelow - supportAbove, 0.0, 1.0);
-
-  // Dedicated light layer decode
-  vec4 packedLight = texture(u_light, v_uv);
-  float lUp = decodeNibble(packedLight, 0);
-  float lUpRight = decodeNibble(packedLight, 1);
-  float lRight = decodeNibble(packedLight, 2);
-  float lDownRight = decodeNibble(packedLight, 3);
-  float lDown = decodeNibble(packedLight, 4);
-  float lDownLeft = decodeNibble(packedLight, 5);
-  float lLeft = decodeNibble(packedLight, 6);
-  float lUpLeft = decodeNibble(packedLight, 7);
-
-  float lightDownward = (lDown + lDownRight + lDownLeft) / 3.0;
-  float lightUpward = (lUp + lUpRight + lUpLeft) / 3.0;
-  float lightSide = (lRight + lLeft) / 2.0;
-  float lightBase = (lUp + lUpRight + lRight + lDownRight + lDown + lDownLeft + lLeft + lUpLeft) / 8.0;
-  float lightScalar = clamp(
-    LIGHT_UPWARD_WEIGHT * lightUpward
-      + LIGHT_SIDE_WEIGHT * lightSide
-      + LIGHT_BASE_WEIGHT * (0.7 * lightBase + 0.3 * lightDownward),
-    0.0,
-    1.0
+  vec2 offsets[8] = vec2[8](
+    vec2(0.0, -texelSize.y),
+    vec2(texelSize.x, -texelSize.y),
+    vec2(texelSize.x, 0.0),
+    vec2(texelSize.x, texelSize.y),
+    vec2(0.0, texelSize.y),
+    vec2(-texelSize.x, texelSize.y),
+    vec2(-texelSize.x, 0.0),
+    vec2(-texelSize.x, -texelSize.y)
   );
-  lightScalar = max(lightScalar, 0.20);
-  float lightFactor = mix(LIGHT_RESPONSE_MIN, LIGHT_RESPONSE_MAX, lightScalar);
+  vec2 latticeOffsets[8] = vec2[8](
+    vec2(0.0, -1.0),
+    vec2(1.0, -1.0),
+    vec2(1.0, 0.0),
+    vec2(1.0, 1.0),
+    vec2(0.0, 1.0),
+    vec2(-1.0, 1.0),
+    vec2(-1.0, 0.0),
+    vec2(-1.0, -1.0)
+  );
 
-  float growthScore = baseSupport * lightFactor * upwardFactor;
-  bool spreadPass = fertilityPass && livingNeighbors >= 1 && growthScore >= GROWTH_SCORE_MIN;
+  int branchNeighborCount = 0;
+  int sourceIdx = -1;
+  bool touchingWater = false;
 
-  // Rule 4 — nutrients
-  float nutrientTarget = 0.0;
-  if (touchingDirt) {
-    nutrientTarget = NUTRIENT_ROOT;
-  } else {
-    float nutrientSum = 0.0;
-    float nutrientWeight = 0.0;
-    if (isLiving(sR)) { nutrientSum += sR.g * NUTRIENT_FROM_LIVING; nutrientWeight += NUTRIENT_FROM_LIVING; }
-    else if (isZombie(sR)) { nutrientSum += sR.g * NUTRIENT_FROM_ZOMBIE; nutrientWeight += NUTRIENT_FROM_ZOMBIE; }
-    if (isLiving(sL)) { nutrientSum += sL.g * NUTRIENT_FROM_LIVING; nutrientWeight += NUTRIENT_FROM_LIVING; }
-    else if (isZombie(sL)) { nutrientSum += sL.g * NUTRIENT_FROM_ZOMBIE; nutrientWeight += NUTRIENT_FROM_ZOMBIE; }
-    if (isLiving(sU)) { nutrientSum += sU.g * NUTRIENT_FROM_LIVING; nutrientWeight += NUTRIENT_FROM_LIVING; }
-    else if (isZombie(sU)) { nutrientSum += sU.g * NUTRIENT_FROM_ZOMBIE; nutrientWeight += NUTRIENT_FROM_ZOMBIE; }
-    if (isLiving(sD)) { nutrientSum += sD.g * NUTRIENT_FROM_LIVING; nutrientWeight += NUTRIENT_FROM_LIVING; }
-    else if (isZombie(sD)) { nutrientSum += sD.g * NUTRIENT_FROM_ZOMBIE; nutrientWeight += NUTRIENT_FROM_ZOMBIE; }
-    if (nutrientWeight > 0.0) nutrientTarget = nutrientSum / nutrientWeight;
-  }
-  float nutrients = mix(prev.g, nutrientTarget, NUTRIENT_DIFFUSE_RATE);
+  for (int i = 0; i < 8; i++) {
+    vec2 uvN = v_uv + offsets[i];
+    vec4 mN = texture(u_matter, uvN);
+    if (isWater(mN)) touchingWater = true;
 
-  // Rule 7 — mode transitions
-  float nextMode = MODE_EMPTY;
-  if (zombiePrev) {
-    nextMode = MODE_ZOMBIE;
-  } else if (livingPrev) {
-    nextMode = isConnector ? MODE_ZOMBIE : MODE_LIVING;
-  } else {
-    bool becomeLiving = seedPass || spreadPass;
-    nextMode = becomeLiving ? MODE_LIVING : MODE_EMPTY;
-  }
-
-  // Rule 6 — structure
-  float structure = prev.b;
-  if (nextMode == MODE_LIVING) {
-    structure = min(1.0, structure + B_GROW_RATE);
-  } else if (nextMode == MODE_ZOMBIE) {
-    structure = max(structure, B_EMPTY_THRESH);
-  } else {
-    structure = 0.0;
-  }
-
-  // Rule 5 — energy
-  float energy = prev.r;
-  if (nextMode == MODE_LIVING) {
-    bool seededNow = emptyPrev && seedPass;
-    bool spreadBornNow = emptyPrev && spreadPass;
-    float potential = nutrients * (0.45 + 0.55 * lightScalar);
-    if (seededNow) {
-      potential = max(potential, 0.45);
+    vec4 bN = texture(u_foliage_prev, uvN);
+    if (isBranch(bN)) {
+      branchNeighborCount++;
+      sourceIdx = i;
     }
-    if (spreadBornNow) {
-      potential = max(potential, 0.35);
-    }
-    energy = mix(prev.r, potential, (seededNow || spreadBornNow) ? 0.65 : ENERGY_BLEND);
-    energy -= (seededNow || spreadBornNow) ? 0.0 : METABOLIC_COST;
-    energy = clamp(energy, 0.0, 1.0);
-    if (energy < E_LIVE_MIN) {
-      nextMode = MODE_ZOMBIE;
-      energy = 0.0;
-      nutrients = 0.0;
-    }
-  } else if (nextMode == MODE_ZOMBIE) {
-    energy = mix(prev.r, 0.0, 0.5);
-  } else {
-    energy = 0.0;
-    nutrients = 0.0;
   }
 
-  out_color = vec4(energy, nutrients, structure, modeToAlpha(nextMode));
+  if (touchingWater) {
+    out_color = emptyCell();
+    return;
+  }
+
+  // No automatic seed: if no branch source, remain empty.
+  // Also reject >1 sources to discourage clumped fills.
+  if (branchNeighborCount != 1) {
+    out_color = emptyCell();
+    return;
+  }
+
+  vec2 sourceUV = v_uv + offsets[sourceIdx];
+  vec4 sourceBranch = texture(u_foliage_prev, sourceUV);
+  vec2 sourceDir = dirFromEncoded(sourceBranch.g);
+
+  // Direction from source cell toward current candidate cell.
+  vec2 toCurrent = normalize(-latticeOffsets[sourceIdx]);
+  float alignment = max(dot(sourceDir, toCurrent), 0.0);
+
+  float fertility = max(texture(u_noise, v_uv).r, NOISE_FERTILITY_MIN);
+  float growthChance = GROWTH_BASE_CHANCE * fertility * alignment;
+  float rnd = hash12(v_uv * vec2(1024.0, 1024.0) + sourceBranch.g * 13.0);
+
+  if (rnd < growthChance) {
+    float jitter = (hash12(v_uv * vec2(777.0, 4096.0)) - 0.5) * 2.0 * DIRECTION_JITTER_MAX;
+    vec2 grownDir = normalize(sourceDir + vec2(jitter, -abs(jitter) * 0.15));
+    out_color = makeBranch(encodeDir(grownDir));
+    return;
+  }
+
+  out_color = emptyCell();
 }

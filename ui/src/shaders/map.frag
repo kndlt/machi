@@ -12,7 +12,8 @@ uniform sampler2D u_foliage;
 uniform sampler2D u_noise;
 uniform sampler2D u_light;
 uniform int u_view_mode;       // 0=visual, 1=matter, 2=segmentation, 3=foliage,
-                               // 4=energy, 5=nutrients, 6=structure, 7=alive, 8=noise,
+                               // 4=branch-R(occupancy), 5=branch-G(direction),
+                               // 6=branch-B(mirror), 7=branch-A(alpha), 8=noise,
                                // 9=directional-light(debug)
 uniform int u_foliage_enabled; // 1 = show foliage layer, 0 = hide
 uniform int u_outline_enabled; // 1 = show foliage outline, 0 = hide
@@ -27,11 +28,17 @@ const vec3 FOLIAGE_LUSH  = vec3(0.30, 0.55, 0.20); // high energy: vibrant green
 const vec3 FOLIAGE_WEAK  = vec3(0.50, 0.45, 0.15); // low energy: yellow-brown
 
 // Heatmap colors for data visualization modes
-const vec3 HUE_ENERGY    = vec3(1.0, 0.31, 0.08);  // warm orange-red
-const vec3 HUE_NUTRIENTS = vec3(0.08, 0.78, 0.24);  // green
-const vec3 HUE_STRUCTURE = vec3(0.24, 0.55, 1.0);   // blue
-const vec3 HUE_ALIVE     = vec3(1.0, 1.0, 1.0);     // white
+const vec3 HUE_BRANCH_R  = vec3(1.0, 0.31, 0.08);   // occupancy (R)
+const vec3 HUE_BRANCH_B  = vec3(0.24, 0.55, 1.0);   // mirror (B)
+const vec3 HUE_BRANCH_A  = vec3(1.0, 1.0, 1.0);     // alpha (A)
 const vec3 HUE_NOISE     = vec3(0.71, 0.47, 1.0);   // purple
+
+vec3 hueWheel(float t) {
+  float r = abs(t * 6.0 - 3.0) - 1.0;
+  float g = 2.0 - abs(t * 6.0 - 2.0);
+  float b = 2.0 - abs(t * 6.0 - 4.0);
+  return clamp(vec3(r, g, b), 0.0, 1.0);
+}
 
 float unpackNibble(vec4 packed, int dir) {
   vec4 bytes = floor(packed * 255.0 + 0.5);
@@ -111,8 +118,8 @@ void main() {
   }
 
   // ── Data visualization modes (4–9) ──────────────────────────────────────
-  // Show individual foliage resource channels as colored heatmaps.
-  // Background = composited world; foliage pixels = channel value × hue color.
+  // Show branch-map channels and diagnostics.
+  // Background = composited world; branch pixels = channel value visualization.
   if (u_view_mode >= 4 && u_view_mode <= 9) {
     // Base world composite (dim background for contrast)
     vec3 sky = texture(u_sky, uv).rgb;
@@ -152,13 +159,17 @@ void main() {
     }
 
     if (fol.a > 0.05) {
-      float val;
-      vec3 hue;
-      if (u_view_mode == 4)      { val = fol.r; hue = HUE_ENERGY; }
-      else if (u_view_mode == 5) { val = fol.g; hue = HUE_NUTRIENTS; }
-      else if (u_view_mode == 6) { val = fol.b; hue = HUE_STRUCTURE; }
-      else                       { val = 1.0;   hue = HUE_ALIVE; } // mode 7
-      out_color = vec4(hue * val, 1.0);
+      if (u_view_mode == 5) {
+        // Branch direction (G) as cyclic hue wheel.
+        out_color = vec4(hueWheel(fract(fol.g)), 1.0);
+      } else {
+        float val;
+        vec3 hue;
+        if (u_view_mode == 4)      { val = fol.r; hue = HUE_BRANCH_R; }
+        else if (u_view_mode == 6) { val = fol.b; hue = HUE_BRANCH_B; }
+        else                       { val = fol.a; hue = HUE_BRANCH_A; } // mode 7
+        out_color = vec4(hue * val, 1.0);
+      }
     } else {
       out_color = vec4(base, 1.0);
     }

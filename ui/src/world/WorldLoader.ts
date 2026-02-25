@@ -54,6 +54,17 @@ async function loadTexture(
   return uploadTexture(gl, img);
 }
 
+async function loadOptionalTexture(
+  gl: WebGL2RenderingContext,
+  url: string,
+): Promise<WebGLTexture | null> {
+  try {
+    return await loadTexture(gl, url);
+  } catch {
+    return null;
+  }
+}
+
 // ── Map loader ───────────────────────────────────────────────────────────────
 
 async function loadMap(
@@ -78,15 +89,16 @@ async function loadMap(
   }
 
   // Load layers in parallel
-  const [sky, background, foreground, support, matter] = await Promise.all([
+  const [sky, background, foreground, support, matter, branch] = await Promise.all([
     loadTexture(gl, `${mapDir}/sky.png`),
     loadTexture(gl, `${mapDir}/background.png`),
     loadTexture(gl, `${mapDir}/foreground.png`),
     loadTexture(gl, `${mapDir}/support.png`),
     loadTexture(gl, `${mapDir}/matter.png`),
+    loadOptionalTexture(gl, `${mapDir}/branch.png`),
   ]);
 
-  const layers: MapLayers = { sky, background, foreground, support, matter, foliage: null, noise: null, light: null };
+  const layers: MapLayers = { sky, background, foreground, support, matter, foliage: branch, noise: null, light: null };
 
   return { map: { title, description, width, height, layers } };
 }

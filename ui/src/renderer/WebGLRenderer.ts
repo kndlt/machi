@@ -49,7 +49,18 @@ export function createWebGLRenderer(canvas: HTMLCanvasElement): WebGLRenderer {
   let lastFpsTime = performance.now();
   let frameTimes: number[] = [];
 
-  const MODE_NAMES = ["visual", "matter", "segmentation", "foliage", "energy", "nutrients", "structure", "alive", "noise", "dir-light"];
+  const MODE_NAMES = [
+    "visual",
+    "matter",
+    "segmentation",
+    "foliage",
+    "branch-r",
+    "branch-dir",
+    "branch-b",
+    "branch-a",
+    "noise",
+    "dir-light",
+  ];
 
   function updateFps(frameMs: number, viewMode: number, foliageEnabled: boolean) {
     frameCount++;

@@ -13,6 +13,9 @@ export interface FoliageSim {
   /** Run one simulation step. Swaps ping-pong buffers internally. */
   step(matterTex: WebGLTexture, noiseTex: WebGLTexture, lightTex: WebGLTexture): void;
 
+  /** Upload an explicit initial branch-state texture into both ping-pong buffers. */
+  setInitialState(data: Uint8Array): void;
+
   /** The foliage texture that holds the latest result (read source). */
   currentTexture(): WebGLTexture;
 
@@ -44,6 +47,19 @@ export function createFoliageSim(
   const textures: [WebGLTexture, WebGLTexture] = [texA, texB];
   const fbos: [WebGLFramebuffer, WebGLFramebuffer] = [fboA, fboB];
   let readIdx = 0;
+
+  function setInitialState(data: Uint8Array): void {
+    const expectedSize = width * height * 4;
+    if (data.length !== expectedSize) {
+      throw new Error(`Invalid initial state size: expected ${expectedSize}, got ${data.length}`);
+    }
+
+    gl.bindTexture(gl.TEXTURE_2D, texA);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, data);
+    gl.bindTexture(gl.TEXTURE_2D, texB);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, data);
+    readIdx = 0;
+  }
 
   function step(matterTex: WebGLTexture, noiseTex: WebGLTexture, lightTex: WebGLTexture): void {
     const readTex = textures[readIdx];
@@ -104,6 +120,7 @@ export function createFoliageSim(
 
   return {
     step,
+    setInitialState,
     currentTexture,
     readPixels: readPixelsOut,
     dispose,
