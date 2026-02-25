@@ -22,7 +22,7 @@ interface MapGPU {
 
 export interface MapRenderer {
   render(camera: Camera): void;
-  /** 0=visual, 1=matter, 2=segmentation, 3=foliage, 4=energy, 5=nutrients, 6=light, 7=alive, 8=noise */
+  /** 0=visual, 1=matter, 2=segmentation, 3=foliage, 4=energy, 5=nutrients, 6=light, 7=alive, 8=noise, 9=directional-light(debug) */
   viewMode: number;
   /** Toggle foliage rendering (default true) */
   foliageEnabled: boolean;
@@ -49,6 +49,7 @@ export function createMapRenderer(
   const u_matter = gl.getUniformLocation(program, "u_matter");
   const u_foliage = gl.getUniformLocation(program, "u_foliage");
   const u_noise = gl.getUniformLocation(program, "u_noise");
+  const u_light = gl.getUniformLocation(program, "u_light");
   const u_view_mode = gl.getUniformLocation(program, "u_view_mode");
   const u_foliage_enabled = gl.getUniformLocation(program, "u_foliage_enabled");
   const u_outline_enabled = gl.getUniformLocation(program, "u_outline_enabled");
@@ -105,6 +106,7 @@ export function createMapRenderer(
     gl.uniform1i(u_matter, 4);
     gl.uniform1i(u_foliage, 5);
     gl.uniform1i(u_noise, 6);
+    gl.uniform1i(u_light, 7);
     gl.uniform1i(u_view_mode, viewMode);
     gl.uniform1i(u_foliage_enabled, foliageEnabled ? 1 : 0);
     gl.uniform1i(u_outline_enabled, outlineEnabled ? 1 : 0);
@@ -142,6 +144,9 @@ export function createMapRenderer(
       gl.activeTexture(gl.TEXTURE6);
       gl.bindTexture(gl.TEXTURE_2D, layers.noise);
 
+      gl.activeTexture(gl.TEXTURE7);
+      gl.bindTexture(gl.TEXTURE_2D, layers.light);
+
       // Draw quad
       gl.bindVertexArray(vao);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
@@ -170,7 +175,7 @@ export function createMapRenderer(
   return {
     render,
     get viewMode() { return viewMode; },
-    set viewMode(v: number) { viewMode = v % 9; },
+    set viewMode(v: number) { viewMode = ((v % 10) + 10) % 10; },
     get foliageEnabled() { return foliageEnabled; },
     set foliageEnabled(v: boolean) { foliageEnabled = v; },
     get outlineEnabled() { return outlineEnabled; },

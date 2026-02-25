@@ -31,4 +31,6 @@ export interface MapLayers {
   foliage: WebGLTexture | null;
   /** Simulation-produced noise gradient (GPU texture, written by SimulationRenderer) */
   noise: WebGLTexture | null;
+  /** Simulation-produced directional light transport field (packed RGBA8) */
+  light: WebGLTexture | null;
 }

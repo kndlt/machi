@@ -32,7 +32,8 @@ export function createCameraControls(
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === "Tab") {
       e.preventDefault();
-      mapRenderer.viewMode = mapRenderer.viewMode + 1; // cycles 0→1→2→0
+      const delta = e.shiftKey ? -1 : 1;
+      mapRenderer.viewMode = mapRenderer.viewMode + delta;
       return;
     }
     if (e.key === "f" || e.key === "F") {

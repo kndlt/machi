@@ -83,6 +83,7 @@ export function createSyntheticWorld(
     matter: createMatterTexture(gl, config),
     foliage: null,   // populated by SimulationRenderer
     noise: null,      // populated by SimulationRenderer
+    light: null,      // populated by SimulationRenderer
   };
 
   const map: WorldMap = {

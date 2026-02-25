@@ -10,8 +10,10 @@ uniform sampler2D u_support;
 uniform sampler2D u_matter;
 uniform sampler2D u_foliage;
 uniform sampler2D u_noise;
+uniform sampler2D u_light;
 uniform int u_view_mode;       // 0=visual, 1=matter, 2=segmentation, 3=foliage,
-                               // 4=energy, 5=nutrients, 6=light, 7=alive, 8=noise
+                               // 4=energy, 5=nutrients, 6=light, 7=alive, 8=noise,
+                               // 9=directional-light(debug)
 uniform int u_foliage_enabled; // 1 = show foliage layer, 0 = hide
 uniform int u_outline_enabled; // 1 = show foliage outline, 0 = hide
 
@@ -30,6 +32,18 @@ const vec3 HUE_NUTRIENTS = vec3(0.08, 0.78, 0.24);  // green
 const vec3 HUE_LIGHT     = vec3(0.24, 0.55, 1.0);   // blue
 const vec3 HUE_ALIVE     = vec3(1.0, 1.0, 1.0);     // white
 const vec3 HUE_NOISE     = vec3(0.71, 0.47, 1.0);   // purple
+
+float unpackNibble(vec4 packed, int dir) {
+  vec4 bytes = floor(packed * 255.0 + 0.5);
+  float b;
+  if (dir == 0 || dir == 1) b = bytes.r;
+  else if (dir == 2 || dir == 3) b = bytes.g;
+  else if (dir == 4 || dir == 5) b = bytes.b;
+  else b = bytes.a;
+
+  float nibble = mod(floor(b / (dir % 2 == 0 ? 1.0 : 16.0)), 16.0);
+  return nibble / 15.0;
+}
 
 // Convert foliage resource channels to visual color
 vec3 foliageColor(vec4 fol) {
@@ -96,10 +110,10 @@ void main() {
     return;
   }
 
-  // ── Data visualization modes (4–8) ──────────────────────────────────────
+  // ── Data visualization modes (4–9) ──────────────────────────────────────
   // Show individual foliage resource channels as colored heatmaps.
   // Background = composited world; foliage pixels = channel value × hue color.
-  if (u_view_mode >= 4 && u_view_mode <= 8) {
+  if (u_view_mode >= 4 && u_view_mode <= 9) {
     // Base world composite (dim background for contrast)
     vec3 sky = texture(u_sky, uv).rgb;
     vec3 base = sky;
@@ -116,6 +130,24 @@ void main() {
       vec3 c = HUE_NOISE * val;
       // Blend over dimmed base
       out_color = vec4(mix(base, c, 0.8), 1.0);
+      return;
+    }
+
+    if (u_view_mode == 9) {
+      // Directional light debug (grayscale):
+      // decode all 8 directional bands and visualize total normalized energy.
+      vec4 packed = texture(u_light, uv);
+      float up = unpackNibble(packed, 0);
+      float upRight = unpackNibble(packed, 1);
+      float right = unpackNibble(packed, 2);
+      float downRight = unpackNibble(packed, 3);
+      float down = unpackNibble(packed, 4);
+      float downLeft = unpackNibble(packed, 5);
+      float left = unpackNibble(packed, 6);
+      float upLeft = unpackNibble(packed, 7);
+
+      float totalEnergy = (up + upRight + right + downRight + down + downLeft + left + upLeft) / 8.0;
+      out_color = vec4(vec3(totalEnergy), 1.0);
       return;
     }
 
