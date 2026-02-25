@@ -75,8 +75,8 @@ export function createNoiseSim(
   const u_diffusion = gl.getUniformLocation(program, "u_diffusion");
   const u_perturbation = gl.getUniformLocation(program, "u_perturbation");
 
-  const BASE_DIFFUSION = 0.04;
-  const BASE_PERTURBATION = 0.08;
+  const BASE_DIFFUSION = 0.04 / 2;
+  const BASE_PERTURBATION = 0.08 / 2;
   let speed = 1;      // iterations per step() call
   let magnitude = 1;  // multiplier on diffusion/perturbation rates
 
