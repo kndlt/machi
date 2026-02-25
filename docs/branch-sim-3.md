@@ -61,10 +61,10 @@ Properties we want to capture:
 
 1. **ELONGATION**: Tree branch elongates pushing all its downstream nodes.
 2. **GROWTH**: Tip of the branch usually grows.
-3. **DIVISION**: Tip of the branch sometimes divide into two, creating a branch.
+3. **BRANCHING**: Tip of the branch sometimes divide into two, creating a branch.
 4. **THICKENING**: Branch thickens to provide more support.
 
-Let's assume elongation is solved, and we just need to build GROWTH and DIVISION.
+Let's assume elongation is solved, and we just need to build GROWTH and BRANCHING.
 
 For GROWTH, we will likely need a DIRECTIONAL vector which tells the orientation of the current branch cell.
 
@@ -72,7 +72,7 @@ For GROWTH, we will likely need a DIRECTIONAL vector which tells the orientation
 - It also helps tell which cell is a growth cell.
 - If a cell has a top-left direction and yet there isn't a cell in that direction, then it would imply a growth cell.
 
-For DIVISION, we don't worry about it because once we have a branch growing in a consistent direction, DIVISION may be easy to implement.
+For BRANCHING, we don't worry about it because once we have a branch growing in a consistent direction, BRANCHING may be easy to implement.
 
 ## Goal for this phase.
 
@@ -112,3 +112,9 @@ Seeding works similarly:
 if `likelihood < u_gaussian * u_noise`, create a branch.
 
 something like that.
+
+--- 
+
+## Next Phase
+
+We need to implement the BRANCHING.

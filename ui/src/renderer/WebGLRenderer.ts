@@ -56,7 +56,7 @@ export function createWebGLRenderer(canvas: HTMLCanvasElement): WebGLRenderer {
     "foliage",
     "branch-r",
     "branch-dir",
-    "branch-b",
+    "branch-err",
     "branch-a",
     "noise",
     "dir-light",

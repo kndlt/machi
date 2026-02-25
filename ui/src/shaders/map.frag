@@ -13,7 +13,7 @@ uniform sampler2D u_noise;
 uniform sampler2D u_light;
 uniform int u_view_mode;       // 0=visual, 1=matter, 2=segmentation, 3=foliage,
                                // 4=branch-R(occupancy), 5=branch-G(direction),
-                               // 6=branch-B(mirror), 7=branch-A(alpha), 8=noise,
+                               // 6=branch-B(error), 7=branch-A(alpha), 8=noise,
                                // 9=directional-light(debug)
 uniform int u_foliage_enabled; // 1 = show foliage layer, 0 = hide
 uniform int u_outline_enabled; // 1 = show foliage outline, 0 = hide
@@ -29,7 +29,7 @@ const vec3 FOLIAGE_WEAK  = vec3(0.50, 0.45, 0.15); // low energy: yellow-brown
 
 // Heatmap colors for data visualization modes
 const vec3 HUE_BRANCH_R  = vec3(1.0, 0.31, 0.08);   // occupancy (R)
-const vec3 HUE_BRANCH_B  = vec3(0.24, 0.55, 1.0);   // mirror (B)
+const vec3 HUE_BRANCH_B  = vec3(0.24, 0.55, 1.0);   // error accumulator (B)
 const vec3 HUE_BRANCH_A  = vec3(1.0, 1.0, 1.0);     // alpha (A)
 const vec3 HUE_NOISE     = vec3(0.71, 0.47, 1.0);   // purple
 

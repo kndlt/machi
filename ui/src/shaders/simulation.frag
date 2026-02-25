@@ -10,8 +10,8 @@ precision highp float;
 //
 // OUT (branch map RGBA):
 //   R = occupancy (1.0 branch, 0.0 empty)
-//   G = direction (0..1 angle, 0=up, 0.25=right, 0.5=down)
-//   B = occupancy mirror (debug/useful for existing structure view)
+//   G = direction (0..1 full angle; 256 encoded headings)
+//   B = Bresenham-style error accumulator (0..1)
 //   A = occupancy alpha
 //
 // Growth logic (no auto-seeding mode):
@@ -38,12 +38,6 @@ const float PI = 3.141592653589793;
 const float TAU = 6.283185307179586;
 
 const float BRANCH_ALPHA_MIN = 0.5;
-const float NOISE_FERTILITY_MIN = 0.05;
-const float GROWTH_BASE_CHANCE = 0.90;
-
-bool isDirt(vec4 m) {
-  return m.a > 0.5 && distance(m.rgb, DIRT_COLOR) < COLOR_THRESHOLD;
-}
 
 bool isWater(vec4 m) {
   return m.a > 0.5 && distance(m.rgb, WATER_COLOR) < COLOR_THRESHOLD;
@@ -74,36 +68,35 @@ float hash12(vec2 p) {
   return fract((p3.x + p3.y) * p3.z);
 }
 
-vec4 makeBranch(float encodedDir) {
-  return vec4(1.0, fract(encodedDir), 1.0, 1.0);
+vec4 makeBranch(float encodedDir, float errorAcc) {
+  return vec4(1.0, fract(encodedDir), fract(errorAcc), 1.0);
 }
 
 vec4 emptyCell() {
   return vec4(0.0);
 }
 
-vec2 quantizeDir8(vec2 d) {
-  vec2 dirs[8] = vec2[8](
-    vec2(0.0, -1.0),
-    normalize(vec2(1.0, -1.0)),
-    vec2(1.0, 0.0),
-    normalize(vec2(1.0, 1.0)),
-    vec2(0.0, 1.0),
-    normalize(vec2(-1.0, 1.0)),
-    vec2(-1.0, 0.0),
-    normalize(vec2(-1.0, -1.0))
-  );
+bool sameStep(vec2 a, vec2 b) {
+  return distance(a, b) < 0.25;
+}
 
-  float bestDot = -1.0;
-  int bestIdx = 0;
-  for (int i = 0; i < 8; i++) {
-    float s = dot(d, dirs[i]);
-    if (s > bestDot) {
-      bestDot = s;
-      bestIdx = i;
-    }
+void lineStepper(vec2 dir, out vec2 primaryStep, out vec2 secondaryStep, out float slopeMix) {
+  float vx = dir.x;
+  float vy = dir.y;
+  float ax = abs(vx);
+  float ay = abs(vy);
+  float sx = (vx > 0.0) ? 1.0 : ((vx < 0.0) ? -1.0 : 0.0);
+  float sy = (vy > 0.0) ? 1.0 : ((vy < 0.0) ? -1.0 : 0.0);
+
+  if (ax >= ay) {
+    primaryStep = vec2(sx, 0.0);
+    secondaryStep = vec2(sx, sy);
+    slopeMix = (ax > 0.0) ? (ay / ax) : 0.0;
+  } else {
+    primaryStep = vec2(0.0, sy);
+    secondaryStep = vec2(sx, sy);
+    slopeMix = (ay > 0.0) ? (ax / ay) : 0.0;
   }
-  return dirs[bestIdx];
 }
 
 void main() {
@@ -175,17 +168,26 @@ void main() {
   vec2 sourceUV = v_uv + offsets[sourceIdx];
   vec4 sourceBranch = texture(u_foliage_prev, sourceUV);
   vec2 sourceDir = dirFromEncoded(sourceBranch.g);
-  vec2 forwardDir = quantizeDir8(sourceDir);
+
+  vec2 primaryStep;
+  vec2 secondaryStep;
+  float slopeMix;
+  lineStepper(sourceDir, primaryStep, secondaryStep, slopeMix);
+
+  float err = fract(sourceBranch.b);
+  float errNext = err + slopeMix;
+  bool takeSecondary = errNext >= 1.0;
+  vec2 expectedStep = takeSecondary ? secondaryStep : primaryStep;
+  float childErr = takeSecondary ? (errNext - 1.0) : errNext;
 
   // Direction from source cell toward current candidate cell.
-  vec2 toCurrent = normalize(-latticeOffsets[sourceIdx]);
-  float isForwardCell = dot(forwardDir, toCurrent);
+  vec2 toCurrent = -latticeOffsets[sourceIdx];
 
-  // Straight-line growth only: source can only extend into its quantized forward cell.
-  if (isForwardCell < 0.999) {
+  // Deterministic straight raster growth from source based on heading + error accumulator.
+  if (!sameStep(toCurrent, expectedStep)) {
     out_color = emptyCell();
     return;
   }
 
-  out_color = makeBranch(encodeDir(forwardDir));
+  out_color = makeBranch(sourceBranch.g, childErr);
 }
