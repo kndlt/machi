@@ -40,7 +40,6 @@ const float TAU = 6.283185307179586;
 const float BRANCH_ALPHA_MIN = 0.5;
 const float NOISE_FERTILITY_MIN = 0.05;
 const float GROWTH_BASE_CHANCE = 0.90;
-const float DIRECTION_JITTER_MAX = 0.04;
 
 bool isDirt(vec4 m) {
   return m.a > 0.5 && distance(m.rgb, DIRT_COLOR) < COLOR_THRESHOLD;
@@ -81,6 +80,30 @@ vec4 makeBranch(float encodedDir) {
 
 vec4 emptyCell() {
   return vec4(0.0);
+}
+
+vec2 quantizeDir8(vec2 d) {
+  vec2 dirs[8] = vec2[8](
+    vec2(0.0, -1.0),
+    normalize(vec2(1.0, -1.0)),
+    vec2(1.0, 0.0),
+    normalize(vec2(1.0, 1.0)),
+    vec2(0.0, 1.0),
+    normalize(vec2(-1.0, 1.0)),
+    vec2(-1.0, 0.0),
+    normalize(vec2(-1.0, -1.0))
+  );
+
+  float bestDot = -1.0;
+  int bestIdx = 0;
+  for (int i = 0; i < 8; i++) {
+    float s = dot(d, dirs[i]);
+    if (s > bestDot) {
+      bestDot = s;
+      bestIdx = i;
+    }
+  }
+  return dirs[bestIdx];
 }
 
 void main() {
@@ -152,21 +175,17 @@ void main() {
   vec2 sourceUV = v_uv + offsets[sourceIdx];
   vec4 sourceBranch = texture(u_foliage_prev, sourceUV);
   vec2 sourceDir = dirFromEncoded(sourceBranch.g);
+  vec2 forwardDir = quantizeDir8(sourceDir);
 
   // Direction from source cell toward current candidate cell.
   vec2 toCurrent = normalize(-latticeOffsets[sourceIdx]);
-  float alignment = max(dot(sourceDir, toCurrent), 0.0);
+  float isForwardCell = dot(forwardDir, toCurrent);
 
-  float fertility = max(texture(u_noise, v_uv).r, NOISE_FERTILITY_MIN);
-  float growthChance = GROWTH_BASE_CHANCE * fertility * alignment;
-  float rnd = hash12(v_uv * vec2(1024.0, 1024.0) + sourceBranch.g * 13.0);
-
-  if (rnd < growthChance) {
-    float jitter = (hash12(v_uv * vec2(777.0, 4096.0)) - 0.5) * 2.0 * DIRECTION_JITTER_MAX;
-    vec2 grownDir = normalize(sourceDir + vec2(jitter, -abs(jitter) * 0.15));
-    out_color = makeBranch(encodeDir(grownDir));
+  // Straight-line growth only: source can only extend into its quantized forward cell.
+  if (isForwardCell < 0.999) {
+    out_color = emptyCell();
     return;
   }
 
-  out_color = emptyCell();
+  out_color = makeBranch(encodeDir(forwardDir));
 }
