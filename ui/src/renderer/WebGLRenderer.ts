@@ -124,7 +124,7 @@ export function createWebGLRenderer(canvas: HTMLCanvasElement): WebGLRenderer {
     start,
     resize,
     get simInterval() { return simInterval; },
-    set simInterval(v: number) { simInterval = Math.max(50, v); },
+    set simInterval(v: number) { simInterval = Math.max(8, v); },
     get simStartDelayMs() { return simStartDelayMs; },
     set simStartDelayMs(v: number) { simStartDelayMs = Math.max(0, Math.round(v)); },
     dispose,

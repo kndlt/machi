@@ -46,6 +46,10 @@ const float SEED_NOISE_MAX_STONE = 0.01;  // Much tighter noise gate for stone s
 const float SPREAD_NOISE_MAX     = 0.50;  // Max noise for neighbor spreading
 const float ENERGY_BLEND         = 0.10;  // Energy convergence rate per step
 const float ENERGY_INITIAL       = 0.35;  // New cells start at 35% of potential
+const float POTENTIAL_CREATE_MIN = ENERGY_DEATH; // Minimum potential to allow creation
+const float POTENTIAL_KILL_FACTOR = 0.5; // Kill when potential < 50% of creation threshold
+const float POTENTIAL_NOISE_MIN  = 0.85; // Noise modulation lower bound
+const float POTENTIAL_NOISE_MAX  = 1.15; // Noise modulation upper bound
 
 bool isDirt(vec4 m) {
   return m.a > 0.5 && distance(m.rgb, DIRT_COLOR) < COLOR_THRESHOLD;
@@ -116,7 +120,7 @@ void main() {
   bool touchingStone = touchStoneR || touchStoneL || touchStoneU || touchStoneD;
 
   // touchingSurface = dirt or stone (for foliage anchor purposes)
-  bool touchingSurface = touchingDirt;
+  bool touchingSurface = touchingDirt || touchingStone;
 
   vec4 fR = texture(u_foliage_prev, v_uv + offR);
   vec4 fL = texture(u_foliage_prev, v_uv + offL);
@@ -156,56 +160,42 @@ void main() {
   }
   light = max(light, 0.0);
 
-  // ── Calculate ENERGY potential ─────────────────────────────────────────
-  float potential = nutrients * light;
+  // ── Calculate ENERGY potential (independent of local alive state) ─────
+  float potentialBase = nutrients * light;
+  float potential = potentialBase * mix(POTENTIAL_NOISE_MIN, POTENTIAL_NOISE_MAX, noise);
 
-  bool wasAlive = hasFoliage(fPrev);
+  float prevAlive = step(0.05, fPrev.a);
 
-  if (wasAlive) {
-    // ── SURVIVE ──────────────────────────────────────────────────────────
-    // Blend energy toward current potential — gradual strengthening/weakening
-    float energy = mix(fPrev.r, potential, ENERGY_BLEND);
+  // Rule 1: Seed from surface — air cell touching dirt or stone with low noise
+  float noiseGate = touchingDirt ? SEED_NOISE_MAX : SEED_NOISE_MAX_STONE;
+  float seedSupport = (touchingSurface && noise < noiseGate) ? 1.0 : 0.0;
 
-    // DISABLED FOR NOW
-    // if (energy < ENERGY_DEATH) {
-    //   out_color = vec4(0.0);  // starved
-    //   return;
-    // }
+  // Rule 2: Spread from neighbors — need ≥1 foliage neighbor with enough energy and low noise
+  float maxNeighborEnergy = 0.0;
+  if (hasFoliage(fR)) maxNeighborEnergy = max(maxNeighborEnergy, fR.r);
+  if (hasFoliage(fL)) maxNeighborEnergy = max(maxNeighborEnergy, fL.r);
+  if (hasFoliage(fU)) maxNeighborEnergy = max(maxNeighborEnergy, fU.r);
+  if (hasFoliage(fD)) maxNeighborEnergy = max(maxNeighborEnergy, fD.r);
 
-    out_color = vec4(energy, nutrients, light, 1.0);
-  } else {
-    // ── GROW ─────────────────────────────────────────────────────────────
-    // Rule 1: Seed from surface — air cell touching dirt or stone with low noise
-    //         Stone gets a much tighter noise gate so growth is rare
-    if (touchingSurface) {
-      float noiseGate = touchingDirt ? SEED_NOISE_MAX : SEED_NOISE_MAX_STONE;
-      if (noise < noiseGate) {
-        float energy = potential * ENERGY_INITIAL;
-        out_color = vec4(energy, nutrients, light, 1.0);
-        return;
-      }
-    }
+  float spreadThreshold = SPREAD_NOISE_MAX
+                        * (0.5 + float(foliageNeighbors) * 0.25);
+  float spreadSupport = (foliageNeighbors >= 1
+                      && maxNeighborEnergy >= ENERGY_GROW_MIN
+                      && noise < spreadThreshold) ? 1.0 : 0.0;
 
-    // Rule 2: Spread from neighbors — need ≥1 foliage neighbor with
-    //         enough energy, viable potential here, and low noise
-    if (foliageNeighbors >= 1 && potential >= ENERGY_DEATH) {
-      float maxNeighborEnergy = 0.0;
-      if (hasFoliage(fR)) maxNeighborEnergy = max(maxNeighborEnergy, fR.r);
-      if (hasFoliage(fL)) maxNeighborEnergy = max(maxNeighborEnergy, fL.r);
-      if (hasFoliage(fU)) maxNeighborEnergy = max(maxNeighborEnergy, fU.r);
-      if (hasFoliage(fD)) maxNeighborEnergy = max(maxNeighborEnergy, fD.r);
+  float creationSupport = max(seedSupport, spreadSupport);
+  float createGate = step(POTENTIAL_CREATE_MIN, potential);
+  float killGate = step(POTENTIAL_CREATE_MIN * POTENTIAL_KILL_FACTOR, potential);
 
-      // Neighbor must be established (high energy) and local noise must be low.
-      // Base threshold allows 1-neighbor frontier to expand; more neighbors widen it.
-      float spreadThreshold = SPREAD_NOISE_MAX
-                            * (0.5 + float(foliageNeighbors) * 0.25);
-      if (maxNeighborEnergy >= ENERGY_GROW_MIN && noise < spreadThreshold) {
-        float energy = potential * ENERGY_INITIAL;
-        out_color = vec4(energy, nutrients, light, 1.0);
-        return;
-      }
-    }
+  // Single pathway:
+  // - new cells need creationSupport + createGate
+  // - existing cells persist while killGate remains active
+  float support = max((1.0 - prevAlive) * creationSupport * createGate,
+                      prevAlive * killGate);
 
-    out_color = vec4(0.0);
-  }
+  float targetEnergy = potential * mix(ENERGY_INITIAL, 1.0, prevAlive);
+  float energy = mix(fPrev.r, targetEnergy, ENERGY_BLEND) * support;
+  float alive = step(ENERGY_DEATH, energy);
+
+  out_color = vec4(energy, nutrients, light, alive);
 }

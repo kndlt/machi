@@ -44,12 +44,12 @@ export function createCameraControls(
       return;
     }
     if (e.key === "]" && renderer) {
-      renderer.simInterval = Math.max(50, renderer.simInterval / 2);
+      renderer.simInterval = Math.max(8, renderer.simInterval / 2);
       console.log(`Sim interval: ${renderer.simInterval}ms`);
       return;
     }
     if (e.key === "[" && renderer) {
-      renderer.simInterval = Math.min(8000, renderer.simInterval * 2);
+      renderer.simInterval = Math.min(8192, renderer.simInterval * 2);
       console.log(`Sim interval: ${renderer.simInterval}ms`);
       return;
     }

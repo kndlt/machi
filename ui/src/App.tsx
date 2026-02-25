@@ -112,7 +112,7 @@ async function initApp(canvas: HTMLCanvasElement, callbacks: InitAppCallbacks): 
   const simulationSeed = readSimulationSeed();
   const simulation = createSimulationRenderer(gl, world, { seed: simulationSeed });
 
-  const BASE_SIM_INTERVAL_MS = 1000;
+  const BASE_SIM_INTERVAL_MS = 1024;
 
   const applyLocationControls = () => {
     const perturbNoiseSpeed = readPerturbNoiseSpeed();

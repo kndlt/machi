@@ -1,53 +1,76 @@
 #version 300 es
 precision highp float;
 
-// Noise evolution shader.
+// ─────────────────────────────────────────────────────────────
+// Evolving noise field (isotropic + stable)
 //
-// Slowly evolves a spatially-coherent noise field via:
-//   1. Diffusion — blend toward neighbor average
-//   2. Perturbation — small hash-based random nudge
+// Produces smooth drifting organic noise with no directional bias.
+// Suitable for ecology / foliage / probability fields.
 //
-// The result is a smooth, organic noise gradient that drifts
-// over time, used by simulation shaders to control random events.
+// Steps:
+//   1. 8-neighbor diffusion (isotropic Laplacian)
+//   2. Small stochastic perturbation
+//   3. Clamp for stability
+//
+// ─────────────────────────────────────────────────────────────
 
 in vec2 v_uv;
 
-uniform sampler2D u_prev;   // previous noise state
-uniform float u_time;        // incrementing time value (for hash variation)
-uniform float u_diffusion;   // blend rate toward neighbors (default 0.10)
-uniform float u_perturbation; // random nudge amplitude (default 0.02)
+uniform sampler2D u_prev;
+uniform float u_time;
+uniform float u_diffusion;     // recommended 0.05
+uniform float u_perturbation;  // recommended 0.01
 
 out vec4 out_color;
 
-// ── Hash ────────────────────────────────────────────────────────────────
-float hash(vec2 p, float seed) {
-  vec3 p3 = fract(vec3(p.xyx) * 0.1031 + seed);
-  p3 += dot(p3, p3.yzx + 33.33);
-  return fract((p3.x + p3.y) * p3.z);
+// ─────────────────────────────────────────────────────────────
+// Better isotropic hash
+// ─────────────────────────────────────────────────────────────
+float hash(vec2 p) {
+  p = fract(p * vec2(5.3983, 5.4427));
+  p += dot(p, p + 33.333);
+  return fract(p.x * p.y);
 }
 
 void main() {
-  vec2 texelSize = 1.0 / vec2(textureSize(u_prev, 0));
+
+  vec2 texSize = vec2(textureSize(u_prev, 0));
+  vec2 texel = 1.0 / texSize;
+
+  // Integer pixel coordinates (important for stable hash)
+  vec2 pixel = floor(v_uv * texSize);
 
   // Current value
-  float current = texture(u_prev, v_uv).r;
+  float c = texture(u_prev, v_uv).r;
 
-  // Sample 4 neighbors
-  float r = texture(u_prev, v_uv + vec2( texelSize.x, 0.0)).r;
-  float l = texture(u_prev, v_uv + vec2(-texelSize.x, 0.0)).r;
-  float u = texture(u_prev, v_uv + vec2(0.0,  texelSize.y)).r;
-  float d = texture(u_prev, v_uv + vec2(0.0, -texelSize.y)).r;
+  // 4 neighbors
+  float r = texture(u_prev, v_uv + vec2( texel.x, 0.0)).r;
+  float l = texture(u_prev, v_uv + vec2(-texel.x, 0.0)).r;
+  float u = texture(u_prev, v_uv + vec2(0.0,  texel.y)).r;
+  float d = texture(u_prev, v_uv + vec2(0.0, -texel.y)).r;
 
-  float neighborAvg = (r + l + u + d) * 0.25;
+  // Diagonals
+  float ur = texture(u_prev, v_uv + texel).r;
+  float ul = texture(u_prev, v_uv + vec2(-texel.x, texel.y)).r;
+  float dr = texture(u_prev, v_uv + vec2(texel.x, -texel.y)).r;
+  float dl = texture(u_prev, v_uv - texel).r;
 
-  // Diffuse: blend toward neighbor average
-  float diffused = mix(current, neighborAvg, u_diffusion);
+  // Isotropic weighted average
+  float neighborAvg =
+      (r + l + u + d) * 0.2 +
+      (ur + ul + dr + dl) * 0.05;
 
-  // Perturb: small hash-based nudge in [-1, 1] range
-  // Use pixel coordinates (not UVs) so the hash produces uncorrelated values
-  vec2 pixelCoord = v_uv * vec2(textureSize(u_prev, 0));
-  float nudge = hash(pixelCoord, u_time) * 2.0 - 1.0;
-  float result = diffused + nudge * u_perturbation;
+  // Diffusion
+  float diffused = mix(c, neighborAvg, u_diffusion);
 
-  out_color = vec4(clamp(result, 0.0, 1.0), 0.0, 0.0, 1.0);
+  // Small stochastic perturbation
+  float n = hash(pixel + u_time);
+  float nudge = (n * 2.0 - 1.0) * u_perturbation;
+
+  float result = diffused + nudge;
+
+  // Stability clamp
+  result = clamp(result, 0.0, 1.0);
+
+  out_color = vec4(result, 0.0, 0.0, 1.0);
 }
