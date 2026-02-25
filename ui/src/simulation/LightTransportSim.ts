@@ -19,9 +19,9 @@ const LIGHT_DIRECTION_SEED: DirectionalSeed = {
   up: 0,
   upRight: 0,
   right: 0,
-  downRight: 4, // 0.25
-  down: 8, // 0.5
-  downLeft: 4, // 0.25
+  downRight: 8, // 0.25
+  down: 16, // 0.5
+  downLeft: 8, // 0.25
   left: 0,
   upLeft: 0,
 };
