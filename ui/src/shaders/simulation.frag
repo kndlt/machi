@@ -40,7 +40,11 @@ const float TAU = 6.283185307179586;
 
 const float BRANCH_ALPHA_MIN = 0.5;
 const float BRANCH_SIDE_RATE = 0.30;
-const float BRANCH_SIDE_ANGLE = PI / 6.0; // 30 deg
+const float BRANCH_SIDE_ANGLE_MIN = PI / 9.0;  // 20 deg
+const float BRANCH_SIDE_ANGLE_MAX = PI / 4.0;  // 45 deg
+const float MAIN_TURN_RATE = 0.08;
+const float MAIN_TURN_RATE_BLOCKED = 0.55;
+const float MAIN_TURN_MAX = PI / 18.0; // 10 deg
 
 bool isWater(vec4 m) {
   return m.a > 0.5 && distance(m.rgb, WATER_COLOR) < COLOR_THRESHOLD;
@@ -209,21 +213,40 @@ void main() {
     vec2 parentUV = sourceUV + vec2(parentStep.x * texelSize.x, parentStep.y * texelSize.y);
     bool hasParent = isBranch(texture(u_foliage_prev, parentUV));
 
+    // Main path steering for this source (small deterministic turn, mostly at tips).
+    vec2 steeredDir = sourceDir;
+
+    // Use unsteered forward occupancy for gating/intent.
+    vec2 unsteeredPrimaryStep;
+    vec2 unsteeredSecondaryStep;
+    float unsteeredSlopeMix;
+    lineStepper(sourceDir, unsteeredPrimaryStep, unsteeredSecondaryStep, unsteeredSlopeMix);
+
+    vec2 mainStepUV = sourceUV + vec2(unsteeredPrimaryStep.x * texelSize.x, unsteeredPrimaryStep.y * texelSize.y);
+    bool forwardOccupied = isBranch(texture(u_foliage_prev, mainStepUV));
+
+    if (isTipSource) {
+      float turnHash = hash12(sourceUV * vec2(311.0, 173.0) + sourceBranch.b * 127.0);
+      float turnSignHash = hash12(sourceUV * vec2(887.0, 491.0) + sourceBranch.g * 389.0);
+      float turnChance = (forwardOccupied ? MAIN_TURN_RATE_BLOCKED : MAIN_TURN_RATE) * max(fertility, 0.25);
+      if (turnHash < turnChance) {
+        float turnSign = turnSignHash < 0.5 ? -1.0 : 1.0;
+        float turnMagnitude = MAIN_TURN_MAX * (0.35 + 0.65 * hash12(sourceUV * vec2(97.0, 631.0) + sourceBranch.b * 43.0));
+        steeredDir = normalize(rotateVec(sourceDir, turnSign * turnMagnitude));
+      }
+    }
+
     // Main path stepping for this source.
     vec2 primaryStep;
     vec2 secondaryStep;
     float slopeMix;
-    lineStepper(sourceDir, primaryStep, secondaryStep, slopeMix);
+    lineStepper(steeredDir, primaryStep, secondaryStep, slopeMix);
 
     float err = fract(sourceBranch.b);
     float errNext = err + slopeMix;
     bool takeSecondary = errNext >= 1.0;
     vec2 expectedStep = takeSecondary ? secondaryStep : primaryStep;
     float childErr = takeSecondary ? (errNext - 1.0) : errNext;
-
-    // Tip-like gating: only branch when source has no occupied forward cell.
-    vec2 mainStepUV = sourceUV + vec2(primaryStep.x * texelSize.x, primaryStep.y * texelSize.y);
-    bool forwardOccupied = isBranch(texture(u_foliage_prev, mainStepUV));
 
     // Side branch candidate from source.
     float sideHash = hash12(sourceUV * vec2(2048.0, 4096.0) + sourceBranch.g * 257.0);
@@ -234,7 +257,9 @@ void main() {
     float sideEncodedDir = 0.0;
     float sideChildErr = 0.0;
     if (emitSide) {
-      vec2 sideDir = normalize(rotateVec(sourceDir, sideSign * BRANCH_SIDE_ANGLE));
+      float angleMix = hash12(sourceUV * vec2(1597.0, 1213.0) + sourceBranch.g * 53.0);
+      float sideAngle = mix(BRANCH_SIDE_ANGLE_MIN, BRANCH_SIDE_ANGLE_MAX, angleMix);
+      vec2 sideDir = normalize(rotateVec(steeredDir, sideSign * sideAngle));
       sideStep = nearestStep8(sideDir);
       sideChildErr = 0.0;
       sideEncodedDir = encodeDir(sideDir);
@@ -249,7 +274,7 @@ void main() {
 
     if (sameStep(toCurrent, expectedStep)) {
       claimed = true;
-      claimDir = sourceBranch.g;
+      claimDir = encodeDir(steeredDir);
       claimErr = childErr;
     } else if (emitSide && sameStep(toCurrent, sideStep)) {
       claimed = true;
