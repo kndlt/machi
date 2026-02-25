@@ -54,7 +54,7 @@ export function createWebGLRenderer(canvas: HTMLCanvasElement): WebGLRenderer {
     "matter",
     "segmentation",
     "foliage",
-    "branch-r",
+    "branch-id",
     "branch-dir",
     "branch-err",
     "branch-a",

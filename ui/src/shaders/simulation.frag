@@ -9,7 +9,7 @@ precision highp float;
 //   - u_noise       : slowly evolving fertility noise
 //
 // OUT (branch map RGBA):
-//   R = occupancy (1.0 branch, 0.0 empty)
+//   R = tree ID (0.0 = empty; non-zero identifies a tree)
 //   G = direction (0..1 full angle; 256 encoded headings)
 //   B = Bresenham-style error accumulator (0..1)
 //   A = occupancy alpha
@@ -81,8 +81,9 @@ float hash12(vec2 p) {
   return fract((p3.x + p3.y) * p3.z);
 }
 
-vec4 makeBranch(float encodedDir, float errorAcc) {
-  return vec4(1.0, fract(encodedDir), fract(errorAcc), 1.0);
+vec4 makeBranch(float treeId, float encodedDir, float errorAcc) {
+  float id = clamp(treeId, 1.0 / 255.0, 1.0);
+  return vec4(id, fract(encodedDir), fract(errorAcc), 1.0);
 }
 
 vec4 emptyCell() {
@@ -175,6 +176,7 @@ void main() {
   );
 
   int claimCount = 0;
+  float chosenId = 0.0;
   float chosenDir = 0.0;
   float chosenErr = 0.0;
   bool touchingWater = false;
@@ -269,15 +271,18 @@ void main() {
     vec2 toCurrent = -latticeOffsets[i];
 
     bool claimed = false;
+    float claimId = 0.0;
     float claimDir = 0.0;
     float claimErr = 0.0;
 
     if (sameStep(toCurrent, expectedStep)) {
       claimed = true;
+      claimId = sourceBranch.r;
       claimDir = encodeDir(steeredDir);
       claimErr = childErr;
     } else if (emitSide && sameStep(toCurrent, sideStep)) {
       claimed = true;
+      claimId = sourceBranch.r;
       claimDir = sideEncodedDir;
       claimErr = sideChildErr;
     }
@@ -285,6 +290,7 @@ void main() {
     if (claimed) {
       claimCount++;
       if (claimCount == 1) {
+        chosenId = claimId;
         chosenDir = claimDir;
         chosenErr = claimErr;
       }
@@ -297,5 +303,5 @@ void main() {
     return;
   }
 
-  out_color = makeBranch(chosenDir, chosenErr);
+  out_color = makeBranch(chosenId, chosenDir, chosenErr);
 }

@@ -12,7 +12,7 @@ uniform sampler2D u_foliage;
 uniform sampler2D u_noise;
 uniform sampler2D u_light;
 uniform int u_view_mode;       // 0=visual, 1=matter, 2=segmentation, 3=foliage,
-                               // 4=branch-R(occupancy), 5=branch-G(direction),
+                               // 4=branch-R(tree-id), 5=branch-G(direction),
                                // 6=branch-B(error), 7=branch-A(alpha), 8=noise,
                                // 9=directional-light(debug)
 uniform int u_foliage_enabled; // 1 = show foliage layer, 0 = hide
@@ -28,7 +28,7 @@ const vec3 FOLIAGE_LUSH  = vec3(0.30, 0.55, 0.20); // high energy: vibrant green
 const vec3 FOLIAGE_WEAK  = vec3(0.50, 0.45, 0.15); // low energy: yellow-brown
 
 // Heatmap colors for data visualization modes
-const vec3 HUE_BRANCH_R  = vec3(1.0, 0.31, 0.08);   // occupancy (R)
+const vec3 HUE_BRANCH_R  = vec3(1.0, 0.31, 0.08);   // tree ID (R)
 const vec3 HUE_BRANCH_B  = vec3(0.24, 0.55, 1.0);   // error accumulator (B)
 const vec3 HUE_BRANCH_A  = vec3(1.0, 1.0, 1.0);     // alpha (A)
 const vec3 HUE_NOISE     = vec3(0.71, 0.47, 1.0);   // purple
@@ -54,8 +54,7 @@ float unpackNibble(vec4 packed, int dir) {
 
 // Convert foliage resource channels to visual color
 vec3 foliageColor(vec4 fol) {
-  float energy = fol.r;
-  return mix(FOLIAGE_WEAK, FOLIAGE_LUSH, clamp(energy, 0.0, 1.0));
+  return mix(FOLIAGE_WEAK, FOLIAGE_LUSH, clamp(fol.a, 0.0, 1.0));
 }
 
 // Check if a pixel is an outline (it has no foliage itself, but has a foliage neighbor)
@@ -165,7 +164,10 @@ void main() {
       } else {
         float val;
         vec3 hue;
-        if (u_view_mode == 4)      { val = fol.r; hue = HUE_BRANCH_R; }
+        if (u_view_mode == 4) {
+          out_color = vec4(hueWheel(fract(fol.r * 255.0 * 0.61803398875)), 1.0);
+          return;
+        }
         else if (u_view_mode == 6) { val = fol.b; hue = HUE_BRANCH_B; }
         else                       { val = fol.a; hue = HUE_BRANCH_A; } // mode 7
         out_color = vec4(hue * val, 1.0);
