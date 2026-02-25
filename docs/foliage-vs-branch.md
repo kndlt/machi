@@ -2,7 +2,7 @@
 
 When we think about foliage, we think green leaves.
 
-However, what really does the heavy lifting is the branches.
+However, what really does the **heavy lifting** is the branches.
 
 Branches provide support, energy, and nutrients.
 
