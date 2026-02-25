@@ -22,7 +22,7 @@ interface MapGPU {
 
 export interface MapRenderer {
   render(camera: Camera): void;
-  /** 0=visual, 1=matter, 2=segmentation, 3=foliage, 4=energy, 5=nutrients, 6=light, 7=alive, 8=noise, 9=directional-light(debug) */
+  /** 0=visual, 1=matter, 2=segmentation, 3=foliage, 4=energy, 5=nutrients, 6=structure, 7=alive, 8=noise, 9=directional-light(debug) */
   viewMode: number;
   /** Toggle foliage rendering (default true) */
   foliageEnabled: boolean;

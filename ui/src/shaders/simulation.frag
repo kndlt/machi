@@ -1,26 +1,25 @@
 #version 300 es
 precision highp float;
 
-// Foliage simulation fragment shader — cellular automaton.
+// Branch simulation shader (readable rule-based v0.4).
 //
-// IN:  matter texture + previous foliage state + noise field
-// OUT: new foliage RGBA where channels encode resources:
-//        R = energy (0–1): combined vitality, determines color/survival
-//        G = nutrients (0–1): supplied by dirt, flows through neighbors
-//        B = light (0–1): supplied from above, blocked by canopy
-//        A = alive flag (> 0 = alive)
+// IN:
+//   - u_matter      : world occupancy/materials
+//   - u_foliage_prev: previous branch_state RGBA
+//   - u_light       : packed directional light transport field
+//   - u_noise       : spatial gating field
 //
-// All rules are purely local.  The noise texture is a stable spatial field
-// that determines WHERE growth can happen — cells with low noise values are
-// fertile, high noise values are barren.  Temporal growth emerges from
-// wavefront propagation: seeds appear at dirt, spread one cell per step,
-// and energy builds up gradually via blending.  The noise field drifts very
-// slowly over time (cosmic rays), occasionally flipping a cell's fate.
+// OUT (branch_state RGBA):
+//   R = energy
+//   G = nutrients
+//   B = structure
+//   A = mode (0.0 empty, 0.5 living, 1.0 zombie)
 
 in vec2 v_uv;
 
 uniform sampler2D u_matter;
 uniform sampler2D u_foliage_prev;
+uniform sampler2D u_light;
 uniform sampler2D u_noise;   // slowly-evolving stable noise field
 
 out vec4 out_color;
@@ -31,25 +30,42 @@ const vec3 STONE_COLOR = vec3(0.647, 0.592, 0.561);  // (165, 151, 143)
 const vec3 WATER_COLOR = vec3(0.200, 0.600, 0.800);  // (51, 153, 204)
 const float COLOR_THRESHOLD = 0.12;
 
-// ── Resource constants ───────────────────────────────────────────────────
-const float NUTRIENT_ROOT        = 1.0;   // Max nutrients at dirt contact
-const float NUTRIENT_ROOT_STONE  = 0.00;  // Stone provides very few nutrients
-const float NUTRIENT_DECAY       = 0.15;  // Nutrient loss per hop through foliage
-const float LIGHT_FULL           = 1.0;   // Full light (no canopy above)
-const float LIGHT_BLOCK          = 0.2;   // Light lost per foliage pixel above
-const float ENERGY_DEATH         = 0.05;  // Below this energy → die
-const float ENERGY_GROW_MIN      = 0.3;   // Neighbor needs this energy to spread
+// ── Mode encoding (branch_state A) ───────────────────────────────────────
+const float MODE_EMPTY = 0.0;
+const float MODE_LIVING = 0.5;
+const float MODE_ZOMBIE = 1.0;
 
-// ── Growth thresholds (fixed — no step counter) ──────────────────────────
-const float SEED_NOISE_MAX       = 0.40;  // Max noise for dirt-adjacent seeding
-const float SEED_NOISE_MAX_STONE = 0.01;  // Much tighter noise gate for stone seeding
-const float SPREAD_NOISE_MAX     = 0.50;  // Max noise for neighbor spreading
-const float ENERGY_BLEND         = 0.10;  // Energy convergence rate per step
-const float ENERGY_INITIAL       = 0.35;  // New cells start at 35% of potential
-const float POTENTIAL_CREATE_MIN = ENERGY_DEATH; // Minimum potential to allow creation
-const float POTENTIAL_KILL_FACTOR = 0.5; // Kill when potential < 50% of creation threshold
-const float POTENTIAL_NOISE_MIN  = 0.85; // Noise modulation lower bound
-const float POTENTIAL_NOISE_MAX  = 1.15; // Noise modulation upper bound
+// ── Growth + transport constants (readable defaults) ─────────────────────
+const float SEED_NOISE_MAX = 0.20;
+const float SPREAD_BAND_CENTER = 0.20;
+const float SPREAD_BAND_WIDTH = 0.20;
+const float GROWTH_SCORE_MIN = 0.12;
+
+const float SUPPORT_FROM_BELOW = 1.00;
+const float SUPPORT_FROM_SIDE = 0.80;
+const float SUPPORT_FROM_ABOVE = 0.30;
+const float ZOMBIE_SUPPORT_SCALE = 0.55;
+
+const float LIGHT_RESPONSE_MIN = 0.95;
+const float LIGHT_RESPONSE_MAX = 1.20;
+const float LIGHT_UPWARD_WEIGHT = 0.10;
+const float LIGHT_SIDE_WEIGHT = 0.25;
+const float LIGHT_BASE_WEIGHT = 0.65;
+
+const float UPWARD_BONUS = 0.50;
+
+const float NUTRIENT_ROOT = 1.0;
+const float NUTRIENT_DIFFUSE_RATE = 0.35;
+const float NUTRIENT_FROM_LIVING = 0.60;
+const float NUTRIENT_FROM_ZOMBIE = 1.00;
+
+const float METABOLIC_COST = 0.01;
+const float ENERGY_BLEND = 0.15;
+const float E_LIVE_MIN = 0.04;
+
+const float B_GROW_RATE = 0.04;
+const float B_ROTT_RATE = 0.0;
+const float B_EMPTY_THRESH = 0.02;
 
 bool isDirt(vec4 m) {
   return m.a > 0.5 && distance(m.rgb, DIRT_COLOR) < COLOR_THRESHOLD;
@@ -67,28 +83,55 @@ bool isAir(vec4 m) {
   return m.a < 0.1;
 }
 
-bool hasFoliage(vec4 f) {
-  return f.a > 0.05;
+bool isLiving(vec4 s) {
+  return s.a >= 0.33 && s.a < 0.66;
 }
 
-bool hasMatter(vec4 m) {
-  return !isAir(m);
+bool isZombie(vec4 s) {
+  return s.a >= 0.66;
+}
+
+bool hasTissue(vec4 s) {
+  return isLiving(s) || isZombie(s);
+}
+
+float modeToAlpha(float mode) {
+  if (mode > 0.75) return MODE_ZOMBIE;
+  if (mode > 0.25) return MODE_LIVING;
+  return MODE_EMPTY;
+}
+
+float supportWeight(vec4 s, float baseWeight) {
+  if (isLiving(s)) return baseWeight;
+  if (isZombie(s)) return baseWeight * ZOMBIE_SUPPORT_SCALE;
+  return 0.0;
+}
+
+float decodeNibble(vec4 packed, int dir) {
+  vec4 bytes = floor(packed * 255.0 + 0.5);
+  float b;
+  if (dir == 0 || dir == 1) b = bytes.r;
+  else if (dir == 2 || dir == 3) b = bytes.g;
+  else if (dir == 4 || dir == 5) b = bytes.b;
+  else b = bytes.a;
+
+  float nibble = mod(floor(b / (dir % 2 == 0 ? 1.0 : 16.0)), 16.0);
+  return nibble / 15.0;
 }
 
 void main() {
   vec4 mHere = texture(u_matter, v_uv);
-  vec4 fPrev = texture(u_foliage_prev, v_uv);
+  vec4 prev = texture(u_foliage_prev, v_uv);
   vec2 texelSize = 1.0 / vec2(textureSize(u_matter, 0));
-
   float noise = texture(u_noise, v_uv).r;
 
-  // ── Not air → no foliage ───────────────────────────────────────────────
+  // Rule 0 — occupancy
   if (!isAir(mHere)) {
     out_color = vec4(0.0);
     return;
   }
 
-  // ── Sample 4 neighbors (matter + foliage) ──────────────────────────────
+  // 4-neighbor sampling
   vec2 offR = vec2( texelSize.x, 0.0);
   vec2 offL = vec2(-texelSize.x, 0.0);
   vec2 offU = vec2(0.0, -texelSize.y); // up in texture = -Y
@@ -99,7 +142,7 @@ void main() {
   vec4 mU = texture(u_matter, v_uv + offU);
   vec4 mD = texture(u_matter, v_uv + offD);
 
-  // ── Water kills foliage — no growth adjacent to water at all ───────────
+  // keep water as hard exclusion zone
   bool touchingWater = isWater(mR) || isWater(mL) || isWater(mU) || isWater(mD);
   if (touchingWater) {
     out_color = vec4(0.0);
@@ -119,83 +162,140 @@ void main() {
   bool touchStoneD = isStone(mD);
   bool touchingStone = touchStoneR || touchStoneL || touchStoneU || touchStoneD;
 
-  // touchingSurface = dirt or stone (for foliage anchor purposes)
-  bool touchingSurface = touchingDirt || touchingStone;
+  vec4 sR = texture(u_foliage_prev, v_uv + offR);
+  vec4 sL = texture(u_foliage_prev, v_uv + offL);
+  vec4 sU = texture(u_foliage_prev, v_uv + offU);
+  vec4 sD = texture(u_foliage_prev, v_uv + offD);
 
-  vec4 fR = texture(u_foliage_prev, v_uv + offR);
-  vec4 fL = texture(u_foliage_prev, v_uv + offL);
-  vec4 fU = texture(u_foliage_prev, v_uv + offU);
-  vec4 fD = texture(u_foliage_prev, v_uv + offD);
+  bool livingPrev = isLiving(prev);
+  bool zombiePrev = isZombie(prev);
+  bool emptyPrev = !livingPrev && !zombiePrev;
 
-  int foliageNeighbors = 0;
-  if (hasFoliage(fR)) foliageNeighbors++;
-  if (hasFoliage(fL)) foliageNeighbors++;
-  if (hasFoliage(fU)) foliageNeighbors++;
-  if (hasFoliage(fD)) foliageNeighbors++;
+  bool tissueR = hasTissue(sR);
+  bool tissueL = hasTissue(sL);
+  bool tissueU = hasTissue(sU);
+  bool tissueD = hasTissue(sD);
 
-  // ── Calculate NUTRIENTS ────────────────────────────────────────────────
-  float nutrients = 0.0;
+  int tissueNeighbors = 0;
+  if (tissueR) tissueNeighbors++;
+  if (tissueL) tissueNeighbors++;
+  if (tissueU) tissueNeighbors++;
+  if (tissueD) tissueNeighbors++;
+
+  int livingNeighbors = 0;
+  if (isLiving(sR)) livingNeighbors++;
+  if (isLiving(sL)) livingNeighbors++;
+  if (isLiving(sU)) livingNeighbors++;
+  if (isLiving(sD)) livingNeighbors++;
+
+  bool oppositeConnector = (tissueL && tissueR) || (tissueU && tissueD);
+  bool isConnector = (tissueNeighbors >= 3) || (oppositeConnector && tissueNeighbors >= 3);
+
+  // Rule 1 + Rule 2
+  bool fertilityPass = abs(noise - SPREAD_BAND_CENTER) < SPREAD_BAND_WIDTH;
+  bool seedPass = touchingDirt && noise < SEED_NOISE_MAX;
+
+  // Rule 3 support model
+  float supportBelow = supportWeight(sD, SUPPORT_FROM_BELOW);
+  float supportAbove = supportWeight(sU, SUPPORT_FROM_ABOVE);
+  float supportSides = supportWeight(sL, SUPPORT_FROM_SIDE) + supportWeight(sR, SUPPORT_FROM_SIDE);
+  float baseSupport = supportBelow + supportSides + supportAbove;
+  float upwardFactor = 1.0 + UPWARD_BONUS * clamp(supportBelow - supportAbove, 0.0, 1.0);
+
+  // Dedicated light layer decode
+  vec4 packedLight = texture(u_light, v_uv);
+  float lUp = decodeNibble(packedLight, 0);
+  float lUpRight = decodeNibble(packedLight, 1);
+  float lRight = decodeNibble(packedLight, 2);
+  float lDownRight = decodeNibble(packedLight, 3);
+  float lDown = decodeNibble(packedLight, 4);
+  float lDownLeft = decodeNibble(packedLight, 5);
+  float lLeft = decodeNibble(packedLight, 6);
+  float lUpLeft = decodeNibble(packedLight, 7);
+
+  float lightDownward = (lDown + lDownRight + lDownLeft) / 3.0;
+  float lightUpward = (lUp + lUpRight + lUpLeft) / 3.0;
+  float lightSide = (lRight + lLeft) / 2.0;
+  float lightBase = (lUp + lUpRight + lRight + lDownRight + lDown + lDownLeft + lLeft + lUpLeft) / 8.0;
+  float lightScalar = clamp(
+    LIGHT_UPWARD_WEIGHT * lightUpward
+      + LIGHT_SIDE_WEIGHT * lightSide
+      + LIGHT_BASE_WEIGHT * (0.7 * lightBase + 0.3 * lightDownward),
+    0.0,
+    1.0
+  );
+  lightScalar = max(lightScalar, 0.20);
+  float lightFactor = mix(LIGHT_RESPONSE_MIN, LIGHT_RESPONSE_MAX, lightScalar);
+
+  float growthScore = baseSupport * lightFactor * upwardFactor;
+  bool spreadPass = fertilityPass && livingNeighbors >= 1 && growthScore >= GROWTH_SCORE_MIN;
+
+  // Rule 4 — nutrients
+  float nutrientTarget = 0.0;
   if (touchingDirt) {
-    nutrients = NUTRIENT_ROOT;
-  } else if (touchingStone) {
-    nutrients = NUTRIENT_ROOT_STONE;  // stone provides very little nutrients
+    nutrientTarget = NUTRIENT_ROOT;
   } else {
-    if (hasFoliage(fR)) nutrients = max(nutrients, fR.g - NUTRIENT_DECAY);
-    if (hasFoliage(fL)) nutrients = max(nutrients, fL.g - NUTRIENT_DECAY);
-    if (hasFoliage(fU)) nutrients = max(nutrients, fU.g - NUTRIENT_DECAY);
-    if (hasFoliage(fD)) nutrients = max(nutrients, fD.g - NUTRIENT_DECAY);
-    nutrients = max(nutrients, 0.0);
+    float nutrientSum = 0.0;
+    float nutrientWeight = 0.0;
+    if (isLiving(sR)) { nutrientSum += sR.g * NUTRIENT_FROM_LIVING; nutrientWeight += NUTRIENT_FROM_LIVING; }
+    else if (isZombie(sR)) { nutrientSum += sR.g * NUTRIENT_FROM_ZOMBIE; nutrientWeight += NUTRIENT_FROM_ZOMBIE; }
+    if (isLiving(sL)) { nutrientSum += sL.g * NUTRIENT_FROM_LIVING; nutrientWeight += NUTRIENT_FROM_LIVING; }
+    else if (isZombie(sL)) { nutrientSum += sL.g * NUTRIENT_FROM_ZOMBIE; nutrientWeight += NUTRIENT_FROM_ZOMBIE; }
+    if (isLiving(sU)) { nutrientSum += sU.g * NUTRIENT_FROM_LIVING; nutrientWeight += NUTRIENT_FROM_LIVING; }
+    else if (isZombie(sU)) { nutrientSum += sU.g * NUTRIENT_FROM_ZOMBIE; nutrientWeight += NUTRIENT_FROM_ZOMBIE; }
+    if (isLiving(sD)) { nutrientSum += sD.g * NUTRIENT_FROM_LIVING; nutrientWeight += NUTRIENT_FROM_LIVING; }
+    else if (isZombie(sD)) { nutrientSum += sD.g * NUTRIENT_FROM_ZOMBIE; nutrientWeight += NUTRIENT_FROM_ZOMBIE; }
+    if (nutrientWeight > 0.0) nutrientTarget = nutrientSum / nutrientWeight;
+  }
+  float nutrients = mix(prev.g, nutrientTarget, NUTRIENT_DIFFUSE_RATE);
+
+  // Rule 7 — mode transitions
+  float nextMode = MODE_EMPTY;
+  if (zombiePrev) {
+    nextMode = MODE_ZOMBIE;
+  } else if (livingPrev) {
+    nextMode = isConnector ? MODE_ZOMBIE : MODE_LIVING;
+  } else {
+    bool becomeLiving = seedPass || spreadPass;
+    nextMode = becomeLiving ? MODE_LIVING : MODE_EMPTY;
   }
 
-  // ── Calculate LIGHT ────────────────────────────────────────────────────
-  float light = LIGHT_FULL;
-  for (int i = 1; i <= 5; i++) {
-    vec4 above = texture(u_foliage_prev, v_uv + vec2(0.0, -texelSize.y * float(i)));
-    if (hasFoliage(above)) {
-      light -= LIGHT_BLOCK;
-    }
-    if (hasMatter(texture(u_matter, v_uv + vec2(0.0, -texelSize.y * float(i))))) {
-      break;
-    }
+  // Rule 6 — structure
+  float structure = prev.b;
+  if (nextMode == MODE_LIVING) {
+    structure = min(1.0, structure + B_GROW_RATE);
+  } else if (nextMode == MODE_ZOMBIE) {
+    structure = max(structure, B_EMPTY_THRESH);
+  } else {
+    structure = 0.0;
   }
-  light = max(light, 0.0);
 
-  // ── Calculate ENERGY potential (independent of local alive state) ─────
-  float potentialBase = nutrients * light;
-  float potential = potentialBase * mix(POTENTIAL_NOISE_MIN, POTENTIAL_NOISE_MAX, noise);
+  // Rule 5 — energy
+  float energy = prev.r;
+  if (nextMode == MODE_LIVING) {
+    bool seededNow = emptyPrev && seedPass;
+    bool spreadBornNow = emptyPrev && spreadPass;
+    float potential = nutrients * (0.45 + 0.55 * lightScalar);
+    if (seededNow) {
+      potential = max(potential, 0.45);
+    }
+    if (spreadBornNow) {
+      potential = max(potential, 0.35);
+    }
+    energy = mix(prev.r, potential, (seededNow || spreadBornNow) ? 0.65 : ENERGY_BLEND);
+    energy -= (seededNow || spreadBornNow) ? 0.0 : METABOLIC_COST;
+    energy = clamp(energy, 0.0, 1.0);
+    if (energy < E_LIVE_MIN) {
+      nextMode = MODE_ZOMBIE;
+      energy = 0.0;
+      nutrients = 0.0;
+    }
+  } else if (nextMode == MODE_ZOMBIE) {
+    energy = mix(prev.r, 0.0, 0.5);
+  } else {
+    energy = 0.0;
+    nutrients = 0.0;
+  }
 
-  float prevAlive = step(0.05, fPrev.a);
-
-  // Rule 1: Seed from surface — air cell touching dirt or stone with low noise
-  float noiseGate = touchingDirt ? SEED_NOISE_MAX : SEED_NOISE_MAX_STONE;
-  float seedSupport = (touchingSurface && noise < noiseGate) ? 1.0 : 0.0;
-
-  // Rule 2: Spread from neighbors — need ≥1 foliage neighbor with enough energy and low noise
-  float maxNeighborEnergy = 0.0;
-  if (hasFoliage(fR)) maxNeighborEnergy = max(maxNeighborEnergy, fR.r);
-  if (hasFoliage(fL)) maxNeighborEnergy = max(maxNeighborEnergy, fL.r);
-  if (hasFoliage(fU)) maxNeighborEnergy = max(maxNeighborEnergy, fU.r);
-  if (hasFoliage(fD)) maxNeighborEnergy = max(maxNeighborEnergy, fD.r);
-
-  float spreadThreshold = SPREAD_NOISE_MAX
-                        * (0.5 + float(foliageNeighbors) * 0.25);
-  float spreadSupport = (foliageNeighbors >= 1
-                      && maxNeighborEnergy >= ENERGY_GROW_MIN
-                      && noise < spreadThreshold) ? 1.0 : 0.0;
-
-  float creationSupport = max(seedSupport, spreadSupport);
-  float createGate = step(POTENTIAL_CREATE_MIN, potential);
-  float killGate = step(POTENTIAL_CREATE_MIN * POTENTIAL_KILL_FACTOR, potential);
-
-  // Single pathway:
-  // - new cells need creationSupport + createGate
-  // - existing cells persist while killGate remains active
-  float support = max((1.0 - prevAlive) * creationSupport * createGate,
-                      prevAlive * killGate);
-
-  float targetEnergy = potential * mix(ENERGY_INITIAL, 1.0, prevAlive);
-  float energy = mix(fPrev.r, targetEnergy, ENERGY_BLEND) * support;
-  float alive = step(ENERGY_DEATH, energy);
-
-  out_color = vec4(energy, nutrients, light, alive);
+  out_color = vec4(energy, nutrients, structure, modeToAlpha(nextMode));
 }
