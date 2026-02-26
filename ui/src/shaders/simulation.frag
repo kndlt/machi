@@ -45,6 +45,7 @@ const float BRANCH_SIDE_ANGLE_MAX = PI / 4.0;  // 45 deg
 const float MAIN_TURN_RATE = 0.08;
 const float MAIN_TURN_RATE_BLOCKED = 0.55;
 const float MAIN_TURN_MAX = PI / 18.0; // 10 deg
+const float FORWARD_CONE_COS = 0.5; // cos(60 deg)
 
 bool isWater(vec4 m) {
   return m.a > 0.5 && distance(m.rgb, WATER_COLOR) < COLOR_THRESHOLD;
@@ -135,6 +136,30 @@ void lineStepper(vec2 dir, out vec2 primaryStep, out vec2 secondaryStep, out flo
     secondaryStep = vec2(sx, sy);
     slopeMix = (ay > 0.0) ? (ax / ay) : 0.0;
   }
+}
+
+bool blockedInForwardCone(vec2 candidateUV, vec2 sourceUV, vec2 growthDir, vec2 texelSize) {
+  vec2 dir = normalize(growthDir);
+  float sourceEps = min(texelSize.x, texelSize.y) * 0.5;
+
+  vec2 probes[16] = vec2[16](
+    vec2(0.0, -1.0), vec2(1.0, -1.0), vec2(1.0, 0.0), vec2(1.0, 1.0),
+    vec2(0.0, 1.0), vec2(-1.0, 1.0), vec2(-1.0, 0.0), vec2(-1.0, -1.0),
+    vec2(0.0, -2.0), vec2(2.0, -2.0), vec2(2.0, 0.0), vec2(2.0, 2.0),
+    vec2(0.0, 2.0), vec2(-2.0, 2.0), vec2(-2.0, 0.0), vec2(-2.0, -2.0)
+  );
+
+  for (int k = 0; k < 16; k++) {
+    vec2 lattice = probes[k];
+    vec2 rel = normalize(lattice);
+    if (dot(rel, dir) < FORWARD_CONE_COS) continue;
+
+    vec2 probeUV = candidateUV + vec2(lattice.x * texelSize.x, lattice.y * texelSize.y);
+    if (distance(probeUV, sourceUV) <= sourceEps) continue;
+    if (isBranch(texture(u_foliage_prev, probeUV))) return true;
+  }
+
+  return false;
 }
 
 void main() {
@@ -276,11 +301,14 @@ void main() {
     float claimErr = 0.0;
 
     if (sameStep(toCurrent, expectedStep)) {
+      if (blockedInForwardCone(v_uv, sourceUV, steeredDir, texelSize)) continue;
       claimed = true;
       claimId = sourceBranch.r;
       claimDir = encodeDir(steeredDir);
       claimErr = childErr;
     } else if (emitSide && sameStep(toCurrent, sideStep)) {
+      vec2 sideDir = dirFromEncoded(sideEncodedDir);
+      if (blockedInForwardCone(v_uv, sourceUV, sideDir, texelSize)) continue;
       claimed = true;
       claimId = sourceBranch.r;
       claimDir = sideEncodedDir;
