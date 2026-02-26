@@ -53,6 +53,47 @@ export function createWebGLRenderer(canvas: HTMLCanvasElement): WebGLRenderer {
     "pointer-events:none;z-index:9;text-shadow:0 0 1px #000";
   canvas.parentElement?.appendChild(visionEl);
 
+  const resourceLegendEl = document.createElement("div");
+  resourceLegendEl.style.cssText =
+    "position:absolute;left:10px;bottom:12px;display:none;flex-direction:column;gap:4px;" +
+    "color:rgba(210,255,220,0.9);font:11px monospace;pointer-events:none;z-index:10;" +
+    "text-shadow:0 0 1px #000";
+
+  const resourceLegendTitleEl = document.createElement("div");
+  resourceLegendTitleEl.textContent = "resource heat";
+  resourceLegendEl.appendChild(resourceLegendTitleEl);
+
+  const gradientWrapEl = document.createElement("div");
+  gradientWrapEl.style.cssText =
+    "position:relative;width:190px;height:12px;border:1px solid rgba(0,0,0,0.55);" +
+    "background:rgba(0,0,0,0.2)";
+
+  const gradientBarEl = document.createElement("div");
+  gradientBarEl.style.cssText =
+    "position:absolute;inset:0;" +
+    "background:linear-gradient(90deg," +
+    "rgb(13,26,115) 0%," +
+    "rgb(0,191,255) 35%," +
+    "rgb(255,242,26) 65%," +
+    "rgb(242,26,13) 100%)";
+  gradientWrapEl.appendChild(gradientBarEl);
+
+  const midMarkerEl = document.createElement("div");
+  midMarkerEl.style.cssText =
+    "position:absolute;left:50%;top:-2px;transform:translateX(-0.5px);" +
+    "width:1px;height:16px;background:rgba(255,255,255,0.95)";
+  gradientWrapEl.appendChild(midMarkerEl);
+  resourceLegendEl.appendChild(gradientWrapEl);
+
+  const resourceLegendScaleEl = document.createElement("div");
+  resourceLegendScaleEl.style.cssText =
+    "display:flex;justify-content:space-between;align-items:center;width:190px;" +
+    "color:rgba(210,255,220,0.82)";
+  resourceLegendScaleEl.innerHTML = "<span>-127</span><span>0</span><span>+127</span>";
+  resourceLegendEl.appendChild(resourceLegendScaleEl);
+
+  canvas.parentElement?.appendChild(resourceLegendEl);
+
   let frameCount = 0;
   let lastFpsTime = performance.now();
   let frameTimes: number[] = [];
@@ -118,6 +159,7 @@ export function createWebGLRenderer(canvas: HTMLCanvasElement): WebGLRenderer {
       gl.clear(gl.COLOR_BUFFER_BIT);
 
       mapRenderer.render(camera);
+      resourceLegendEl.style.display = mapRenderer.viewMode === 11 ? "flex" : "none";
 
       const t1 = performance.now();
       updateFps(t1 - t0, mapRenderer.viewMode, mapRenderer.foliageEnabled);
@@ -136,6 +178,7 @@ export function createWebGLRenderer(canvas: HTMLCanvasElement): WebGLRenderer {
   function dispose(): void {
     fpsEl.remove();
     visionEl.remove();
+    resourceLegendEl.remove();
     const ext = gl.getExtension("WEBGL_lose_context");
     ext?.loseContext();
   }

@@ -83,11 +83,11 @@ const float ROOT_INHIBITION_DECAY = 32.0;
 const float RESOURCE_ZERO_BYTE = 127.0;
 const float RESOURCE_MIN_BYTE = 0.0;
 const float RESOURCE_MAX_BYTE = 255.0;
-const float NEW_BRANCH_SINK_BYTE = 96.0;
+const float NEW_GROWTH_SINK_BYTE = 0.0;
 const float ROOT_GATHER_RATE = 4.0;
-const float RESOURCE_DIFFUSION = 0.42;
-const float RESOURCE_RELAX_BRANCH = 0.20;
-const float RESOURCE_RELAX_ROOT = 0.35;
+const float RESOURCE_DIFFUSION = 0.8;
+const float RESOURCE_RELAX_BRANCH = 0.0;
+const float RESOURCE_RELAX_ROOT = 0.0;
 
 float unpackByte(float packed);
 
@@ -466,7 +466,7 @@ void main() {
           chosenErr = seedChildErr;
           chosenInhib = (u_branch_inhibition_enabled == 1) ? INHIBITION_MAX : 0.0;
           chosenType = CELL_TYPE_ROOT;
-          chosenResource = NEW_BRANCH_SINK_BYTE - RESOURCE_ZERO_BYTE;
+          chosenResource = NEW_GROWTH_SINK_BYTE - RESOURCE_ZERO_BYTE;
         }
       }
       continue;
@@ -556,7 +556,7 @@ void main() {
     float claimErr = 0.0;
     float claimInhib = sourceInhib;
     float claimType = sourceType;
-    float claimResource = NEW_BRANCH_SINK_BYTE - RESOURCE_ZERO_BYTE;
+    float claimResource = NEW_GROWTH_SINK_BYTE - RESOURCE_ZERO_BYTE;
 
     if (sameStep(toCurrent, expectedStep)) {
       if (blockedInForwardCone(v_uv, sourceUV, steeredDir, texelSize)) continue;
@@ -566,7 +566,7 @@ void main() {
       claimErr = childErr;
       claimInhib = sourceInhib;
       claimType = sourceType;
-      claimResource = NEW_BRANCH_SINK_BYTE - RESOURCE_ZERO_BYTE;
+      claimResource = NEW_GROWTH_SINK_BYTE - RESOURCE_ZERO_BYTE;
     } else if (emitSide && sameStep(toCurrent, sideStep)) {
       vec2 sideDir = dirFromEncoded(sideEncodedDir);
       if (blockedInForwardCone(v_uv, sourceUV, sideDir, texelSize)) continue;
@@ -576,7 +576,7 @@ void main() {
       claimErr = sideChildErr;
       claimInhib = (u_branch_inhibition_enabled == 1) ? INHIBITION_MAX : 0.0;
       claimType = sourceType;
-      claimResource = NEW_BRANCH_SINK_BYTE - RESOURCE_ZERO_BYTE;
+      claimResource = NEW_GROWTH_SINK_BYTE - RESOURCE_ZERO_BYTE;
     }
 
     if (claimed) {
