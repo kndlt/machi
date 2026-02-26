@@ -36,14 +36,30 @@ const vec3 HUE_BRANCH_A  = vec3(1.0, 1.0, 1.0);     // alpha (A)
 const vec3 HUE_INHIBITION = vec3(1.0, 0.2, 0.65);   // inhibition (B)
 const vec3 HUE_NOISE     = vec3(0.71, 0.47, 1.0);   // purple
 const vec3 ROOT_SUBTLE_TINT = vec3(0.32, 0.40, 0.52);
-const vec3 HUE_RESOURCE_NEG = vec3(0.25, 0.55, 1.0);
-const vec3 HUE_RESOURCE_POS = vec3(1.0, 0.55, 0.2);
+const vec3 HEAT_COLD = vec3(0.05, 0.10, 0.45);
+const vec3 HEAT_MID_LOW = vec3(0.00, 0.75, 1.00);
+const vec3 HEAT_MID_HIGH = vec3(1.00, 0.95, 0.10);
+const vec3 HEAT_HOT = vec3(0.95, 0.10, 0.05);
 
 vec3 hueWheel(float t) {
   float r = abs(t * 6.0 - 3.0) - 1.0;
   float g = 2.0 - abs(t * 6.0 - 2.0);
   float b = 2.0 - abs(t * 6.0 - 4.0);
   return clamp(vec3(r, g, b), 0.0, 1.0);
+}
+
+vec3 heatMap(float t) {
+  float x = clamp(t, 0.0, 1.0);
+  if (x < 0.35) {
+    float k = x / 0.35;
+    return mix(HEAT_COLD, HEAT_MID_LOW, k);
+  }
+  if (x < 0.65) {
+    float k = (x - 0.35) / 0.30;
+    return mix(HEAT_MID_LOW, HEAT_MID_HIGH, k);
+  }
+  float k = (x - 0.65) / 0.35;
+  return mix(HEAT_MID_HIGH, HEAT_HOT, k);
 }
 
 float unpackDirFromPacked(float packedDirErr) {
@@ -245,12 +261,10 @@ void main() {
       float resourceByte = floor(clamp(texture(u_branch_tex2, uv).g, 0.0, 1.0) * 255.0 + 0.5);
       float signedResource = resourceByte - 127.0;
       float mag = min(abs(signedResource) / 127.0, 1.0);
-      vec3 hue = (signedResource < 0.0) ? HUE_RESOURCE_NEG : HUE_RESOURCE_POS;
-      if (abs(signedResource) < 0.5) {
-        out_color = vec4(mix(base, vec3(0.5), 0.35), 1.0);
-      } else {
-        out_color = vec4(mix(base, hue * mag, min(0.85, 0.20 + 0.65 * mag)), 1.0);
-      }
+      float t = clamp((signedResource + 127.0) / 254.0, 0.0, 1.0);
+      vec3 heat = heatMap(t);
+      float blend = min(0.90, 0.20 + 0.70 * sqrt(mag));
+      out_color = vec4(mix(base, heat, blend), 1.0);
       return;
     }
 
