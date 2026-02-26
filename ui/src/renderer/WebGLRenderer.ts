@@ -69,6 +69,7 @@ export function createWebGLRenderer(canvas: HTMLCanvasElement): WebGLRenderer {
     "noise",
     "dir-light",
     "branch-inhib",
+    "resource",
   ];
 
   function updateFps(frameMs: number, viewMode: number, foliageEnabled: boolean) {
