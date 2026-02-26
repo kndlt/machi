@@ -50,6 +50,7 @@ const float MAIN_TURN_RATE_BLOCKED = 0.55;
 const float MAIN_TURN_MAX = PI / 18.0; // 10 deg
 const float FORWARD_CONE_COS = 0.5; // cos(60 deg)
 const float INHIBITION_MAX = 255.0;
+const float INHIBITION_DECAY = 8.0;
 
 bool isWater(vec4 m) {
   return m.a > 0.5 && distance(m.rgb, WATER_COLOR) < COLOR_THRESHOLD;
@@ -245,8 +246,8 @@ void main() {
       inhibNeighborMax = max(inhibNeighborMax, n);
     }
     float inhibBase = max(
-      max(0.0, inhibCenter - 1.0),
-      max(0.0, inhibNeighborMax - 1.0)
+      max(0.0, inhibCenter - INHIBITION_DECAY),
+      max(0.0, inhibNeighborMax - INHIBITION_DECAY)
     );
     out_color = vec4(branchPrev.r, branchPrev.g, packInhibition(inhibBase), branchPrev.a);
     return;
