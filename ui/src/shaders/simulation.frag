@@ -28,6 +28,7 @@ uniform sampler2D u_light;   // currently unused in v0.3 model
 uniform sampler2D u_noise;
 uniform int u_branching_enabled;
 uniform int u_branch_inhibition_enabled;
+uniform int u_tick;
 
 out vec4 out_color;
 
@@ -275,6 +276,11 @@ void main() {
   }
 
   if (touchingWater) {
+    out_color = emptyCell(0.0);
+    return;
+  }
+
+  if ((u_tick % 2) == 0) {
     out_color = emptyCell(0.0);
     return;
   }

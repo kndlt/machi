@@ -155,7 +155,7 @@ export function createSimulationRenderer(
       // (fract(x + integer) ≡ fract(x), so integer stepCount produces a constant hash)
       noise.step(stepCount * 0.7123);
       light.step(placement.map.layers.matter!);
-      sim.step(placement.map.layers.matter!, noise.currentTexture(), light.currentTexture());
+      sim.step(placement.map.layers.matter!, noise.currentTexture(), light.currentTexture(), stepCount);
       placement.map.layers.foliage = sim.currentTexture();
       placement.map.layers.noise = noise.currentTexture();
       placement.map.layers.light = light.currentTexture();

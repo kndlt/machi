@@ -11,7 +11,7 @@ import { createTexture, createFBO, createProgram } from "../utils/gl-utils";
 
 export interface FoliageSim {
   /** Run one simulation step. Swaps ping-pong buffers internally. */
-  step(matterTex: WebGLTexture, noiseTex: WebGLTexture, lightTex: WebGLTexture): void;
+  step(matterTex: WebGLTexture, noiseTex: WebGLTexture, lightTex: WebGLTexture, tick: number): void;
 
   /** Toggle side-branch generation. */
   branchingEnabled: boolean;
@@ -44,6 +44,7 @@ export function createFoliageSim(
   const u_light = gl.getUniformLocation(program, "u_light");
   const u_branching_enabled = gl.getUniformLocation(program, "u_branching_enabled");
   const u_branch_inhibition_enabled = gl.getUniformLocation(program, "u_branch_inhibition_enabled");
+  const u_tick = gl.getUniformLocation(program, "u_tick");
 
   const emptyVAO = gl.createVertexArray()!;
 
@@ -71,7 +72,7 @@ export function createFoliageSim(
     readIdx = 0;
   }
 
-  function step(matterTex: WebGLTexture, noiseTex: WebGLTexture, lightTex: WebGLTexture): void {
+  function step(matterTex: WebGLTexture, noiseTex: WebGLTexture, lightTex: WebGLTexture, tick: number): void {
     const readTex = textures[readIdx];
     const writeIdx = 1 - readIdx;
     const writeFbo = fbos[writeIdx];
@@ -86,6 +87,7 @@ export function createFoliageSim(
     gl.uniform1i(u_foliage_prev, 1);
     gl.uniform1i(u_noise, 2);
     gl.uniform1i(u_light, 3);
+    gl.uniform1i(u_tick, tick);
     gl.uniform1i(u_branching_enabled, branchingEnabled ? 1 : 0);
     gl.uniform1i(u_branch_inhibition_enabled, branchInhibitionEnabled ? 1 : 0);
 
