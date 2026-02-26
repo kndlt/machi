@@ -39,7 +39,7 @@ const float PI = 3.141592653589793;
 const float TAU = 6.283185307179586;
 
 const float BRANCH_ALPHA_MIN = 0.5;
-const float BRANCH_SIDE_RATE = 0.1;
+const float BRANCH_SIDE_RATE = 0.18;
 const float BRANCH_SIDE_ANGLE_MIN = PI / 9.0;  // 20 deg
 const float BRANCH_SIDE_ANGLE_MAX = PI / 4.0;  // 45 deg
 const float MAIN_TURN_RATE = 0.08;
