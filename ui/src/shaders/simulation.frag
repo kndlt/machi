@@ -11,8 +11,8 @@ precision highp float;
 // OUT (branch map RGBA):
 //   R = tree ID (0.0 = empty; non-zero identifies a tree)
 //   G = packed direction+error (5 bits dir, 3 bits error)
-//   B = unused
-//   A = unused
+//   B = branch-event inhibition (4-bit value encoded in 0..1)
+//   A = occupancy alpha
 //
 // Growth logic (no auto-seeding mode):
 // - Existing branches persist.
@@ -46,6 +46,7 @@ const float MAIN_TURN_RATE = 0.08;
 const float MAIN_TURN_RATE_BLOCKED = 0.55;
 const float MAIN_TURN_MAX = PI / 18.0; // 10 deg
 const float FORWARD_CONE_COS = 0.5; // cos(60 deg)
+const float INHIBITION_MAX = 15.0;
 
 bool isWater(vec4 m) {
   return m.a > 0.5 && distance(m.rgb, WATER_COLOR) < COLOR_THRESHOLD;
@@ -93,6 +94,15 @@ float unpackErr(float packedDirErr) {
   return errQ / 7.0;
 }
 
+float packInhibition(float inhibition) {
+  float q = floor(clamp(inhibition, 0.0, INHIBITION_MAX) + 0.5);
+  return q / INHIBITION_MAX;
+}
+
+float unpackInhibition(float encoded) {
+  return floor(clamp(encoded, 0.0, 1.0) * INHIBITION_MAX + 0.5);
+}
+
 vec2 rotateVec(vec2 v, float angle) {
   float c = cos(angle);
   float s = sin(angle);
@@ -105,14 +115,14 @@ float hash12(vec2 p) {
   return fract((p3.x + p3.y) * p3.z);
 }
 
-vec4 makeBranch(float treeId, float encodedDir, float errorAcc) {
+vec4 makeBranch(float treeId, float encodedDir, float errorAcc, float inhibition) {
   float id = clamp(treeId, 1.0 / 255.0, 1.0);
   float packedDirErr = packDirErr(encodedDir, errorAcc);
-  return vec4(id, packedDirErr, 0.0, 1.0);
+  return vec4(id, packedDirErr, packInhibition(inhibition), 1.0);
 }
 
-vec4 emptyCell() {
-  return vec4(0.0);
+vec4 emptyCell(float inhibition) {
+  return vec4(0.0, 0.0, packInhibition(inhibition), 0.0);
 }
 
 bool sameStep(vec2 a, vec2 b) {
@@ -199,18 +209,6 @@ void main() {
   vec4 branchPrev = texture(u_foliage_prev, v_uv);
   vec2 texelSize = 1.0 / vec2(textureSize(u_matter, 0));
 
-  // Branches only exist in air.
-  if (!isAir(mHere)) {
-    out_color = emptyCell();
-    return;
-  }
-
-  // Existing branch persists (no decay in this phase).
-  if (isBranch(branchPrev)) {
-    out_color = branchPrev;
-    return;
-  }
-
   vec2 offsets[8] = vec2[8](
     vec2(0.0, -texelSize.y),
     vec2(texelSize.x, -texelSize.y),
@@ -221,6 +219,30 @@ void main() {
     vec2(-texelSize.x, 0.0),
     vec2(-texelSize.x, -texelSize.y)
   );
+
+  // Branches only exist in air.
+  if (!isAir(mHere)) {
+    out_color = emptyCell(0.0);
+    return;
+  }
+
+  // Existing branch persists and carries inhibition diffusion/decay.
+  if (isBranch(branchPrev)) {
+    float inhibCenter = unpackInhibition(branchPrev.b);
+    float inhibNeighborMax = 0.0;
+    for (int i = 0; i < 8; i++) {
+      vec4 nb = texture(u_foliage_prev, v_uv + offsets[i]);
+      if (!isBranch(nb)) continue;
+      float n = unpackInhibition(nb.b);
+      inhibNeighborMax = max(inhibNeighborMax, n);
+    }
+    float inhibBase = max(
+      max(0.0, inhibCenter - 1.0),
+      max(0.0, inhibNeighborMax - 1.0)
+    );
+    out_color = vec4(branchPrev.r, branchPrev.g, packInhibition(inhibBase), branchPrev.a);
+    return;
+  }
   vec2 latticeOffsets[8] = vec2[8](
     vec2(0.0, -1.0),
     vec2(1.0, -1.0),
@@ -236,6 +258,7 @@ void main() {
   float chosenId = 0.0;
   float chosenDir = 0.0;
   float chosenErr = 0.0;
+  float chosenInhib = 0.0;
   bool touchingWater = false;
 
   for (int i = 0; i < 8; i++) {
@@ -245,7 +268,7 @@ void main() {
   }
 
   if (touchingWater) {
-    out_color = emptyCell();
+    out_color = emptyCell(0.0);
     return;
   }
 
@@ -257,9 +280,11 @@ void main() {
 
     float sourcePacked = sourceBranch.g;
     float sourceErr = unpackErr(sourcePacked);
+    float sourceInhib = unpackInhibition(sourceBranch.b);
     vec2 sourceDir = dirFromEncoded(unpackDir(sourcePacked));
     float fertility = texture(u_noise, sourceUV).r;
-    float branchGate = BRANCH_SIDE_RATE * max(fertility, 0.35);
+    float inhibitionFactor = 1.0 - (sourceInhib / INHIBITION_MAX);
+    float branchGate = BRANCH_SIDE_RATE * max(fertility, 0.35) * inhibitionFactor;
 
     int sourceNeighborCount = 0;
     for (int j = 0; j < 8; j++) {
@@ -333,6 +358,7 @@ void main() {
     float claimId = 0.0;
     float claimDir = 0.0;
     float claimErr = 0.0;
+    float claimInhib = sourceInhib;
 
     if (sameStep(toCurrent, expectedStep)) {
       if (blockedInForwardCone(v_uv, sourceUV, steeredDir, texelSize)) continue;
@@ -340,6 +366,7 @@ void main() {
       claimId = sourceBranch.r;
       claimDir = encodeDir(steeredDir);
       claimErr = childErr;
+      claimInhib = sourceInhib;
     } else if (emitSide && sameStep(toCurrent, sideStep)) {
       vec2 sideDir = dirFromEncoded(sideEncodedDir);
       if (blockedInForwardCone(v_uv, sourceUV, sideDir, texelSize)) continue;
@@ -347,6 +374,7 @@ void main() {
       claimId = sourceBranch.r;
       claimDir = sideEncodedDir;
       claimErr = sideChildErr;
+      claimInhib = INHIBITION_MAX;
     }
 
     if (claimed) {
@@ -355,15 +383,16 @@ void main() {
         chosenId = claimId;
         chosenDir = claimDir;
         chosenErr = claimErr;
+        chosenInhib = claimInhib;
       }
     }
   }
 
   // Accept only unambiguous claims to avoid clumping.
   if (claimCount != 1) {
-    out_color = emptyCell();
+    out_color = emptyCell(0.0);
     return;
   }
 
-  out_color = makeBranch(chosenId, chosenDir, chosenErr);
+  out_color = makeBranch(chosenId, chosenDir, chosenErr, chosenInhib);
 }

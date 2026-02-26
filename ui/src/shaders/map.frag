@@ -14,7 +14,7 @@ uniform sampler2D u_light;
 uniform int u_view_mode;       // 0=visual, 1=matter, 2=segmentation, 3=foliage,
                                // 4=branch-R(tree-id), 5=branch-dir(decoded),
                                // 6=branch-err(decoded), 7=branch-A(alpha), 8=noise,
-                               // 9=directional-light(debug)
+                               // 9=directional-light(debug), 10=branch-inhibition(B)
 uniform int u_foliage_enabled; // 1 = show foliage layer, 0 = hide
 uniform int u_outline_enabled; // 1 = show foliage outline, 0 = hide
 
@@ -31,6 +31,7 @@ const vec3 FOLIAGE_WEAK  = vec3(0.50, 0.45, 0.15); // low energy: yellow-brown
 const vec3 HUE_BRANCH_R  = vec3(1.0, 0.31, 0.08);   // tree ID (R)
 const vec3 HUE_BRANCH_B  = vec3(0.24, 0.55, 1.0);   // error accumulator (decoded)
 const vec3 HUE_BRANCH_A  = vec3(1.0, 1.0, 1.0);     // alpha (A)
+const vec3 HUE_INHIBITION = vec3(1.0, 0.2, 0.65);   // inhibition (B)
 const vec3 HUE_NOISE     = vec3(0.71, 0.47, 1.0);   // purple
 
 vec3 hueWheel(float t) {
@@ -128,10 +129,10 @@ void main() {
     return;
   }
 
-  // ── Data visualization modes (4–9) ──────────────────────────────────────
+  // ── Data visualization modes (4–10) ─────────────────────────────────────
   // Show branch-map channels and diagnostics.
   // Background = composited world; branch pixels = channel value visualization.
-  if (u_view_mode >= 4 && u_view_mode <= 9) {
+  if (u_view_mode >= 4 && u_view_mode <= 10) {
     // Base world composite (dim background for contrast)
     vec3 sky = texture(u_sky, uv).rgb;
     vec3 base = sky;
@@ -166,6 +167,13 @@ void main() {
 
       float totalEnergy = (up + upRight + right + downRight + down + downLeft + left + upLeft) / 8.0;
       out_color = vec4(vec3(totalEnergy), 1.0);
+      return;
+    }
+
+    if (u_view_mode == 10) {
+      float val = texture(u_foliage, uv).b;
+      vec3 c = HUE_INHIBITION * val;
+      out_color = vec4(mix(base, c, 0.9), 1.0);
       return;
     }
 

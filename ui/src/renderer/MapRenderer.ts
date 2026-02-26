@@ -22,7 +22,7 @@ interface MapGPU {
 
 export interface MapRenderer {
   render(camera: Camera): void;
-  /** 0=visual, 1=matter, 2=segmentation, 3=foliage, 4=energy, 5=nutrients, 6=structure, 7=alive, 8=noise, 9=directional-light(debug) */
+  /** 0=visual, 1=matter, 2=segmentation, 3=foliage, 4=branch-id, 5=branch-dir, 6=branch-err, 7=branch-alpha, 8=noise, 9=directional-light(debug), 10=branch-inhibition */
   viewMode: number;
   /** Toggle foliage rendering (default true) */
   foliageEnabled: boolean;
@@ -175,7 +175,7 @@ export function createMapRenderer(
   return {
     render,
     get viewMode() { return viewMode; },
-    set viewMode(v: number) { viewMode = ((v % 10) + 10) % 10; },
+    set viewMode(v: number) { viewMode = ((v % 11) + 11) % 11; },
     get foliageEnabled() { return foliageEnabled; },
     set foliageEnabled(v: boolean) { foliageEnabled = v; },
     get outlineEnabled() { return outlineEnabled; },
