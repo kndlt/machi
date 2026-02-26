@@ -83,7 +83,7 @@ const float ROOT_INHIBITION_DECAY = 32.0;
 const float RESOURCE_ZERO_BYTE = 127.0;
 const float RESOURCE_MIN_BYTE = 0.0;
 const float RESOURCE_MAX_BYTE = 255.0;
-const float NEW_GROWTH_SINK_BYTE = 100.0;
+const float NEW_GROWTH_RESOURCE_COST = 1.0;
 const float RESOURCE_SIGNED_MIN = RESOURCE_MIN_BYTE - RESOURCE_ZERO_BYTE;
 const float RESOURCE_SIGNED_MAX = RESOURCE_MAX_BYTE - RESOURCE_ZERO_BYTE - 1.0;
 const float ROOT_GATHER_RATE = 1.0;
@@ -94,7 +94,7 @@ const float RESOURCE_DIFF_TRANSFER_FRACTION = 0.5;
 // const float RESOURCE_ZERO_BYTE = 127.0;
 // const float RESOURCE_MIN_BYTE = 0.0;
 // const float RESOURCE_MAX_BYTE = 255.0;
-// const float NEW_GROWTH_SINK_BYTE = 127.0;
+// const float NEW_GROWTH_RESOURCE_COST = 0.0;
 // const float ROOT_GATHER_RATE = 4.0;
 // const float RESOURCE_DIFFUSION = 0.8;
 // const float RESOURCE_RELAX_BRANCH = 0.0;
@@ -341,15 +341,90 @@ void main() {
 
     float resourceStepDelta = 0.0;
     float hereTreeIdByte = unpackByte(branchPrev.r);
+    vec2 latticeOffsets[8] = vec2[8](
+      vec2(0.0, -1.0),
+      vec2(1.0, -1.0),
+      vec2(1.0, 0.0),
+      vec2(1.0, 1.0),
+      vec2(0.0, 1.0),
+      vec2(-1.0, 1.0),
+      vec2(-1.0, 0.0),
+      vec2(-1.0, -1.0)
+    );
+
+    vec2 hereDir = dirFromEncoded(unpackDir(branchPrev.g));
+    float hereErr = unpackErr(branchPrev.g);
+    vec2 forwardPrimaryStep;
+    vec2 forwardSecondaryStep;
+    float forwardSlopeMix;
+    lineStepper(hereDir, forwardPrimaryStep, forwardSecondaryStep, forwardSlopeMix);
+    float forwardErrNext = hereErr + forwardSlopeMix;
+    bool forwardTakeSecondary = forwardErrNext >= 1.0;
+    vec2 forwardStep = forwardTakeSecondary ? forwardSecondaryStep : forwardPrimaryStep;
+
+    vec2 forwardUV = edgeSafeUV(v_uv + vec2(forwardStep.x * texelSize.x, forwardStep.y * texelSize.y), texelSize);
+    vec4 forwardNb = texture(u_foliage_prev, forwardUV);
+    if (isOccupied(forwardNb)) {
+      float forwardTreeIdByte = unpackByte(forwardNb.r);
+      if (forwardTreeIdByte == hereTreeIdByte) {
+        vec4 forwardMeta = texture(u_branch_tex2_prev, forwardUV);
+        float forwardResource = unpackResourceSigned(forwardMeta);
+        resourceStepDelta += computeResourceTransfer(forwardResource, hereResourcePrev);
+      }
+    }
+
+    bool hasParent = false;
     for (int i = 0; i < 8; i++) {
       vec2 nbUV = edgeSafeUV(v_uv + offsets[i], texelSize);
       vec4 nb = texture(u_foliage_prev, nbUV);
       if (!isOccupied(nb)) continue;
       float nbTreeIdByte = unpackByte(nb.r);
       if (nbTreeIdByte != hereTreeIdByte) continue;
+
+      vec2 nbDir = dirFromEncoded(unpackDir(nb.g));
+      float nbErr = unpackErr(nb.g);
+      vec2 nbPrimaryStep;
+      vec2 nbSecondaryStep;
+      float nbSlopeMix;
+      lineStepper(nbDir, nbPrimaryStep, nbSecondaryStep, nbSlopeMix);
+      float nbErrNext = nbErr + nbSlopeMix;
+      bool nbTakeSecondary = nbErrNext >= 1.0;
+      vec2 nbExpectedStep = nbTakeSecondary ? nbSecondaryStep : nbPrimaryStep;
+      vec2 toCurrent = -latticeOffsets[i];
+      if (!sameStep(toCurrent, nbExpectedStep)) continue;
+
       vec4 nbMeta = texture(u_branch_tex2_prev, nbUV);
       float nbResource = unpackResourceSigned(nbMeta);
       resourceStepDelta += computeResourceTransfer(nbResource, hereResourcePrev);
+      hasParent = true;
+      break;
+    }
+
+    if (!hasParent) {
+      float bestBackwardScore = -2.0;
+      float bestBackwardResource = 0.0;
+      bool hasBackwardCandidate = false;
+      vec2 backwardDir = normalize(-hereDir);
+      for (int i = 0; i < 8; i++) {
+        vec2 step = latticeOffsets[i];
+        vec2 nbUV = edgeSafeUV(v_uv + vec2(step.x * texelSize.x, step.y * texelSize.y), texelSize);
+        vec4 nb = texture(u_foliage_prev, nbUV);
+        if (!isOccupied(nb)) continue;
+        float nbTreeIdByte = unpackByte(nb.r);
+        if (nbTreeIdByte != hereTreeIdByte) continue;
+
+        float score = dot(normalize(step), backwardDir);
+        if (score > bestBackwardScore) {
+          bestBackwardScore = score;
+          vec4 nbMeta = texture(u_branch_tex2_prev, nbUV);
+          bestBackwardResource = unpackResourceSigned(nbMeta);
+          hasBackwardCandidate = true;
+        }
+      }
+
+      if (hasBackwardCandidate) {
+        resourceStepDelta += computeResourceTransfer(bestBackwardResource, hereResourcePrev);
+      }
     }
     float hereResource = hereResourcePrev + resourceStepDelta;
 
@@ -503,7 +578,7 @@ void main() {
             chosenErr = seedChildErr;
             chosenInhib = (u_branch_inhibition_enabled == 1) ? INHIBITION_MAX : 0.0;
             chosenType = CELL_TYPE_ROOT;
-            chosenResource = NEW_GROWTH_SINK_BYTE - RESOURCE_ZERO_BYTE;
+            chosenResource = -NEW_GROWTH_RESOURCE_COST;
           }
         }
         continue;
@@ -593,7 +668,7 @@ void main() {
       float claimErr = 0.0;
       float claimInhib = sourceInhib;
       float claimType = sourceType;
-      float claimResource = NEW_GROWTH_SINK_BYTE - RESOURCE_ZERO_BYTE;
+      float claimResource = -NEW_GROWTH_RESOURCE_COST;
 
       if (sameStep(toCurrent, expectedStep)) {
         if (blockedInForwardCone(v_uv, sourceUV, steeredDir, texelSize)) continue;
@@ -603,7 +678,7 @@ void main() {
         claimErr = childErr;
         claimInhib = sourceInhib;
         claimType = sourceType;
-        claimResource = NEW_GROWTH_SINK_BYTE - RESOURCE_ZERO_BYTE;
+        claimResource = -NEW_GROWTH_RESOURCE_COST;
       } else if (emitSide && sameStep(toCurrent, sideStep)) {
         vec2 sideDir = dirFromEncoded(sideEncodedDir);
         if (blockedInForwardCone(v_uv, sourceUV, sideDir, texelSize)) continue;
@@ -613,7 +688,7 @@ void main() {
         claimErr = sideChildErr;
         claimInhib = (u_branch_inhibition_enabled == 1) ? INHIBITION_MAX : 0.0;
         claimType = sourceType;
-        claimResource = NEW_GROWTH_SINK_BYTE - RESOURCE_ZERO_BYTE;
+        claimResource = -NEW_GROWTH_RESOURCE_COST;
       }
 
       if (claimed) {
