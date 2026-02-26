@@ -42,21 +42,22 @@ const float COLOR_THRESHOLD = 0.12;
 
 const float PI = 3.141592653589793;
 const float TAU = 6.283185307179586;
+const float DEG_TO_RAD = PI / 180.0;
 
 const float BRANCH_ALPHA_MIN = 0.5;
 const float BRANCH_SIDE_RATE = 0.18;
-const float BRANCH_SIDE_ANGLE_MIN = PI / 9.0;  // 20 deg
-const float BRANCH_SIDE_ANGLE_MAX = PI / 4.0;  // 45 deg
+const float BRANCH_SIDE_ANGLE_MIN = 20.0 * DEG_TO_RAD;
+const float BRANCH_SIDE_ANGLE_MAX = 45.0 * DEG_TO_RAD;
 const float MAIN_TURN_RATE = 0.08;
 const float MAIN_TURN_RATE_BLOCKED = 0.55;
-const float MAIN_TURN_MAX = PI / 18.0; // 10 deg
+const float MAIN_TURN_MAX = 10.0 * DEG_TO_RAD;
 
 const float ROOT_SIDE_RATE = 0.36;
-const float ROOT_SIDE_ANGLE_MIN = PI / 15.0;  // 12 deg
-const float ROOT_SIDE_ANGLE_MAX = PI / 4.0;   // 45 deg
+const float ROOT_SIDE_ANGLE_MIN = 20.0 * DEG_TO_RAD;
+const float ROOT_SIDE_ANGLE_MAX = 60.0 * DEG_TO_RAD;
 const float ROOT_TURN_RATE = 0.04;
 const float ROOT_TURN_RATE_BLOCKED = 0.70;
-const float ROOT_TURN_MAX = PI * 7.0 / 180.0; // 7 deg
+const float ROOT_TURN_MAX = 7.0 * DEG_TO_RAD;
 
 const float CELL_TYPE_BRANCH = 0.0;
 const float CELL_TYPE_ROOT = 1.0;

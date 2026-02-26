@@ -9,6 +9,7 @@ uniform sampler2D u_foreground;
 uniform sampler2D u_support;
 uniform sampler2D u_matter;
 uniform sampler2D u_foliage;
+uniform sampler2D u_branch_tex2;
 uniform sampler2D u_noise;
 uniform sampler2D u_light;
 uniform int u_view_mode;       // 0=visual, 1=matter, 2=segmentation, 3=foliage,
@@ -33,6 +34,7 @@ const vec3 HUE_BRANCH_B  = vec3(0.24, 0.55, 1.0);   // error accumulator (decode
 const vec3 HUE_BRANCH_A  = vec3(1.0, 1.0, 1.0);     // alpha (A)
 const vec3 HUE_INHIBITION = vec3(1.0, 0.2, 0.65);   // inhibition (B)
 const vec3 HUE_NOISE     = vec3(0.71, 0.47, 1.0);   // purple
+const vec3 ROOT_SUBTLE_TINT = vec3(0.42, 0.36, 0.28);
 
 vec3 hueWheel(float t) {
   float r = abs(t * 6.0 - 3.0) - 1.0;
@@ -63,6 +65,13 @@ float unpackNibble(vec4 packed, int dir) {
 
   float nibble = mod(floor(b / (dir % 2 == 0 ? 1.0 : 16.0)), 16.0);
   return nibble / 15.0;
+}
+
+bool isRootCell(vec2 uv) {
+  vec4 meta = texture(u_branch_tex2, uv);
+  float packed = floor(clamp(meta.r, 0.0, 1.0) * 255.0 + 0.5);
+  float typeNibble = mod(packed, 16.0);
+  return typeNibble == 1.0;
 }
 
 // Convert foliage resource channels to visual color
@@ -120,7 +129,12 @@ void main() {
     // Foliage-only view (resource channels → visual color)
     vec4 fol = texture(u_foliage, uv);
     if (fol.a > 0.05) {
-      out_color = vec4(foliageColor(fol), 1.0);
+      vec3 fColor = foliageColor(fol);
+      if (isRootCell(uv)) {
+        out_color = vec4(mix(vec3(0.0), mix(fColor, ROOT_SUBTLE_TINT, 0.7), 0.35), 1.0);
+      } else {
+        out_color = vec4(fColor, 1.0);
+      }
     } else if (u_outline_enabled == 1 && isFoliageOutline(u_foliage, uv, folTexelSize)) {
       out_color = vec4(OUTLINE_COLOR, 1.0); // Outset outline
     } else {
@@ -142,7 +156,13 @@ void main() {
     vec4 fol = texture(u_foliage, uv);
     if (u_foliage_enabled == 1) {
       if (fol.a > 0.05) {
-        base = mix(base, foliageColor(fol), 1.0);
+        vec3 fColor = foliageColor(fol);
+        if (isRootCell(uv)) {
+          vec3 subtleRoot = mix(fColor, ROOT_SUBTLE_TINT, 0.7);
+          base = mix(base, subtleRoot, 0.28);
+        } else {
+          base = mix(base, fColor, 1.0);
+        }
       } else if (u_outline_enabled == 1 && isFoliageOutline(u_foliage, uv, folTexelSize)) {
         base = mix(base, OUTLINE_COLOR, 1.0);
       }
@@ -217,7 +237,12 @@ void main() {
     
     if (fol.a > 0.05) {
       vec3 fColor = foliageColor(fol);
-      c = mix(c, fColor, 1.0);
+      if (isRootCell(uv)) {
+        vec3 subtleRoot = mix(fColor, ROOT_SUBTLE_TINT, 0.7);
+        c = mix(c, subtleRoot, 0.28);
+      } else {
+        c = mix(c, fColor, 1.0);
+      }
     } else if (u_outline_enabled == 1 && isFoliageOutline(u_foliage, uv, folTexelSize)) {
       c = mix(c, OUTLINE_COLOR, 1.0);
     }

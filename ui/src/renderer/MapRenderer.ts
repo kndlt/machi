@@ -48,6 +48,7 @@ export function createMapRenderer(
   const u_support = gl.getUniformLocation(program, "u_support");
   const u_matter = gl.getUniformLocation(program, "u_matter");
   const u_foliage = gl.getUniformLocation(program, "u_foliage");
+  const u_branch_tex2 = gl.getUniformLocation(program, "u_branch_tex2");
   const u_noise = gl.getUniformLocation(program, "u_noise");
   const u_light = gl.getUniformLocation(program, "u_light");
   const u_view_mode = gl.getUniformLocation(program, "u_view_mode");
@@ -107,6 +108,7 @@ export function createMapRenderer(
     gl.uniform1i(u_foliage, 5);
     gl.uniform1i(u_noise, 6);
     gl.uniform1i(u_light, 7);
+    gl.uniform1i(u_branch_tex2, 8);
     gl.uniform1i(u_view_mode, viewMode);
     gl.uniform1i(u_foliage_enabled, foliageEnabled ? 1 : 0);
     gl.uniform1i(u_outline_enabled, outlineEnabled ? 1 : 0);
@@ -146,6 +148,9 @@ export function createMapRenderer(
 
       gl.activeTexture(gl.TEXTURE7);
       gl.bindTexture(gl.TEXTURE_2D, layers.light);
+
+      gl.activeTexture(gl.TEXTURE8);
+      gl.bindTexture(gl.TEXTURE_2D, layers.branch2 ?? layers.foliage);
 
       // Draw quad
       gl.bindVertexArray(vao);
