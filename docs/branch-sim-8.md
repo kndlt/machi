@@ -22,9 +22,15 @@ Roots are a separate layer so we can tune and debug independently.
 For symmetry with current branch logic, keep identical channel semantics:
 
 - `R`: root/tree ID (same tree lineage ID)
-- `G`: direction (encoded angle 0..1)
-- `B`: step error accumulator (Bresenham-like)
+- `G`: packed direction + step error (`5 bits direction`, `3 bits error`)
+- `B`: reserved (currently unused)
 - `A`: occupancy / vitality (initially occupancy-style, can later become nutrient)
+
+Packing contract for `G` (8-bit):
+- `dirQ ∈ [0..31]` (32 bins, ~11.25° per bin)
+- `errQ ∈ [0..7]` (8 levels)
+- `packed = (dirQ << 3) | errQ`
+- decode: `dir = dirQ / 31`, `err = errQ / 7`
 
 Reason: reusing branch conventions keeps shader code and debug tools simple.
 
@@ -96,8 +102,8 @@ Extend map debug modes with root channels similar to foliage modes.
 
 Suggested:
 - root occupancy
-- root direction hue
-- root error channel
+- root direction hue (decoded from packed `G`)
+- root error view (decoded from packed `G`)
 - root ID colorized
 
 Keep existing foliage debug untouched.
@@ -141,3 +147,12 @@ These are intentionally conservative to avoid explosive underground branching.
 
 ## 10) Notes
 This plan intentionally keeps root behavior **structurally similar** to branch behavior so code can be reused and tuned with minimal architectural risk.
+
+
+## Game Plan
+
+1. Pack together the direction and error into one channel.
+2. Use `5 bits` for direction and `3 bits` for error.
+3. Accept quantization tradeoff for simpler storage and fewer channels.
+
+Just do that 

@@ -10,8 +10,8 @@ precision highp float;
 //
 // OUT (branch map RGBA):
 //   R = tree ID (0.0 = empty; non-zero identifies a tree)
-//   G = direction (0..1 full angle; 256 encoded headings)
-//   B = Bresenham-style error accumulator (0..1)
+//   G = packed direction+error (5 bits dir, 3 bits error)
+//   B = reserved
 //   A = occupancy alpha
 //
 // Growth logic (no auto-seeding mode):
@@ -70,6 +70,29 @@ float encodeDir(vec2 direction) {
   return angle / TAU;
 }
 
+float unpackByte(float packed) {
+  return floor(clamp(packed, 0.0, 1.0) * 255.0 + 0.5);
+}
+
+float packDirErr(float encodedDir, float errorAcc) {
+  float dirQ = floor(fract(encodedDir) * 31.0 + 0.5);
+  float errQ = floor(clamp(errorAcc, 0.0, 0.999999) * 7.0 + 0.5);
+  float packed = dirQ * 8.0 + errQ;
+  return packed / 255.0;
+}
+
+float unpackDir(float packedDirErr) {
+  float packed = unpackByte(packedDirErr);
+  float dirQ = floor(packed / 8.0);
+  return dirQ / 31.0;
+}
+
+float unpackErr(float packedDirErr) {
+  float packed = unpackByte(packedDirErr);
+  float errQ = mod(packed, 8.0);
+  return errQ / 7.0;
+}
+
 vec2 rotateVec(vec2 v, float angle) {
   float c = cos(angle);
   float s = sin(angle);
@@ -84,7 +107,8 @@ float hash12(vec2 p) {
 
 vec4 makeBranch(float treeId, float encodedDir, float errorAcc) {
   float id = clamp(treeId, 1.0 / 255.0, 1.0);
-  return vec4(id, fract(encodedDir), fract(errorAcc), 1.0);
+  float packedDirErr = packDirErr(encodedDir, errorAcc);
+  return vec4(id, packedDirErr, 0.0, 1.0);
 }
 
 vec4 emptyCell() {
@@ -231,7 +255,9 @@ void main() {
     vec4 sourceBranch = texture(u_foliage_prev, sourceUV);
     if (!isBranch(sourceBranch)) continue;
 
-    vec2 sourceDir = dirFromEncoded(sourceBranch.g);
+    float sourcePacked = sourceBranch.g;
+    float sourceErr = unpackErr(sourcePacked);
+    vec2 sourceDir = dirFromEncoded(unpackDir(sourcePacked));
     float fertility = texture(u_noise, sourceUV).r;
     float branchGate = BRANCH_SIDE_RATE * max(fertility, 0.35);
 
@@ -261,12 +287,12 @@ void main() {
     bool forwardOccupied = isBranch(texture(u_foliage_prev, mainStepUV));
 
     if (isTipSource) {
-      float turnHash = hash12(sourceUV * vec2(311.0, 173.0) + sourceBranch.b * 127.0);
-      float turnSignHash = hash12(sourceUV * vec2(887.0, 491.0) + sourceBranch.g * 389.0);
+      float turnHash = hash12(sourceUV * vec2(311.0, 173.0) + sourceErr * 127.0);
+      float turnSignHash = hash12(sourceUV * vec2(887.0, 491.0) + sourcePacked * 389.0);
       float turnChance = (forwardOccupied ? MAIN_TURN_RATE_BLOCKED : MAIN_TURN_RATE) * max(fertility, 0.25);
       if (turnHash < turnChance) {
         float turnSign = turnSignHash < 0.5 ? -1.0 : 1.0;
-        float turnMagnitude = MAIN_TURN_MAX * (0.35 + 0.65 * hash12(sourceUV * vec2(97.0, 631.0) + sourceBranch.b * 43.0));
+        float turnMagnitude = MAIN_TURN_MAX * (0.35 + 0.65 * hash12(sourceUV * vec2(97.0, 631.0) + sourceErr * 43.0));
         steeredDir = normalize(rotateVec(sourceDir, turnSign * turnMagnitude));
       }
     }
@@ -277,22 +303,22 @@ void main() {
     float slopeMix;
     lineStepper(steeredDir, primaryStep, secondaryStep, slopeMix);
 
-    float err = fract(sourceBranch.b);
+    float err = sourceErr;
     float errNext = err + slopeMix;
     bool takeSecondary = errNext >= 1.0;
     vec2 expectedStep = takeSecondary ? secondaryStep : primaryStep;
     float childErr = takeSecondary ? (errNext - 1.0) : errNext;
 
     // Side branch candidate from source.
-    float sideHash = hash12(sourceUV * vec2(2048.0, 4096.0) + sourceBranch.g * 257.0);
-    float sideSign = hash12(sourceUV * vec2(997.0, 733.0) + sourceBranch.b * 911.0) < 0.5 ? -1.0 : 1.0;
+    float sideHash = hash12(sourceUV * vec2(2048.0, 4096.0) + sourcePacked * 257.0);
+    float sideSign = hash12(sourceUV * vec2(997.0, 733.0) + sourceErr * 911.0) < 0.5 ? -1.0 : 1.0;
     bool emitSide = isTipSource && hasParent && (!forwardOccupied) && (sideHash < branchGate);
 
     vec2 sideStep = vec2(999.0);
     float sideEncodedDir = 0.0;
     float sideChildErr = 0.0;
     if (emitSide) {
-      float angleMix = hash12(sourceUV * vec2(1597.0, 1213.0) + sourceBranch.g * 53.0);
+      float angleMix = hash12(sourceUV * vec2(1597.0, 1213.0) + sourcePacked * 53.0);
       float sideAngle = mix(BRANCH_SIDE_ANGLE_MIN, BRANCH_SIDE_ANGLE_MAX, angleMix);
       vec2 sideDir = normalize(rotateVec(steeredDir, sideSign * sideAngle));
       sideStep = nearestStep8(sideDir);

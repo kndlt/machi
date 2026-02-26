@@ -12,8 +12,8 @@ uniform sampler2D u_foliage;
 uniform sampler2D u_noise;
 uniform sampler2D u_light;
 uniform int u_view_mode;       // 0=visual, 1=matter, 2=segmentation, 3=foliage,
-                               // 4=branch-R(tree-id), 5=branch-G(direction),
-                               // 6=branch-B(error), 7=branch-A(alpha), 8=noise,
+                               // 4=branch-R(tree-id), 5=branch-dir(decoded),
+                               // 6=branch-err(decoded), 7=branch-A(alpha), 8=noise,
                                // 9=directional-light(debug)
 uniform int u_foliage_enabled; // 1 = show foliage layer, 0 = hide
 uniform int u_outline_enabled; // 1 = show foliage outline, 0 = hide
@@ -29,7 +29,7 @@ const vec3 FOLIAGE_WEAK  = vec3(0.50, 0.45, 0.15); // low energy: yellow-brown
 
 // Heatmap colors for data visualization modes
 const vec3 HUE_BRANCH_R  = vec3(1.0, 0.31, 0.08);   // tree ID (R)
-const vec3 HUE_BRANCH_B  = vec3(0.24, 0.55, 1.0);   // error accumulator (B)
+const vec3 HUE_BRANCH_B  = vec3(0.24, 0.55, 1.0);   // error accumulator (decoded)
 const vec3 HUE_BRANCH_A  = vec3(1.0, 1.0, 1.0);     // alpha (A)
 const vec3 HUE_NOISE     = vec3(0.71, 0.47, 1.0);   // purple
 
@@ -38,6 +38,18 @@ vec3 hueWheel(float t) {
   float g = 2.0 - abs(t * 6.0 - 2.0);
   float b = 2.0 - abs(t * 6.0 - 4.0);
   return clamp(vec3(r, g, b), 0.0, 1.0);
+}
+
+float unpackDirFromPacked(float packedDirErr) {
+  float packed = floor(clamp(packedDirErr, 0.0, 1.0) * 255.0 + 0.5);
+  float dirQ = floor(packed / 8.0);
+  return dirQ / 31.0;
+}
+
+float unpackErrFromPacked(float packedDirErr) {
+  float packed = floor(clamp(packedDirErr, 0.0, 1.0) * 255.0 + 0.5);
+  float errQ = mod(packed, 8.0);
+  return errQ / 7.0;
 }
 
 float unpackNibble(vec4 packed, int dir) {
@@ -159,8 +171,8 @@ void main() {
 
     if (fol.a > 0.05) {
       if (u_view_mode == 5) {
-        // Branch direction (G) as cyclic hue wheel.
-        out_color = vec4(hueWheel(fract(fol.g)), 1.0);
+        // Branch direction decoded from packed channel (G) as cyclic hue wheel.
+        out_color = vec4(hueWheel(fract(unpackDirFromPacked(fol.g))), 1.0);
       } else {
         float val;
         vec3 hue;
@@ -168,7 +180,7 @@ void main() {
           out_color = vec4(hueWheel(fract(fol.r * 255.0 * 0.61803398875)), 1.0);
           return;
         }
-        else if (u_view_mode == 6) { val = fol.b; hue = HUE_BRANCH_B; }
+        else if (u_view_mode == 6) { val = unpackErrFromPacked(fol.g); hue = HUE_BRANCH_B; }
         else                       { val = fol.a; hue = HUE_BRANCH_A; } // mode 7
         out_color = vec4(hue * val, 1.0);
       }

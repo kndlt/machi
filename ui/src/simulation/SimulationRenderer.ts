@@ -90,10 +90,10 @@ export function createSimulationRenderer(
       const idx = (cy * width + cx) * 4;
 
       // Single manual branch seed at center:
-      // R=1 (occupied), G=0 (upward direction), B=1 (occupied mirror), A=1 (occupied)
+      // R=1 (occupied), G=0 (packed dir=up, err=0), B=0 (reserved), A=1 (occupied)
       initialState[idx + 0] = 255;
       initialState[idx + 1] = 0;
-      initialState[idx + 2] = 255;
+      initialState[idx + 2] = 0;
       initialState[idx + 3] = 255;
 
       sim.setInitialState(initialState);
