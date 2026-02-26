@@ -49,7 +49,7 @@ const float MAIN_TURN_RATE = 0.08;
 const float MAIN_TURN_RATE_BLOCKED = 0.55;
 const float MAIN_TURN_MAX = PI / 18.0; // 10 deg
 const float FORWARD_CONE_COS = 0.5; // cos(60 deg)
-const float INHIBITION_MAX = 15.0;
+const float INHIBITION_MAX = 255.0;
 
 bool isWater(vec4 m) {
   return m.a > 0.5 && distance(m.rgb, WATER_COLOR) < COLOR_THRESHOLD;
@@ -299,6 +299,7 @@ void main() {
     vec2 sourceDir = dirFromEncoded(unpackDir(sourcePacked));
     float fertility = texture(u_noise, sourceUV).r;
     float inhibitionFactor = 1.0 - (sourceInhib / INHIBITION_MAX);
+    inhibitionFactor *= inhibitionFactor;
     float branchGate = BRANCH_SIDE_RATE * max(fertility, 0.35) * inhibitionFactor;
 
     int sourceNeighborCount = 0;
