@@ -29,6 +29,8 @@ export interface MapLayers {
   matter: WebGLTexture | null;
   /** Simulation-produced foliage layer (GPU texture, written by SimulationRenderer) */
   foliage: WebGLTexture | null;
+  /** Secondary branch metadata texture (branchTex2), optionally seeded by branch2.png. */
+  branch2: WebGLTexture | null;
   /** Simulation-produced noise gradient (GPU texture, written by SimulationRenderer) */
   noise: WebGLTexture | null;
   /** Simulation-produced directional light transport field (packed RGBA8) */

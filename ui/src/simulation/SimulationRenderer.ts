@@ -94,6 +94,7 @@ export function createSimulationRenderer(
     const light = createLightTransportSim(gl, width, height);
 
     const initialBranchTex = placement.map.layers.foliage;
+    const initialBranchTex2 = placement.map.layers.branch2;
 
     if (placement.path === "synthetic") {
       const initialState = new Uint8Array(width * height * 4);
@@ -108,15 +109,21 @@ export function createSimulationRenderer(
       initialState[idx + 2] = 0;
       initialState[idx + 3] = 255;
 
-      sim.setInitialState(initialState);
+      const initialState2 = new Uint8Array(width * height * 4);
+      sim.setInitialState(initialState, initialState2);
     } else if (initialBranchTex) {
       const initialState = readTexturePixels(initialBranchTex, width, height);
-      sim.setInitialState(initialState);
+      const initialState2 = initialBranchTex2
+        ? readTexturePixels(initialBranchTex2, width, height)
+        : undefined;
+      sim.setInitialState(initialState, initialState2);
       gl.deleteTexture(initialBranchTex);
+      if (initialBranchTex2) gl.deleteTexture(initialBranchTex2);
     }
 
     // Expose initial (empty) foliage texture to the render pass
     placement.map.layers.foliage = sim.currentTexture();
+    placement.map.layers.branch2 = sim.currentTexture2();
     placement.map.layers.noise = noise.currentTexture();
     placement.map.layers.light = light.currentTexture();
 
@@ -157,6 +164,7 @@ export function createSimulationRenderer(
       light.step(placement.map.layers.matter!);
       sim.step(placement.map.layers.matter!, noise.currentTexture(), light.currentTexture(), stepCount);
       placement.map.layers.foliage = sim.currentTexture();
+      placement.map.layers.branch2 = sim.currentTexture2();
       placement.map.layers.noise = noise.currentTexture();
       placement.map.layers.light = light.currentTexture();
     }
@@ -174,6 +182,7 @@ export function createSimulationRenderer(
       noise.dispose();
       light.dispose();
       placement.map.layers.foliage = null;
+      placement.map.layers.branch2 = null;
       placement.map.layers.noise = null;
       placement.map.layers.light = null;
     }

@@ -82,6 +82,7 @@ export function createSyntheticWorld(
     support: dummy,
     matter: createMatterTexture(gl, config),
     foliage: null,   // populated by SimulationRenderer
+    branch2: null,   // populated/managed by SimulationRenderer
     noise: null,      // populated by SimulationRenderer
     light: null,      // populated by SimulationRenderer
   };
