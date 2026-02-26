@@ -84,9 +84,12 @@ const float RESOURCE_ZERO_BYTE = 127.0;
 const float RESOURCE_MIN_BYTE = 0.0;
 const float RESOURCE_MAX_BYTE = 255.0;
 const float NEW_GROWTH_SINK_BYTE = 100.0;
-const float ROOT_GATHER_RATE = 0.0;
+const float RESOURCE_SIGNED_MIN = RESOURCE_MIN_BYTE - RESOURCE_ZERO_BYTE;
+const float RESOURCE_SIGNED_MAX = RESOURCE_MAX_BYTE - RESOURCE_ZERO_BYTE - 1.0;
+const float ROOT_GATHER_RATE = 1.0;
 const float RESOURCE_RELAX_BRANCH = 0.0;
 const float RESOURCE_RELAX_ROOT = 0.0;
+const float RESOURCE_DIFF_TRANSFER_FRACTION = 0.5;
 // Version: Energy conversation version
 // const float RESOURCE_ZERO_BYTE = 127.0;
 // const float RESOURCE_MIN_BYTE = 0.0;
@@ -123,12 +126,29 @@ vec4 withCellType(vec4 branchTex2Prev, float cellType) {
 }
 
 float unpackResourceSigned(vec4 branchTex2) {
-  return unpackByte(branchTex2.g) - RESOURCE_ZERO_BYTE;
+  float signedResource = unpackByte(branchTex2.g) - RESOURCE_ZERO_BYTE;
+  return clamp(signedResource, RESOURCE_SIGNED_MIN, RESOURCE_SIGNED_MAX);
+}
+
+float computeResourceTransfer(float sourceResource, float sinkResource) {
+  float diff = sourceResource - sinkResource;
+  if (diff == 0.0) return 0.0;
+
+  float signDiff = (diff < 0.0) ? -1.0 : 1.0;
+  float magnitude = abs(diff);
+  float transferredMagnitude = floor(magnitude * RESOURCE_DIFF_TRANSFER_FRACTION);
+  return signDiff * transferredMagnitude;
 }
 
 float packResourceSigned(float signedResource) {
-  float byteVal = clamp(signedResource + RESOURCE_ZERO_BYTE, RESOURCE_MIN_BYTE, RESOURCE_MAX_BYTE);
+  float clampedSigned = clamp(signedResource, RESOURCE_SIGNED_MIN, RESOURCE_SIGNED_MAX);
+  float byteVal = clamp(clampedSigned + RESOURCE_ZERO_BYTE, RESOURCE_MIN_BYTE, RESOURCE_MAX_BYTE);
   return byteVal / 255.0;
+}
+
+vec2 edgeSafeUV(vec2 uv, vec2 texelSize) {
+  vec2 halfTexel = texelSize * 0.5;
+  return clamp(uv, halfTexel, vec2(1.0) - halfTexel);
 }
 
 vec4 withCellTypeAndResource(vec4 branchTex2Prev, float cellType, float signedResource) {
@@ -289,7 +309,7 @@ bool blockedInForwardCone(vec2 candidateUV, vec2 sourceUV, vec2 growthDir, vec2 
     vec2 rel = normalize(lattice);
     if (dot(rel, dir) < FORWARD_CONE_COS) continue;
 
-    vec2 probeUV = candidateUV + vec2(lattice.x * texelSize.x, lattice.y * texelSize.y);
+    vec2 probeUV = edgeSafeUV(candidateUV + vec2(lattice.x * texelSize.x, lattice.y * texelSize.y), texelSize);
     if (distance(probeUV, sourceUV) <= sourceEps) continue;
     if (isOccupied(texture(u_foliage_prev, probeUV))) return true;
   }
@@ -322,18 +342,14 @@ void main() {
     float resourceStepDelta = 0.0;
     float hereTreeIdByte = unpackByte(branchPrev.r);
     for (int i = 0; i < 8; i++) {
-      vec2 nbUV = v_uv + offsets[i];
+      vec2 nbUV = edgeSafeUV(v_uv + offsets[i], texelSize);
       vec4 nb = texture(u_foliage_prev, nbUV);
       if (!isOccupied(nb)) continue;
       float nbTreeIdByte = unpackByte(nb.r);
       if (nbTreeIdByte != hereTreeIdByte) continue;
       vec4 nbMeta = texture(u_branch_tex2_prev, nbUV);
       float nbResource = unpackResourceSigned(nbMeta);
-      if (nbResource > hereResourcePrev) {
-        resourceStepDelta += 1.0;
-      } else if (nbResource < hereResourcePrev) {
-        resourceStepDelta -= 1.0;
-      }
+      resourceStepDelta += computeResourceTransfer(nbResource, hereResourcePrev);
     }
     float hereResource = hereResourcePrev + resourceStepDelta;
 
@@ -360,9 +376,10 @@ void main() {
       ? ROOT_INHIBITION_DECAY
       : BRANCH_INHIBITION_DECAY;
     for (int i = 0; i < 8; i++) {
-      vec4 nb = texture(u_foliage_prev, v_uv + offsets[i]);
+      vec2 nbUV = edgeSafeUV(v_uv + offsets[i], texelSize);
+      vec4 nb = texture(u_foliage_prev, nbUV);
       if (!isOccupied(nb)) continue;
-      float nbType = sourceCellType(v_uv + offsets[i], nb);
+      float nbType = sourceCellType(nbUV, nb);
       if (nbType != hereType) continue;
       float n = unpackInhibition(nb.b);
       inhibNeighborMax = max(inhibNeighborMax, n);
@@ -404,7 +421,7 @@ void main() {
     }
 
     for (int i = 0; i < 8; i++) {
-      vec2 uvN = v_uv + offsets[i];
+      vec2 uvN = edgeSafeUV(v_uv + offsets[i], texelSize);
       vec4 mN = texture(u_matter, uvN);
       if (isWater(mN)) touchingWater = true;
     }
@@ -423,7 +440,7 @@ void main() {
 
     // Source-claim resolution: evaluate all occupied neighbors as potential sources.
     for (int i = 0; i < 8; i++) {
-      vec2 sourceUV = v_uv + offsets[i];
+      vec2 sourceUV = edgeSafeUV(v_uv + offsets[i], texelSize);
       vec4 sourceBranch = texture(u_foliage_prev, sourceUV);
       if (!isOccupied(sourceBranch)) continue;
       float sourceType = sourceCellType(sourceUV, sourceBranch);
@@ -456,7 +473,7 @@ void main() {
       if (!sourceIsRoot && candidateIsDirt) {
         float sourceTreeIdByte = unpackByte(sourceBranch.r);
         vec2 sourceParentStep = nearestStep8(-sourceDir);
-        vec2 sourceParentUV = sourceUV + vec2(sourceParentStep.x * texelSize.x, sourceParentStep.y * texelSize.y);
+        vec2 sourceParentUV = edgeSafeUV(sourceUV + vec2(sourceParentStep.x * texelSize.x, sourceParentStep.y * texelSize.y), texelSize);
         vec4 sourceParentBranch = texture(u_foliage_prev, sourceParentUV);
         if (isOccupied(sourceParentBranch)) {
           float sourceParentTreeIdByte = unpackByte(sourceParentBranch.r);
@@ -501,7 +518,7 @@ void main() {
 
       int sourceNeighborCount = 0;
       for (int j = 0; j < 8; j++) {
-        vec2 aroundUV = sourceUV + offsets[j];
+        vec2 aroundUV = edgeSafeUV(sourceUV + offsets[j], texelSize);
         if (isOccupied(texture(u_foliage_prev, aroundUV))) {
           sourceNeighborCount++;
         }
@@ -509,7 +526,7 @@ void main() {
       bool isTipSource = sourceNeighborCount == 1;
 
       vec2 parentStep = nearestStep8(-sourceDir);
-      vec2 parentUV = sourceUV + vec2(parentStep.x * texelSize.x, parentStep.y * texelSize.y);
+      vec2 parentUV = edgeSafeUV(sourceUV + vec2(parentStep.x * texelSize.x, parentStep.y * texelSize.y), texelSize);
       bool hasParent = isOccupied(texture(u_foliage_prev, parentUV));
 
       // Main path steering for this source (small deterministic turn, mostly at tips).
@@ -521,7 +538,7 @@ void main() {
       float unsteeredSlopeMix;
       lineStepper(sourceDir, unsteeredPrimaryStep, unsteeredSecondaryStep, unsteeredSlopeMix);
 
-      vec2 mainStepUV = sourceUV + vec2(unsteeredPrimaryStep.x * texelSize.x, unsteeredPrimaryStep.y * texelSize.y);
+      vec2 mainStepUV = edgeSafeUV(sourceUV + vec2(unsteeredPrimaryStep.x * texelSize.x, unsteeredPrimaryStep.y * texelSize.y), texelSize);
       bool forwardOccupied = isOccupied(texture(u_foliage_prev, mainStepUV));
 
       if (isTipSource) {
