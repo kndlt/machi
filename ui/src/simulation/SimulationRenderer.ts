@@ -28,6 +28,10 @@ export interface SimulationRenderer {
   step(): void;
   /** Run light-only warmup iterations (no foliage/noise updates). */
   prewarm(): void;
+  /** Toggle side-branch generation. */
+  branchingEnabled: boolean;
+  /** Toggle inhibition field and inhibition-based branch suppression. */
+  branchInhibitionEnabled: boolean;
   /** Noise iterations per step (1 = default) */
   noiseSpeed: number;
   /** Noise rate magnitude multiplier (1.0 = default) */
@@ -38,6 +42,10 @@ export interface SimulationRenderer {
 export interface SimulationOptions {
   /** Numeric seed for deterministic noise. Omit for random. */
   seed?: number;
+  /** Enable side-branch generation (default true). */
+  branchingEnabled?: boolean;
+  /** Enable inhibition system (default true). */
+  branchInhibitionEnabled?: boolean;
 }
 
 export function createSimulationRenderer(
@@ -46,6 +54,8 @@ export function createSimulationRenderer(
   options?: SimulationOptions,
 ): SimulationRenderer {
   const LIGHT_PREWARM_ITERATIONS = 100;
+  let branchingEnabled = options?.branchingEnabled ?? true;
+  let branchInhibitionEnabled = options?.branchInhibitionEnabled ?? true;
 
   function readTexturePixels(
     tex: WebGLTexture,
@@ -78,6 +88,8 @@ export function createSimulationRenderer(
   const mapSims: MapSim[] = world.mapPlacements.map((placement) => {
     const { width, height } = placement.map;
     const sim = createFoliageSim(gl, width, height);
+    sim.branchingEnabled = branchingEnabled;
+    sim.branchInhibitionEnabled = branchInhibitionEnabled;
     const noise = createNoiseSim(gl, width, height, options?.seed);
     const light = createLightTransportSim(gl, width, height);
 
@@ -170,6 +182,16 @@ export function createSimulationRenderer(
   return {
     step,
     prewarm,
+    get branchingEnabled() { return branchingEnabled; },
+    set branchingEnabled(v: boolean) {
+      branchingEnabled = v;
+      for (const ms of mapSims) ms.sim.branchingEnabled = v;
+    },
+    get branchInhibitionEnabled() { return branchInhibitionEnabled; },
+    set branchInhibitionEnabled(v: boolean) {
+      branchInhibitionEnabled = v;
+      for (const ms of mapSims) ms.sim.branchInhibitionEnabled = v;
+    },
     get noiseSpeed() { return mapSims[0]?.noise.speed ?? 1; },
     set noiseSpeed(v: number) { for (const ms of mapSims) ms.noise.speed = v; },
     get noiseMagnitude() { return mapSims[0]?.noise.magnitude ?? 1; },

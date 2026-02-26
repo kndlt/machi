@@ -81,6 +81,24 @@ function readSimulationSeed(): number | undefined {
   return Math.trunc(parsed);
 }
 
+function readBooleanParam(name: string, defaultValue: boolean): boolean {
+  const raw = readLocationParam(name);
+  if (raw == null) return defaultValue;
+
+  const value = raw.trim().toLowerCase();
+  if (["0", "false", "off", "no"].includes(value)) return false;
+  if (["1", "true", "on", "yes"].includes(value)) return true;
+  return defaultValue;
+}
+
+function readBranchingEnabled(): boolean {
+  return readBooleanParam("branching", true);
+}
+
+function readBranchInhibitionEnabled(): boolean {
+  return readBooleanParam("inhibition", true);
+}
+
 function readViewMode(): number | null {
   const raw = readLocationParam("view");
   if (raw == null) return null;
@@ -120,7 +138,11 @@ async function initApp(canvas: HTMLCanvasElement, callbacks: InitAppCallbacks): 
 
   // 4b. Simulation renderer (produces foliage layer)
   const simulationSeed = readSimulationSeed();
-  const simulation = createSimulationRenderer(gl, world, { seed: simulationSeed });
+  const simulation = createSimulationRenderer(gl, world, {
+    seed: simulationSeed,
+    branchingEnabled: readBranchingEnabled(),
+    branchInhibitionEnabled: readBranchInhibitionEnabled(),
+  });
   simulation.prewarm();
 
   const BASE_SIM_INTERVAL_MS = 1024;
@@ -134,12 +156,15 @@ async function initApp(canvas: HTMLCanvasElement, callbacks: InitAppCallbacks): 
       mapRenderer.viewMode = viewMode;
     }
 
+    simulation.branchingEnabled = readBranchingEnabled();
+    simulation.branchInhibitionEnabled = readBranchInhibitionEnabled();
+
     const speedMultiplier = readSimulationSpeedMultiplier() ?? 1;
     renderer.simInterval = Math.round(BASE_SIM_INTERVAL_MS / speedMultiplier);
     renderer.simStartDelayMs = readSimulationStartDelayMs() ?? 0;
 
     console.log(
-      `Location controls applied: perturb=${simulation.noiseSpeed}, speed=${speedMultiplier}, simInterval=${renderer.simInterval}ms, delay=${renderer.simStartDelayMs}ms, seed=${simulationSeed ?? "random"}, view=${mapRenderer.viewMode}`,
+      `Location controls applied: perturb=${simulation.noiseSpeed}, speed=${speedMultiplier}, simInterval=${renderer.simInterval}ms, delay=${renderer.simStartDelayMs}ms, seed=${simulationSeed ?? "random"}, view=${mapRenderer.viewMode}, branching=${simulation.branchingEnabled}, inhibition=${simulation.branchInhibitionEnabled}`,
     );
   };
   applyLocationControls();

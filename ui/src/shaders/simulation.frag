@@ -26,6 +26,8 @@ uniform sampler2D u_matter;
 uniform sampler2D u_foliage_prev;
 uniform sampler2D u_light;   // currently unused in v0.3 model
 uniform sampler2D u_noise;
+uniform int u_branching_enabled;
+uniform int u_branch_inhibition_enabled;
 
 out vec4 out_color;
 
@@ -228,6 +230,11 @@ void main() {
 
   // Existing branch persists and carries inhibition diffusion/decay.
   if (isBranch(branchPrev)) {
+    if (u_branch_inhibition_enabled == 0) {
+      out_color = vec4(branchPrev.r, branchPrev.g, 0.0, branchPrev.a);
+      return;
+    }
+
     float inhibCenter = unpackInhibition(branchPrev.b);
     float inhibNeighborMax = 0.0;
     for (int i = 0; i < 8; i++) {
@@ -280,7 +287,9 @@ void main() {
 
     float sourcePacked = sourceBranch.g;
     float sourceErr = unpackErr(sourcePacked);
-    float sourceInhib = unpackInhibition(sourceBranch.b);
+    float sourceInhib = (u_branch_inhibition_enabled == 1)
+      ? unpackInhibition(sourceBranch.b)
+      : 0.0;
     vec2 sourceDir = dirFromEncoded(unpackDir(sourcePacked));
     float fertility = texture(u_noise, sourceUV).r;
     float inhibitionFactor = 1.0 - (sourceInhib / INHIBITION_MAX);
@@ -337,7 +346,11 @@ void main() {
     // Side branch candidate from source.
     float sideHash = hash12(sourceUV * vec2(2048.0, 4096.0) + sourcePacked * 257.0);
     float sideSign = hash12(sourceUV * vec2(997.0, 733.0) + sourceErr * 911.0) < 0.5 ? -1.0 : 1.0;
-    bool emitSide = isTipSource && hasParent && (!forwardOccupied) && (sideHash < branchGate);
+    bool emitSide = (u_branching_enabled == 1)
+      && isTipSource
+      && hasParent
+      && (!forwardOccupied)
+      && (sideHash < branchGate);
 
     vec2 sideStep = vec2(999.0);
     float sideEncodedDir = 0.0;
@@ -374,7 +387,7 @@ void main() {
       claimId = sourceBranch.r;
       claimDir = sideEncodedDir;
       claimErr = sideChildErr;
-      claimInhib = INHIBITION_MAX;
+      claimInhib = (u_branch_inhibition_enabled == 1) ? INHIBITION_MAX : 0.0;
     }
 
     if (claimed) {

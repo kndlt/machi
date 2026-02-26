@@ -25,6 +25,18 @@ const NUM_STEPS = 40;       // how many simulation steps to run
 const urlSeed = new URLSearchParams(window.location.search).get("seed");
 const SEED: number | undefined = urlSeed != null ? Number(urlSeed) : undefined;
 
+function readQueryBool(name: string, defaultValue: boolean): boolean {
+  const raw = new URLSearchParams(window.location.search).get(name);
+  if (raw == null) return defaultValue;
+  const value = raw.trim().toLowerCase();
+  if (["0", "false", "off", "no"].includes(value)) return false;
+  if (["1", "true", "on", "yes"].includes(value)) return true;
+  return defaultValue;
+}
+
+const BRANCHING_ENABLED = readQueryBool("branching", true);
+const INHIBITION_ENABLED = readQueryBool("inhibition", true);
+
 // ── Output helper ────────────────────────────────────────────────────────────
 const outputEl = document.getElementById("output");
 
@@ -101,7 +113,11 @@ function renderGrid(
   // Build a fresh world + renderer to replay the simulation step-by-step.
   const world = createSyntheticWorld(gl);
   const mapRenderer = createMapRenderer(gl, world);
-  const simulation = createSimulationRenderer(gl, world, { seed: SEED });
+  const simulation = createSimulationRenderer(gl, world, {
+    seed: SEED,
+    branchingEnabled: BRANCHING_ENABLED,
+    branchInhibitionEnabled: INHIBITION_ENABLED,
+  });
 
   // Camera set up to look at the entire map (1:1 pixels)
   const camera = createCamera();
@@ -207,7 +223,11 @@ const ANIM_SCALE = 4; // scale factor for animation frames (32px → 128px)
 function captureAnimationFrames(gl: WebGL2RenderingContext): AnimFrames {
   const world = createSyntheticWorld(gl);
   const mapRenderer = createMapRenderer(gl, world);
-  const simulation = createSimulationRenderer(gl, world, { seed: SEED });
+  const simulation = createSimulationRenderer(gl, world, {
+    seed: SEED,
+    branchingEnabled: BRANCHING_ENABLED,
+    branchInhibitionEnabled: INHIBITION_ENABLED,
+  });
 
   const camera = createCamera();
   camera.x = W / 2;
@@ -381,12 +401,18 @@ function renderASCII(foliage: PixelGrid, step: number): string {
 // ── RUN SIMULATION ───────────────────────────────────────────────────────────
 
 function run() {
-  log(`Simulation Lab — ${W}×${H} grid, ${DIRT_ROWS} dirt rows${SEED != null ? `, seed=${SEED}` : ""}`);
+  log(
+    `Simulation Lab — ${W}×${H} grid, ${DIRT_ROWS} dirt rows${SEED != null ? `, seed=${SEED}` : ""}, branching=${BRANCHING_ENABLED}, inhibition=${INHIBITION_ENABLED}`,
+  );
   log(`Running ${NUM_STEPS} steps...\n`);
 
   // Build a synthetic world and wire up simulation — same as App.tsx
   const world = createSyntheticWorld(gl);
-  const simulation = createSimulationRenderer(gl, world, { seed: SEED });
+  const simulation = createSimulationRenderer(gl, world, {
+    seed: SEED,
+    branchingEnabled: BRANCHING_ENABLED,
+    branchInhibitionEnabled: INHIBITION_ENABLED,
+  });
 
   // Access the per-map foliage sim for readPixels (via the World's layers)
   const placement = world.mapPlacements[0];
