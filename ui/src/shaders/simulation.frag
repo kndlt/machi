@@ -11,8 +11,8 @@ precision highp float;
 // OUT (branch map RGBA):
 //   R = tree ID (0.0 = empty; non-zero identifies a tree)
 //   G = packed direction+error (5 bits dir, 3 bits error)
-//   B = reserved
-//   A = occupancy alpha
+//   B = unused
+//   A = unused
 //
 // Growth logic (no auto-seeding mode):
 // - Existing branches persist.
