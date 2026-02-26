@@ -45,6 +45,14 @@ export function createWebGLRenderer(canvas: HTMLCanvasElement): WebGLRenderer {
     "pointer-events:none;z-index:10;text-shadow:0 0 2px #000";
   canvas.parentElement?.appendChild(fpsEl);
 
+  const visionEl = document.createElement("div");
+  visionEl.textContent = "Building the physics where digital souls will live.";
+  visionEl.style.cssText =
+    "position:absolute;right:12px;bottom:10px;" +
+    "color:rgba(196,255,214,0.52);font:11px monospace;letter-spacing:0.03em;" +
+    "pointer-events:none;z-index:9;text-shadow:0 0 1px #000";
+  canvas.parentElement?.appendChild(visionEl);
+
   let frameCount = 0;
   let lastFpsTime = performance.now();
   let frameTimes: number[] = [];
@@ -125,6 +133,7 @@ export function createWebGLRenderer(canvas: HTMLCanvasElement): WebGLRenderer {
   // ── Dispose ──────────────────────────────────────────────────────────────
   function dispose(): void {
     fpsEl.remove();
+    visionEl.remove();
     const ext = gl.getExtension("WEBGL_lose_context");
     ext?.loseContext();
   }
