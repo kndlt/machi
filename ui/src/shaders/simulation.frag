@@ -83,11 +83,19 @@ const float ROOT_INHIBITION_DECAY = 32.0;
 const float RESOURCE_ZERO_BYTE = 127.0;
 const float RESOURCE_MIN_BYTE = 0.0;
 const float RESOURCE_MAX_BYTE = 255.0;
-const float NEW_GROWTH_SINK_BYTE = 32.0;
-const float ROOT_GATHER_RATE = 4.0;
-const float RESOURCE_DIFFUSION = 0.8;
-const float RESOURCE_RELAX_BRANCH = 1.0;
-const float RESOURCE_RELAX_ROOT = 1.0;
+const float NEW_GROWTH_SINK_BYTE = 100.0;
+const float ROOT_GATHER_RATE = 0.0;
+const float RESOURCE_RELAX_BRANCH = 0.0;
+const float RESOURCE_RELAX_ROOT = 0.0;
+// Version: Energy conversation version
+// const float RESOURCE_ZERO_BYTE = 127.0;
+// const float RESOURCE_MIN_BYTE = 0.0;
+// const float RESOURCE_MAX_BYTE = 255.0;
+// const float NEW_GROWTH_SINK_BYTE = 127.0;
+// const float ROOT_GATHER_RATE = 4.0;
+// const float RESOURCE_DIFFUSION = 0.8;
+// const float RESOURCE_RELAX_BRANCH = 0.0;
+// const float RESOURCE_RELAX_ROOT = 0.0;
 
 float unpackByte(float packed);
 
@@ -309,14 +317,9 @@ void main() {
 
   // Existing occupied cell persists and carries inhibition diffusion/decay.
   if (isOccupied(branchPrev)) {
-    float hereResource = unpackResourceSigned(branchTex2Prev);
+    float hereResourcePrev = unpackResourceSigned(branchTex2Prev);
 
-    if (hereType == CELL_TYPE_ROOT && isDirt(mHere)) {
-      hereResource += ROOT_GATHER_RATE;
-    }
-
-    float resourceNeighborSum = 0.0;
-    int resourceNeighborCount = 0;
+    float resourceStepDelta = 0.0;
     float hereTreeIdByte = unpackByte(branchPrev.r);
     for (int i = 0; i < 8; i++) {
       vec2 nbUV = v_uv + offsets[i];
@@ -325,20 +328,25 @@ void main() {
       float nbTreeIdByte = unpackByte(nb.r);
       if (nbTreeIdByte != hereTreeIdByte) continue;
       vec4 nbMeta = texture(u_branch_tex2_prev, nbUV);
-      resourceNeighborSum += unpackResourceSigned(nbMeta);
-      resourceNeighborCount++;
+      float nbResource = unpackResourceSigned(nbMeta);
+      if (nbResource > hereResourcePrev) {
+        resourceStepDelta += 1.0;
+      } else if (nbResource < hereResourcePrev) {
+        resourceStepDelta -= 1.0;
+      }
     }
-    if (resourceNeighborCount > 0) {
-      float resourceNeighborAvg = resourceNeighborSum / float(resourceNeighborCount);
-      hereResource = mix(hereResource, resourceNeighborAvg, RESOURCE_DIFFUSION);
+    float hereResource = hereResourcePrev + resourceStepDelta;
+
+    if (hereType == CELL_TYPE_ROOT && isDirt(mHere)) {
+      hereResource += ROOT_GATHER_RATE;
     }
 
-    float relaxRate = (hereType == CELL_TYPE_ROOT) ? RESOURCE_RELAX_ROOT : RESOURCE_RELAX_BRANCH;
-    if (hereResource > 0.0) {
-      hereResource = max(0.0, hereResource - relaxRate);
-    } else if (hereResource < 0.0) {
-      hereResource = min(0.0, hereResource + relaxRate);
-    }
+    // float relaxRate = (hereType == CELL_TYPE_ROOT) ? RESOURCE_RELAX_ROOT : RESOURCE_RELAX_BRANCH;
+    // if (hereResource > 0.0) {
+    //   hereResource = max(0.0, hereResource - relaxRate);
+    // } else if (hereResource < 0.0) {
+    //   hereResource = min(0.0, hereResource + relaxRate);
+    // }
 
     if (u_branch_inhibition_enabled == 0) {
       out_color = vec4(branchPrev.r, branchPrev.g, 0.0, branchPrev.a);
@@ -366,239 +374,252 @@ void main() {
     out_color = vec4(branchPrev.r, branchPrev.g, packInhibition(inhibBase), branchPrev.a);
     out_branch_tex2 = withCellTypeAndResource(branchTex2Prev, hereType, hereResource);
     return;
-  }
-  vec2 latticeOffsets[8] = vec2[8](
-    vec2(0.0, -1.0),
-    vec2(1.0, -1.0),
-    vec2(1.0, 0.0),
-    vec2(1.0, 1.0),
-    vec2(0.0, 1.0),
-    vec2(-1.0, 1.0),
-    vec2(-1.0, 0.0),
-    vec2(-1.0, -1.0)
-  );
+  } else {
+    vec2 latticeOffsets[8] = vec2[8](
+      vec2(0.0, -1.0),
+      vec2(1.0, -1.0),
+      vec2(1.0, 0.0),
+      vec2(1.0, 1.0),
+      vec2(0.0, 1.0),
+      vec2(-1.0, 1.0),
+      vec2(-1.0, 0.0),
+      vec2(-1.0, -1.0)
+    );
 
-  int claimCount = 0;
-  float chosenId = 0.0;
-  float chosenDir = 0.0;
-  float chosenErr = 0.0;
-  float chosenInhib = 0.0;
-  float chosenType = CELL_TYPE_BRANCH;
-  float chosenResource = 0.0;
-  bool candidateIsAir = isAir(mHere);
-  bool candidateIsDirt = isDirt(mHere);
-  bool touchingWater = false;
+    int claimCount = 0;
+    float chosenId = 0.0;
+    float chosenDir = 0.0;
+    float chosenErr = 0.0;
+    float chosenInhib = 0.0;
+    float chosenType = CELL_TYPE_BRANCH;
+    float chosenResource = 0.0;
+    bool candidateIsAir = isAir(mHere);
+    bool candidateIsDirt = isDirt(mHere);
+    bool touchingWater = false;
 
-  if (!candidateIsAir && !candidateIsDirt) {
-    out_color = emptyCell(0.0);
-    out_branch_tex2 = withCellTypeAndResource(branchTex2Prev, CELL_TYPE_BRANCH, 0.0);
-    return;
-  }
+    if (!candidateIsAir && !candidateIsDirt) {
+      out_color = branchPrev;
+      out_branch_tex2 = branchTex2Prev;
+      return;
+    }
 
-  for (int i = 0; i < 8; i++) {
-    vec2 uvN = v_uv + offsets[i];
-    vec4 mN = texture(u_matter, uvN);
-    if (isWater(mN)) touchingWater = true;
-  }
+    for (int i = 0; i < 8; i++) {
+      vec2 uvN = v_uv + offsets[i];
+      vec4 mN = texture(u_matter, uvN);
+      if (isWater(mN)) touchingWater = true;
+    }
 
-  if (touchingWater) {
-    out_color = emptyCell(0.0);
-    out_branch_tex2 = withCellTypeAndResource(branchTex2Prev, CELL_TYPE_BRANCH, 0.0);
-    return;
-  }
+    if (touchingWater) {
+      out_color = branchPrev;
+      out_branch_tex2 = branchTex2Prev;
+      return;
+    }
 
-  if ((u_tick % 2) == 0) {
-    out_color = emptyCell(0.0);
-    out_branch_tex2 = withCellTypeAndResource(branchTex2Prev, CELL_TYPE_BRANCH, 0.0);
-    return;
-  }
+    if ((u_tick % 2) == 0) {
+      out_color = branchPrev;
+      out_branch_tex2 = branchTex2Prev;
+      return;
+    }
 
-  // Source-claim resolution: evaluate all occupied neighbors as potential sources.
-  for (int i = 0; i < 8; i++) {
-    vec2 sourceUV = v_uv + offsets[i];
-    vec4 sourceBranch = texture(u_foliage_prev, sourceUV);
-    if (!isOccupied(sourceBranch)) continue;
-    float sourceType = sourceCellType(sourceUV, sourceBranch);
-    bool sourceIsRoot = sourceType == CELL_TYPE_ROOT;
-    if (sourceIsRoot && !candidateIsDirt) continue;
+    // Source-claim resolution: evaluate all occupied neighbors as potential sources.
+    for (int i = 0; i < 8; i++) {
+      vec2 sourceUV = v_uv + offsets[i];
+      vec4 sourceBranch = texture(u_foliage_prev, sourceUV);
+      if (!isOccupied(sourceBranch)) continue;
+      float sourceType = sourceCellType(sourceUV, sourceBranch);
+      bool sourceIsRoot = sourceType == CELL_TYPE_ROOT;
+      if (sourceIsRoot && !candidateIsDirt) continue;
 
-    float sideRate = selectByType(sourceType, BRANCH_SIDE_RATE, ROOT_SIDE_RATE);
-    float sideAngleMin = selectByType(sourceType, BRANCH_SIDE_ANGLE_MIN, ROOT_SIDE_ANGLE_MIN);
-    float sideAngleMax = selectByType(sourceType, BRANCH_SIDE_ANGLE_MAX, ROOT_SIDE_ANGLE_MAX);
-    float mainTurnRate = selectByType(sourceType, MAIN_TURN_RATE, ROOT_TURN_RATE);
-    float mainTurnRateBlocked = selectByType(sourceType, MAIN_TURN_RATE_BLOCKED, ROOT_TURN_RATE_BLOCKED);
-    float mainTurnMax = selectByType(sourceType, MAIN_TURN_MAX, ROOT_TURN_MAX);
+      float sideRate = selectByType(sourceType, BRANCH_SIDE_RATE, ROOT_SIDE_RATE);
+      float sideAngleMin = selectByType(sourceType, BRANCH_SIDE_ANGLE_MIN, ROOT_SIDE_ANGLE_MIN);
+      float sideAngleMax = selectByType(sourceType, BRANCH_SIDE_ANGLE_MAX, ROOT_SIDE_ANGLE_MAX);
+      float mainTurnRate = selectByType(sourceType, MAIN_TURN_RATE, ROOT_TURN_RATE);
+      float mainTurnRateBlocked = selectByType(sourceType, MAIN_TURN_RATE_BLOCKED, ROOT_TURN_RATE_BLOCKED);
+      float mainTurnMax = selectByType(sourceType, MAIN_TURN_MAX, ROOT_TURN_MAX);
 
-    vec2 turnSaltA = selectVec2ByType(sourceType, HASH_SALT_TURN_A_BRANCH, HASH_SALT_TURN_A_ROOT);
-    vec2 turnSaltSign = selectVec2ByType(sourceType, HASH_SALT_TURN_SIGN_BRANCH, HASH_SALT_TURN_SIGN_ROOT);
-    vec2 turnSaltMag = selectVec2ByType(sourceType, HASH_SALT_TURN_MAG_BRANCH, HASH_SALT_TURN_MAG_ROOT);
-    vec2 sideSalt = selectVec2ByType(sourceType, HASH_SALT_SIDE_BRANCH, HASH_SALT_SIDE_ROOT);
-    vec2 sideSignSalt = selectVec2ByType(sourceType, HASH_SALT_SIDE_SIGN_BRANCH, HASH_SALT_SIDE_SIGN_ROOT);
-    vec2 sideAngleSalt = selectVec2ByType(sourceType, HASH_SALT_SIDE_ANGLE_BRANCH, HASH_SALT_SIDE_ANGLE_ROOT);
+      vec2 turnSaltA = selectVec2ByType(sourceType, HASH_SALT_TURN_A_BRANCH, HASH_SALT_TURN_A_ROOT);
+      vec2 turnSaltSign = selectVec2ByType(sourceType, HASH_SALT_TURN_SIGN_BRANCH, HASH_SALT_TURN_SIGN_ROOT);
+      vec2 turnSaltMag = selectVec2ByType(sourceType, HASH_SALT_TURN_MAG_BRANCH, HASH_SALT_TURN_MAG_ROOT);
+      vec2 sideSalt = selectVec2ByType(sourceType, HASH_SALT_SIDE_BRANCH, HASH_SALT_SIDE_ROOT);
+      vec2 sideSignSalt = selectVec2ByType(sourceType, HASH_SALT_SIDE_SIGN_BRANCH, HASH_SALT_SIDE_SIGN_ROOT);
+      vec2 sideAngleSalt = selectVec2ByType(sourceType, HASH_SALT_SIDE_ANGLE_BRANCH, HASH_SALT_SIDE_ANGLE_ROOT);
 
-    float sourcePacked = sourceBranch.g;
-    float sourceErr = unpackErr(sourcePacked);
-    float sourceInhib = (u_branch_inhibition_enabled == 1)
-      ? unpackInhibition(sourceBranch.b)
-      : 0.0;
-    vec2 sourceDir = dirFromEncoded(unpackDir(sourcePacked));
-    vec2 toCurrent = -latticeOffsets[i];
+      float sourcePacked = sourceBranch.g;
+      float sourceErr = unpackErr(sourcePacked);
+      float sourceInhib = (u_branch_inhibition_enabled == 1)
+        ? unpackInhibition(sourceBranch.b)
+        : 0.0;
+      vec2 sourceDir = dirFromEncoded(unpackDir(sourcePacked));
+      vec2 toCurrent = -latticeOffsets[i];
 
-    // Root seed: use the same step/error claim logic as forward growth, but backward.
-    if (!sourceIsRoot && candidateIsDirt) {
-      vec2 seedDir = normalize(-sourceDir);
-      vec2 seedPrimaryStep;
-      vec2 seedSecondaryStep;
-      float seedSlopeMix;
-      lineStepper(seedDir, seedPrimaryStep, seedSecondaryStep, seedSlopeMix);
+      // Root seed: use the same step/error claim logic as forward growth, but backward.
+      if (!sourceIsRoot && candidateIsDirt) {
+        float sourceTreeIdByte = unpackByte(sourceBranch.r);
+        vec2 sourceParentStep = nearestStep8(-sourceDir);
+        vec2 sourceParentUV = sourceUV + vec2(sourceParentStep.x * texelSize.x, sourceParentStep.y * texelSize.y);
+        vec4 sourceParentBranch = texture(u_foliage_prev, sourceParentUV);
+        if (isOccupied(sourceParentBranch)) {
+          float sourceParentTreeIdByte = unpackByte(sourceParentBranch.r);
+          if (sourceParentTreeIdByte == sourceTreeIdByte) {
+            float sourceParentType = sourceCellType(sourceParentUV, sourceParentBranch);
+            if (sourceParentType == CELL_TYPE_ROOT) continue;
+          }
+        }
 
-      float seedErrNext = sourceErr + seedSlopeMix;
-      bool seedTakeSecondary = seedErrNext >= 1.0;
-      vec2 seedExpectedStep = seedTakeSecondary ? seedSecondaryStep : seedPrimaryStep;
-      float seedChildErr = seedTakeSecondary ? (seedErrNext - 1.0) : seedErrNext;
+        vec2 seedDir = normalize(-sourceDir);
+        vec2 seedPrimaryStep;
+        vec2 seedSecondaryStep;
+        float seedSlopeMix;
+        lineStepper(seedDir, seedPrimaryStep, seedSecondaryStep, seedSlopeMix);
 
-      if (sameStep(toCurrent, seedExpectedStep)) {
-        if (blockedInForwardCone(v_uv, sourceUV, seedDir, texelSize)) continue;
-        claimCount++;
-        if (claimCount == 1) {
-          chosenId = sourceBranch.r;
-          chosenDir = encodeDir(seedDir);
-          chosenErr = seedChildErr;
-          chosenInhib = (u_branch_inhibition_enabled == 1) ? INHIBITION_MAX : 0.0;
-          chosenType = CELL_TYPE_ROOT;
-          chosenResource = NEW_GROWTH_SINK_BYTE - RESOURCE_ZERO_BYTE;
+        float seedErrNext = sourceErr + seedSlopeMix;
+        bool seedTakeSecondary = seedErrNext >= 1.0;
+        vec2 seedExpectedStep = seedTakeSecondary ? seedSecondaryStep : seedPrimaryStep;
+        float seedChildErr = seedTakeSecondary ? (seedErrNext - 1.0) : seedErrNext;
+
+        if (sameStep(toCurrent, seedExpectedStep)) {
+          if (blockedInForwardCone(v_uv, sourceUV, seedDir, texelSize)) continue;
+          claimCount++;
+          if (claimCount == 1) {
+            chosenId = sourceBranch.r;
+            chosenDir = encodeDir(seedDir);
+            chosenErr = seedChildErr;
+            chosenInhib = (u_branch_inhibition_enabled == 1) ? INHIBITION_MAX : 0.0;
+            chosenType = CELL_TYPE_ROOT;
+            chosenResource = NEW_GROWTH_SINK_BYTE - RESOURCE_ZERO_BYTE;
+          }
+        }
+        continue;
+      }
+
+      if (!sourceIsRoot && !candidateIsAir) continue;
+
+      float fertility = texture(u_noise, sourceUV).r;
+      float inhibitionFactor = 1.0 - (sourceInhib / INHIBITION_MAX);
+      inhibitionFactor *= inhibitionFactor;
+      float branchGate = sideRate * max(fertility, 0.35) * inhibitionFactor;
+
+      int sourceNeighborCount = 0;
+      for (int j = 0; j < 8; j++) {
+        vec2 aroundUV = sourceUV + offsets[j];
+        if (isOccupied(texture(u_foliage_prev, aroundUV))) {
+          sourceNeighborCount++;
         }
       }
-      continue;
-    }
+      bool isTipSource = sourceNeighborCount == 1;
 
-    if (!sourceIsRoot && !candidateIsAir) continue;
+      vec2 parentStep = nearestStep8(-sourceDir);
+      vec2 parentUV = sourceUV + vec2(parentStep.x * texelSize.x, parentStep.y * texelSize.y);
+      bool hasParent = isOccupied(texture(u_foliage_prev, parentUV));
 
-    float fertility = texture(u_noise, sourceUV).r;
-    float inhibitionFactor = 1.0 - (sourceInhib / INHIBITION_MAX);
-    inhibitionFactor *= inhibitionFactor;
-    float branchGate = sideRate * max(fertility, 0.35) * inhibitionFactor;
+      // Main path steering for this source (small deterministic turn, mostly at tips).
+      vec2 steeredDir = sourceDir;
 
-    int sourceNeighborCount = 0;
-    for (int j = 0; j < 8; j++) {
-      vec2 aroundUV = sourceUV + offsets[j];
-      if (isOccupied(texture(u_foliage_prev, aroundUV))) {
-        sourceNeighborCount++;
+      // Use unsteered forward occupancy for gating/intent.
+      vec2 unsteeredPrimaryStep;
+      vec2 unsteeredSecondaryStep;
+      float unsteeredSlopeMix;
+      lineStepper(sourceDir, unsteeredPrimaryStep, unsteeredSecondaryStep, unsteeredSlopeMix);
+
+      vec2 mainStepUV = sourceUV + vec2(unsteeredPrimaryStep.x * texelSize.x, unsteeredPrimaryStep.y * texelSize.y);
+      bool forwardOccupied = isOccupied(texture(u_foliage_prev, mainStepUV));
+
+      if (isTipSource) {
+        float turnHash = hash12(sourceUV * turnSaltA + sourceErr * 127.0);
+        float turnSignHash = hash12(sourceUV * turnSaltSign + sourcePacked * 389.0);
+        float turnChance = (forwardOccupied ? mainTurnRateBlocked : mainTurnRate) * max(fertility, 0.25);
+        if (turnHash < turnChance) {
+          float turnSign = turnSignHash < 0.5 ? -1.0 : 1.0;
+          float turnMagnitude = mainTurnMax * (0.35 + 0.65 * hash12(sourceUV * turnSaltMag + sourceErr * 43.0));
+          steeredDir = normalize(rotateVec(sourceDir, turnSign * turnMagnitude));
+        }
+      }
+
+      // Main path stepping for this source.
+      vec2 primaryStep;
+      vec2 secondaryStep;
+      float slopeMix;
+      lineStepper(steeredDir, primaryStep, secondaryStep, slopeMix);
+
+      float err = sourceErr;
+      float errNext = err + slopeMix;
+      bool takeSecondary = errNext >= 1.0;
+      vec2 expectedStep = takeSecondary ? secondaryStep : primaryStep;
+      float childErr = takeSecondary ? (errNext - 1.0) : errNext;
+
+      // Side branch candidate from source.
+      float sideHash = hash12(sourceUV * sideSalt + sourcePacked * 257.0);
+      float sideSign = hash12(sourceUV * sideSignSalt + sourceErr * 911.0) < 0.5 ? -1.0 : 1.0;
+      bool emitSide = (u_branching_enabled == 1)
+        && isTipSource
+        && hasParent
+        && (!forwardOccupied)
+        && (sideHash < branchGate);
+
+      vec2 sideStep = vec2(999.0);
+      float sideEncodedDir = 0.0;
+      float sideChildErr = 0.0;
+      if (emitSide) {
+        float angleMix = hash12(sourceUV * sideAngleSalt + sourcePacked * 53.0);
+        float sideAngle = mix(sideAngleMin, sideAngleMax, angleMix);
+        vec2 sideDir = normalize(rotateVec(steeredDir, sideSign * sideAngle));
+        sideStep = nearestStep8(sideDir);
+        sideChildErr = 0.0;
+        sideEncodedDir = encodeDir(sideDir);
+      }
+
+      // Direction from this source cell toward current candidate cell.
+
+      bool claimed = false;
+      float claimId = 0.0;
+      float claimDir = 0.0;
+      float claimErr = 0.0;
+      float claimInhib = sourceInhib;
+      float claimType = sourceType;
+      float claimResource = NEW_GROWTH_SINK_BYTE - RESOURCE_ZERO_BYTE;
+
+      if (sameStep(toCurrent, expectedStep)) {
+        if (blockedInForwardCone(v_uv, sourceUV, steeredDir, texelSize)) continue;
+        claimed = true;
+        claimId = sourceBranch.r;
+        claimDir = encodeDir(steeredDir);
+        claimErr = childErr;
+        claimInhib = sourceInhib;
+        claimType = sourceType;
+        claimResource = NEW_GROWTH_SINK_BYTE - RESOURCE_ZERO_BYTE;
+      } else if (emitSide && sameStep(toCurrent, sideStep)) {
+        vec2 sideDir = dirFromEncoded(sideEncodedDir);
+        if (blockedInForwardCone(v_uv, sourceUV, sideDir, texelSize)) continue;
+        claimed = true;
+        claimId = sourceBranch.r;
+        claimDir = sideEncodedDir;
+        claimErr = sideChildErr;
+        claimInhib = (u_branch_inhibition_enabled == 1) ? INHIBITION_MAX : 0.0;
+        claimType = sourceType;
+        claimResource = NEW_GROWTH_SINK_BYTE - RESOURCE_ZERO_BYTE;
+      }
+
+      if (claimed) {
+        claimCount++;
+        if (claimCount == 1) {
+          chosenId = claimId;
+          chosenDir = claimDir;
+          chosenErr = claimErr;
+          chosenInhib = claimInhib;
+          chosenType = claimType;
+          chosenResource = claimResource;
+        }
       }
     }
-    bool isTipSource = sourceNeighborCount == 1;
 
-    vec2 parentStep = nearestStep8(-sourceDir);
-    vec2 parentUV = sourceUV + vec2(parentStep.x * texelSize.x, parentStep.y * texelSize.y);
-    bool hasParent = isOccupied(texture(u_foliage_prev, parentUV));
-
-    // Main path steering for this source (small deterministic turn, mostly at tips).
-    vec2 steeredDir = sourceDir;
-
-    // Use unsteered forward occupancy for gating/intent.
-    vec2 unsteeredPrimaryStep;
-    vec2 unsteeredSecondaryStep;
-    float unsteeredSlopeMix;
-    lineStepper(sourceDir, unsteeredPrimaryStep, unsteeredSecondaryStep, unsteeredSlopeMix);
-
-    vec2 mainStepUV = sourceUV + vec2(unsteeredPrimaryStep.x * texelSize.x, unsteeredPrimaryStep.y * texelSize.y);
-    bool forwardOccupied = isOccupied(texture(u_foliage_prev, mainStepUV));
-
-    if (isTipSource) {
-      float turnHash = hash12(sourceUV * turnSaltA + sourceErr * 127.0);
-      float turnSignHash = hash12(sourceUV * turnSaltSign + sourcePacked * 389.0);
-      float turnChance = (forwardOccupied ? mainTurnRateBlocked : mainTurnRate) * max(fertility, 0.25);
-      if (turnHash < turnChance) {
-        float turnSign = turnSignHash < 0.5 ? -1.0 : 1.0;
-        float turnMagnitude = mainTurnMax * (0.35 + 0.65 * hash12(sourceUV * turnSaltMag + sourceErr * 43.0));
-        steeredDir = normalize(rotateVec(sourceDir, turnSign * turnMagnitude));
-      }
+    // Accept only unambiguous claims to avoid clumping.
+    if (claimCount != 1) {
+      out_color = branchPrev;
+      out_branch_tex2 = branchTex2Prev;
+      return;
     }
 
-    // Main path stepping for this source.
-    vec2 primaryStep;
-    vec2 secondaryStep;
-    float slopeMix;
-    lineStepper(steeredDir, primaryStep, secondaryStep, slopeMix);
-
-    float err = sourceErr;
-    float errNext = err + slopeMix;
-    bool takeSecondary = errNext >= 1.0;
-    vec2 expectedStep = takeSecondary ? secondaryStep : primaryStep;
-    float childErr = takeSecondary ? (errNext - 1.0) : errNext;
-
-    // Side branch candidate from source.
-    float sideHash = hash12(sourceUV * sideSalt + sourcePacked * 257.0);
-    float sideSign = hash12(sourceUV * sideSignSalt + sourceErr * 911.0) < 0.5 ? -1.0 : 1.0;
-    bool emitSide = (u_branching_enabled == 1)
-      && isTipSource
-      && hasParent
-      && (!forwardOccupied)
-      && (sideHash < branchGate);
-
-    vec2 sideStep = vec2(999.0);
-    float sideEncodedDir = 0.0;
-    float sideChildErr = 0.0;
-    if (emitSide) {
-      float angleMix = hash12(sourceUV * sideAngleSalt + sourcePacked * 53.0);
-      float sideAngle = mix(sideAngleMin, sideAngleMax, angleMix);
-      vec2 sideDir = normalize(rotateVec(steeredDir, sideSign * sideAngle));
-      sideStep = nearestStep8(sideDir);
-      sideChildErr = 0.0;
-      sideEncodedDir = encodeDir(sideDir);
-    }
-
-    // Direction from this source cell toward current candidate cell.
-
-    bool claimed = false;
-    float claimId = 0.0;
-    float claimDir = 0.0;
-    float claimErr = 0.0;
-    float claimInhib = sourceInhib;
-    float claimType = sourceType;
-    float claimResource = NEW_GROWTH_SINK_BYTE - RESOURCE_ZERO_BYTE;
-
-    if (sameStep(toCurrent, expectedStep)) {
-      if (blockedInForwardCone(v_uv, sourceUV, steeredDir, texelSize)) continue;
-      claimed = true;
-      claimId = sourceBranch.r;
-      claimDir = encodeDir(steeredDir);
-      claimErr = childErr;
-      claimInhib = sourceInhib;
-      claimType = sourceType;
-      claimResource = NEW_GROWTH_SINK_BYTE - RESOURCE_ZERO_BYTE;
-    } else if (emitSide && sameStep(toCurrent, sideStep)) {
-      vec2 sideDir = dirFromEncoded(sideEncodedDir);
-      if (blockedInForwardCone(v_uv, sourceUV, sideDir, texelSize)) continue;
-      claimed = true;
-      claimId = sourceBranch.r;
-      claimDir = sideEncodedDir;
-      claimErr = sideChildErr;
-      claimInhib = (u_branch_inhibition_enabled == 1) ? INHIBITION_MAX : 0.0;
-      claimType = sourceType;
-      claimResource = NEW_GROWTH_SINK_BYTE - RESOURCE_ZERO_BYTE;
-    }
-
-    if (claimed) {
-      claimCount++;
-      if (claimCount == 1) {
-        chosenId = claimId;
-        chosenDir = claimDir;
-        chosenErr = claimErr;
-        chosenInhib = claimInhib;
-        chosenType = claimType;
-        chosenResource = claimResource;
-      }
-    }
+    out_color = makeBranch(chosenId, chosenDir, chosenErr, chosenInhib);
+    out_branch_tex2 = withCellTypeAndResource(branchTex2Prev, chosenType, chosenResource);
   }
-
-  // Accept only unambiguous claims to avoid clumping.
-  if (claimCount != 1) {
-    out_color = emptyCell(0.0);
-    out_branch_tex2 = withCellTypeAndResource(branchTex2Prev, CELL_TYPE_BRANCH, 0.0);
-    return;
-  }
-
-  out_color = makeBranch(chosenId, chosenDir, chosenErr, chosenInhib);
-  out_branch_tex2 = withCellTypeAndResource(branchTex2Prev, chosenType, chosenResource);
 }
