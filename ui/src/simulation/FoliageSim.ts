@@ -101,6 +101,11 @@ export function createFoliageSim(
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, branchTex1);
 
     const initialMeta = branchTex2 ?? new Uint8Array(width * height * 4);
+    if (!branchTex2) {
+      for (let i = 0; i < initialMeta.length; i += 4) {
+        initialMeta[i + 1] = 127;
+      }
+    }
     gl.bindTexture(gl.TEXTURE_2D, tex2A);
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, initialMeta);
     gl.bindTexture(gl.TEXTURE_2D, tex2B);

@@ -80,6 +80,15 @@ const float INHIBITION_MAX = 255.0;
 const float BRANCH_INHIBITION_DECAY = 8.0;
 const float ROOT_INHIBITION_DECAY = 32.0;
 
+const float RESOURCE_ZERO_BYTE = 127.0;
+const float RESOURCE_MIN_BYTE = 0.0;
+const float RESOURCE_MAX_BYTE = 255.0;
+const float NEW_BRANCH_SINK_BYTE = 0.0;
+const float ROOT_GATHER_RATE = 6.0;
+const float RESOURCE_DIFFUSION = 0.20;
+const float RESOURCE_RELAX_BRANCH = 1.0;
+const float RESOURCE_RELAX_ROOT = 1.0;
+
 float unpackByte(float packed);
 
 float selectByType(float cellType, float branchValue, float rootValue) {
@@ -103,6 +112,21 @@ vec4 withCellType(vec4 branchTex2Prev, float cellType) {
   float lower = clamp(floor(cellType + 0.5), 0.0, 15.0);
   float combined = upper + lower;
   return vec4(combined / 255.0, branchTex2Prev.g, branchTex2Prev.b, branchTex2Prev.a);
+}
+
+float unpackResourceSigned(vec4 branchTex2) {
+  return unpackByte(branchTex2.g) - RESOURCE_ZERO_BYTE;
+}
+
+float packResourceSigned(float signedResource) {
+  float byteVal = clamp(signedResource + RESOURCE_ZERO_BYTE, RESOURCE_MIN_BYTE, RESOURCE_MAX_BYTE);
+  return byteVal / 255.0;
+}
+
+vec4 withCellTypeAndResource(vec4 branchTex2Prev, float cellType, float signedResource) {
+  vec4 outMeta = withCellType(branchTex2Prev, cellType);
+  outMeta.g = packResourceSigned(signedResource);
+  return outMeta;
 }
 
 bool isWater(vec4 m) {
@@ -285,9 +309,40 @@ void main() {
 
   // Existing occupied cell persists and carries inhibition diffusion/decay.
   if (isOccupied(branchPrev)) {
+    float hereResource = unpackResourceSigned(branchTex2Prev);
+
+    if (hereType == CELL_TYPE_ROOT && isDirt(mHere)) {
+      hereResource += ROOT_GATHER_RATE;
+    }
+
+    float resourceNeighborSum = 0.0;
+    int resourceNeighborCount = 0;
+    float hereTreeIdByte = unpackByte(branchPrev.r);
+    for (int i = 0; i < 8; i++) {
+      vec2 nbUV = v_uv + offsets[i];
+      vec4 nb = texture(u_foliage_prev, nbUV);
+      if (!isOccupied(nb)) continue;
+      float nbTreeIdByte = unpackByte(nb.r);
+      if (nbTreeIdByte != hereTreeIdByte) continue;
+      vec4 nbMeta = texture(u_branch_tex2_prev, nbUV);
+      resourceNeighborSum += unpackResourceSigned(nbMeta);
+      resourceNeighborCount++;
+    }
+    if (resourceNeighborCount > 0) {
+      float resourceNeighborAvg = resourceNeighborSum / float(resourceNeighborCount);
+      hereResource = mix(hereResource, resourceNeighborAvg, RESOURCE_DIFFUSION);
+    }
+
+    float relaxRate = (hereType == CELL_TYPE_ROOT) ? RESOURCE_RELAX_ROOT : RESOURCE_RELAX_BRANCH;
+    if (hereResource > 0.0) {
+      hereResource = max(0.0, hereResource - relaxRate);
+    } else if (hereResource < 0.0) {
+      hereResource = min(0.0, hereResource + relaxRate);
+    }
+
     if (u_branch_inhibition_enabled == 0) {
       out_color = vec4(branchPrev.r, branchPrev.g, 0.0, branchPrev.a);
-      out_branch_tex2 = branchTex2Prev;
+      out_branch_tex2 = withCellTypeAndResource(branchTex2Prev, hereType, hereResource);
       return;
     }
 
@@ -309,7 +364,7 @@ void main() {
       max(0.0, inhibNeighborMax - inhibitionDecay)
     );
     out_color = vec4(branchPrev.r, branchPrev.g, packInhibition(inhibBase), branchPrev.a);
-    out_branch_tex2 = branchTex2Prev;
+    out_branch_tex2 = withCellTypeAndResource(branchTex2Prev, hereType, hereResource);
     return;
   }
   vec2 latticeOffsets[8] = vec2[8](
@@ -329,13 +384,14 @@ void main() {
   float chosenErr = 0.0;
   float chosenInhib = 0.0;
   float chosenType = CELL_TYPE_BRANCH;
+  float chosenResource = 0.0;
   bool candidateIsAir = isAir(mHere);
   bool candidateIsDirt = isDirt(mHere);
   bool touchingWater = false;
 
   if (!candidateIsAir && !candidateIsDirt) {
     out_color = emptyCell(0.0);
-    out_branch_tex2 = withCellType(branchTex2Prev, CELL_TYPE_BRANCH);
+    out_branch_tex2 = withCellTypeAndResource(branchTex2Prev, CELL_TYPE_BRANCH, 0.0);
     return;
   }
 
@@ -347,13 +403,13 @@ void main() {
 
   if (touchingWater) {
     out_color = emptyCell(0.0);
-    out_branch_tex2 = withCellType(branchTex2Prev, CELL_TYPE_BRANCH);
+    out_branch_tex2 = withCellTypeAndResource(branchTex2Prev, CELL_TYPE_BRANCH, 0.0);
     return;
   }
 
   if ((u_tick % 2) == 0) {
     out_color = emptyCell(0.0);
-    out_branch_tex2 = withCellType(branchTex2Prev, CELL_TYPE_BRANCH);
+    out_branch_tex2 = withCellTypeAndResource(branchTex2Prev, CELL_TYPE_BRANCH, 0.0);
     return;
   }
 
@@ -410,6 +466,7 @@ void main() {
           chosenErr = seedChildErr;
           chosenInhib = (u_branch_inhibition_enabled == 1) ? INHIBITION_MAX : 0.0;
           chosenType = CELL_TYPE_ROOT;
+          chosenResource = NEW_BRANCH_SINK_BYTE - RESOURCE_ZERO_BYTE;
         }
       }
       continue;
@@ -499,6 +556,7 @@ void main() {
     float claimErr = 0.0;
     float claimInhib = sourceInhib;
     float claimType = sourceType;
+    float claimResource = NEW_BRANCH_SINK_BYTE - RESOURCE_ZERO_BYTE;
 
     if (sameStep(toCurrent, expectedStep)) {
       if (blockedInForwardCone(v_uv, sourceUV, steeredDir, texelSize)) continue;
@@ -508,6 +566,7 @@ void main() {
       claimErr = childErr;
       claimInhib = sourceInhib;
       claimType = sourceType;
+      claimResource = NEW_BRANCH_SINK_BYTE - RESOURCE_ZERO_BYTE;
     } else if (emitSide && sameStep(toCurrent, sideStep)) {
       vec2 sideDir = dirFromEncoded(sideEncodedDir);
       if (blockedInForwardCone(v_uv, sourceUV, sideDir, texelSize)) continue;
@@ -517,6 +576,7 @@ void main() {
       claimErr = sideChildErr;
       claimInhib = (u_branch_inhibition_enabled == 1) ? INHIBITION_MAX : 0.0;
       claimType = sourceType;
+      claimResource = NEW_BRANCH_SINK_BYTE - RESOURCE_ZERO_BYTE;
     }
 
     if (claimed) {
@@ -527,6 +587,7 @@ void main() {
         chosenErr = claimErr;
         chosenInhib = claimInhib;
         chosenType = claimType;
+        chosenResource = claimResource;
       }
     }
   }
@@ -534,10 +595,10 @@ void main() {
   // Accept only unambiguous claims to avoid clumping.
   if (claimCount != 1) {
     out_color = emptyCell(0.0);
-    out_branch_tex2 = withCellType(branchTex2Prev, CELL_TYPE_BRANCH);
+    out_branch_tex2 = withCellTypeAndResource(branchTex2Prev, CELL_TYPE_BRANCH, 0.0);
     return;
   }
 
   out_color = makeBranch(chosenId, chosenDir, chosenErr, chosenInhib);
-  out_branch_tex2 = withCellType(branchTex2Prev, chosenType);
+  out_branch_tex2 = withCellTypeAndResource(branchTex2Prev, chosenType, chosenResource);
 }
