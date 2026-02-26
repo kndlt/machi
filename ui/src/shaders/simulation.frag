@@ -83,11 +83,11 @@ const float ROOT_INHIBITION_DECAY = 32.0;
 const float RESOURCE_ZERO_BYTE = 127.0;
 const float RESOURCE_MIN_BYTE = 0.0;
 const float RESOURCE_MAX_BYTE = 255.0;
-const float NEW_BRANCH_SINK_BYTE = 0.0;
-const float ROOT_GATHER_RATE = 6.0;
-const float RESOURCE_DIFFUSION = 0.20;
-const float RESOURCE_RELAX_BRANCH = 1.0;
-const float RESOURCE_RELAX_ROOT = 1.0;
+const float NEW_BRANCH_SINK_BYTE = 96.0;
+const float ROOT_GATHER_RATE = 4.0;
+const float RESOURCE_DIFFUSION = 0.42;
+const float RESOURCE_RELAX_BRANCH = 0.20;
+const float RESOURCE_RELAX_ROOT = 0.35;
 
 float unpackByte(float packed);
 
