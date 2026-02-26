@@ -30,6 +30,12 @@ function parseSeed(): number | undefined {
 }
 const SEED = parseSeed();
 
+function hasFlag(name: string): boolean {
+  return process.argv.includes(name);
+}
+
+const RESOURCE_MAP = hasFlag("--resource-map");
+
 async function main() {
   // ── 1. Start a temporary Vite server ─────────────────────────────────────
   let server: ViteDevServer | undefined;
@@ -44,8 +50,11 @@ async function main() {
     if (!address || typeof address === "string") {
       throw new Error("Failed to get server address");
     }
-    const seedParam = SEED != null ? `?seed=${SEED}` : "";
-    const url = `http://localhost:${address.port}/sim.html${seedParam}`;
+    const query = new URLSearchParams();
+    if (SEED != null) query.set("seed", String(SEED));
+    if (RESOURCE_MAP) query.set("resourcemap", "1");
+    const qs = query.toString();
+    const url = `http://localhost:${address.port}/sim.html${qs ? `?${qs}` : ""}`;
     console.log(`\n🔬 Vite server on port ${address.port}${SEED != null ? ` (seed=${SEED})` : ""}`);
     console.log(`   Loading ${url}\n`);
 

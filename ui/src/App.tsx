@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button, Theme } from "@radix-ui/themes";
 import { createWebGLRenderer } from "./renderer/WebGLRenderer";
 import { createCamera } from "./renderer/Camera";
+import { screenToWorld } from "./renderer/Camera";
 import { createMapRenderer } from "./renderer/MapRenderer";
 import { createSimulationRenderer } from "./simulation/SimulationRenderer";
 import { createCameraControls } from "./controls/CameraControls";
@@ -177,6 +178,113 @@ async function initApp(canvas: HTMLCanvasElement, callbacks: InitAppCallbacks): 
   // 5. Controls
   const controls = createCameraControls(canvas, camera, mapRenderer, simulation, renderer);
 
+  const resourceHoverEl = document.createElement("div");
+  resourceHoverEl.style.cssText =
+    "position:absolute;left:10px;bottom:54px;display:none;" +
+    "color:rgba(210,255,220,0.95);font:11px monospace;pointer-events:none;z-index:11;" +
+    "text-shadow:0 0 1px #000";
+  canvas.parentElement?.appendChild(resourceHoverEl);
+
+  const sampleFbo = gl.createFramebuffer();
+  const samplePixel = new Uint8Array(4);
+  let hoverScreenX = 0;
+  let hoverScreenY = 0;
+  let hoverActive = false;
+  let hoverRafId = 0;
+
+  function sampleResourceAtCell(
+    texture: WebGLTexture,
+    localX: number,
+    localY: number,
+    width: number,
+    height: number,
+  ): number | null {
+    if (!sampleFbo) return null;
+    if (localX < 0 || localY < 0 || localX >= width || localY >= height) return null;
+
+    const prevFbo = gl.getParameter(gl.FRAMEBUFFER_BINDING) as WebGLFramebuffer | null;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, sampleFbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+    const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+    if (status !== gl.FRAMEBUFFER_COMPLETE) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, prevFbo);
+      return null;
+    }
+
+    gl.readPixels(localX, localY, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, samplePixel);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, prevFbo);
+    return samplePixel[1] - 127;
+  }
+
+  const refreshHoverResource = () => {
+    if (mapRenderer.viewMode !== 11) {
+      resourceHoverEl.style.display = "none";
+      return;
+    }
+
+    if (!hoverActive) {
+      resourceHoverEl.style.display = "none";
+      return;
+    }
+
+    const { wx, wy } = screenToWorld(camera, hoverScreenX, hoverScreenY);
+
+    const placement = world.mapPlacements.find((p) => (
+      wx >= p.x
+      && wy >= p.y
+      && wx < p.x + p.map.width
+      && wy < p.y + p.map.height
+    ));
+
+    if (!placement || !placement.map.layers.branch2) {
+      resourceHoverEl.style.display = "none";
+      return;
+    }
+
+    const localX = Math.floor(wx - placement.x);
+    const mapY = Math.floor(wy - placement.y);
+    const localY = placement.map.height - 1 - mapY;
+    const signedResource = sampleResourceAtCell(
+      placement.map.layers.branch2,
+      localX,
+      localY,
+      placement.map.width,
+      placement.map.height,
+    );
+
+    if (signedResource == null) {
+      resourceHoverEl.style.display = "none";
+      return;
+    }
+
+    resourceHoverEl.textContent = `cell ${localX},${localY} | resource ${signedResource >= 0 ? "+" : ""}${signedResource}`;
+    resourceHoverEl.style.display = "block";
+  };
+
+  const onCanvasMouseMove = (e: MouseEvent) => {
+    const rect = canvas.getBoundingClientRect();
+    hoverScreenX = e.clientX - rect.left;
+    hoverScreenY = e.clientY - rect.top;
+    hoverActive = true;
+    refreshHoverResource();
+  };
+
+  const onCanvasMouseLeave = () => {
+    hoverActive = false;
+    resourceHoverEl.style.display = "none";
+  };
+
+  const hoverTick = () => {
+    if (hoverActive) {
+      refreshHoverResource();
+    }
+    hoverRafId = requestAnimationFrame(hoverTick);
+  };
+  hoverRafId = requestAnimationFrame(hoverTick);
+
+  canvas.addEventListener("mousemove", onCanvasMouseMove);
+  canvas.addEventListener("mouseleave", onCanvasMouseLeave);
+
   // 6. Start animation loop (simulation ticks inside at 200ms intervals)
   const stopLoop = renderer.start(camera, mapRenderer, simulation);
   const recorder = createCanvasWebpRecorder(canvas, gl, {
@@ -200,6 +308,13 @@ async function initApp(canvas: HTMLCanvasElement, callbacks: InitAppCallbacks): 
     },
     dispose() {
       window.removeEventListener("hashchange", onHashChange);
+      canvas.removeEventListener("mousemove", onCanvasMouseMove);
+      canvas.removeEventListener("mouseleave", onCanvasMouseLeave);
+      cancelAnimationFrame(hoverRafId);
+      resourceHoverEl.remove();
+      if (sampleFbo) {
+        gl.deleteFramebuffer(sampleFbo);
+      }
       recorder.dispose();
       stopLoop();
       controls.dispose();

@@ -36,6 +36,7 @@ function readQueryBool(name: string, defaultValue: boolean): boolean {
 
 const BRANCHING_ENABLED = readQueryBool("branching", true);
 const INHIBITION_ENABLED = readQueryBool("inhibition", true);
+const RESOURCE_MAP_ENABLED = readQueryBool("resourcemap", false);
 
 // ── Output helper ────────────────────────────────────────────────────────────
 const outputEl = document.getElementById("output");
@@ -351,6 +352,20 @@ interface PixelGrid {
   data: Float32Array;
 }
 
+interface PixelGridU8 {
+  data: Uint8Array;
+}
+
+function readTextureU8(tex: WebGLTexture): Uint8Array {
+  const fbo = createFBO(gl, tex);
+  const buf = new Uint8Array(W * H * 4);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.deleteFramebuffer(fbo);
+  return buf;
+}
+
 // ── ASCII rendering ──────────────────────────────────────────────────────────
 function renderASCII(foliage: PixelGrid, step: number): string {
   const lines: string[] = [];
@@ -398,11 +413,65 @@ function renderASCII(foliage: PixelGrid, step: number): string {
   return lines.join("\n");
 }
 
+function resourceGlyph(signedResource: number): string {
+  if (signedResource <= -64) return "B";
+  if (signedResource <= -32) return "b";
+  if (signedResource <= -8) return "n";
+  if (signedResource < 0) return "-";
+  if (signedResource == 0) return "0";
+  if (signedResource < 8) return "+";
+  if (signedResource < 32) return "p";
+  if (signedResource < 64) return "P";
+  return "R";
+}
+
+function renderResourceASCII(foliageU8: PixelGridU8, branch2U8: PixelGridU8, step: number): string {
+  const lines: string[] = [];
+  lines.push(`\n─── Resource Map t${step} (branch2.g signed around 127) ───`);
+
+  let occCount = 0;
+  let minRes = 999;
+  let maxRes = -999;
+  let sumRes = 0;
+
+  for (let y = 0; y < H; y++) {
+    let row = "";
+    for (let x = 0; x < W; x++) {
+      const idx = (y * W + x) * 4;
+      const aliveByte = foliageU8.data[idx + 3];
+      const isDirt = y >= (H - DIRT_ROWS);
+      if (isDirt) {
+        row += "█";
+        continue;
+      }
+      if (aliveByte <= 12) {
+        row += "·";
+        continue;
+      }
+
+      const signedResource = branch2U8.data[idx + 1] - 127;
+      row += resourceGlyph(signedResource);
+      occCount++;
+      minRes = Math.min(minRes, signedResource);
+      maxRes = Math.max(maxRes, signedResource);
+      sumRes += signedResource;
+    }
+    lines.push(row);
+  }
+
+  const avgRes = occCount > 0 ? (sumRes / occCount).toFixed(2) : "—";
+  const minTxt = occCount > 0 ? String(minRes) : "—";
+  const maxTxt = occCount > 0 ? String(maxRes) : "—";
+  lines.push(`occ=${occCount} | resource(min/avg/max)= ${minTxt} / ${avgRes} / ${maxTxt}`);
+  lines.push("legend: B,b,n,-,0,+,p,P,R => very neg ... zero ... very pos");
+  return lines.join("\n");
+}
+
 // ── RUN SIMULATION ───────────────────────────────────────────────────────────
 
 function run() {
   log(
-    `Simulation Lab — ${W}×${H} grid, ${DIRT_ROWS} dirt rows${SEED != null ? `, seed=${SEED}` : ""}, branching=${BRANCHING_ENABLED}, inhibition=${INHIBITION_ENABLED}`,
+    `Simulation Lab — ${W}×${H} grid, ${DIRT_ROWS} dirt rows${SEED != null ? `, seed=${SEED}` : ""}, branching=${BRANCHING_ENABLED}, inhibition=${INHIBITION_ENABLED}, resourcemap=${RESOURCE_MAP_ENABLED}`,
   );
   log(`Running ${NUM_STEPS} steps...\n`);
 
@@ -424,19 +493,13 @@ function run() {
     simulation.step();
 
     // Read back foliage data from the GPU for ASCII rendering + convergence
-    // The foliage texture is on the placement's layers — read it via FBO
     const foliageTex = placement.map.layers.foliage;
     if (!foliageTex) continue;
 
-    const fbo = createFBO(gl, foliageTex);
-    const buf = new Uint8Array(W * H * 4);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
-    gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, buf);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.deleteFramebuffer(fbo);
+    const foliageU8Data = readTextureU8(foliageTex);
 
-    const data = new Float32Array(buf.length);
-    for (let i = 0; i < buf.length; i++) data[i] = buf[i] / 255;
+    const data = new Float32Array(foliageU8Data.length);
+    for (let i = 0; i < foliageU8Data.length; i++) data[i] = foliageU8Data[i] / 255;
 
     const pixels: PixelGrid = { data };
 
@@ -456,6 +519,13 @@ function run() {
     // Log every step for the first 10, then every 5th
     if (step < 10 || step % 5 === 0 || step === NUM_STEPS - 1) {
       log(renderASCII(pixels, step));
+      if (RESOURCE_MAP_ENABLED) {
+        const branch2Tex = placement.map.layers.branch2;
+        if (branch2Tex) {
+          const branch2U8Data = readTextureU8(branch2Tex);
+          log(renderResourceASCII({ data: foliageU8Data }, { data: branch2U8Data }, step));
+        }
+      }
     }
 
     snapshots.push({ foliageData: new Float32Array(data) });
