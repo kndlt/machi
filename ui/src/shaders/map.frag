@@ -133,15 +133,21 @@ void main() {
   // Show branch-map channels and diagnostics.
   // Background = composited world; branch pixels = channel value visualization.
   if (u_view_mode >= 4 && u_view_mode <= 10) {
-    // Base world composite (dim background for contrast)
+    // Base = full visual composite (including foliage), then dim for contrast.
     vec3 sky = texture(u_sky, uv).rgb;
     vec3 base = sky;
     base = mix(base, bg.rgb, bg.a);
     base = mix(base, sp.rgb, sp.a);
     base = mix(base, fg.rgb, fg.a);
-    base *= 0.3; // dim
-
     vec4 fol = texture(u_foliage, uv);
+    if (u_foliage_enabled == 1) {
+      if (fol.a > 0.05) {
+        base = mix(base, foliageColor(fol), 1.0);
+      } else if (u_outline_enabled == 1 && isFoliageOutline(u_foliage, uv, folTexelSize)) {
+        base = mix(base, OUTLINE_COLOR, 1.0);
+      }
+    }
+    base *= 0.3; // dim
 
     if (u_view_mode == 8) {
       // Noise: show everywhere (it's a spatial field, not just foliage)
@@ -173,7 +179,7 @@ void main() {
     if (u_view_mode == 10) {
       float val = texture(u_foliage, uv).b;
       vec3 c = HUE_INHIBITION * val;
-      out_color = vec4(mix(base, c, 0.9), 1.0);
+      out_color = vec4(mix(base, c, val * 0.9), 1.0);
       return;
     }
 
