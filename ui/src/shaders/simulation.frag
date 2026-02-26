@@ -51,9 +51,9 @@ const float MAIN_TURN_RATE = 0.08;
 const float MAIN_TURN_RATE_BLOCKED = 0.55;
 const float MAIN_TURN_MAX = PI / 18.0; // 10 deg
 
-const float ROOT_SIDE_RATE = 0.10;
+const float ROOT_SIDE_RATE = 0.36;
 const float ROOT_SIDE_ANGLE_MIN = PI / 15.0;  // 12 deg
-const float ROOT_SIDE_ANGLE_MAX = PI / 6.0;   // 30 deg
+const float ROOT_SIDE_ANGLE_MAX = PI / 4.0;   // 45 deg
 const float ROOT_TURN_RATE = 0.04;
 const float ROOT_TURN_RATE_BLOCKED = 0.70;
 const float ROOT_TURN_MAX = PI * 7.0 / 180.0; // 7 deg
@@ -76,7 +76,8 @@ const vec2 HASH_SALT_SIDE_ANGLE_ROOT = vec2(1747.0, 1303.0);
 
 const float FORWARD_CONE_COS = 0.5; // cos(60 deg)
 const float INHIBITION_MAX = 255.0;
-const float INHIBITION_DECAY = 8.0;
+const float BRANCH_INHIBITION_DECAY = 8.0;
+const float ROOT_INHIBITION_DECAY = 32.0;
 
 float unpackByte(float packed);
 
@@ -291,15 +292,20 @@ void main() {
 
     float inhibCenter = unpackInhibition(branchPrev.b);
     float inhibNeighborMax = 0.0;
+    float inhibitionDecay = (hereType == CELL_TYPE_ROOT)
+      ? ROOT_INHIBITION_DECAY
+      : BRANCH_INHIBITION_DECAY;
     for (int i = 0; i < 8; i++) {
       vec4 nb = texture(u_foliage_prev, v_uv + offsets[i]);
       if (!isOccupied(nb)) continue;
+      float nbType = sourceCellType(v_uv + offsets[i], nb);
+      if (nbType != hereType) continue;
       float n = unpackInhibition(nb.b);
       inhibNeighborMax = max(inhibNeighborMax, n);
     }
     float inhibBase = max(
-      max(0.0, inhibCenter - INHIBITION_DECAY),
-      max(0.0, inhibNeighborMax - INHIBITION_DECAY)
+      max(0.0, inhibCenter - inhibitionDecay),
+      max(0.0, inhibNeighborMax - inhibitionDecay)
     );
     out_color = vec4(branchPrev.r, branchPrev.g, packInhibition(inhibBase), branchPrev.a);
     out_branch_tex2 = branchTex2Prev;
@@ -401,7 +407,7 @@ void main() {
           chosenId = sourceBranch.r;
           chosenDir = encodeDir(seedDir);
           chosenErr = seedChildErr;
-          chosenInhib = sourceInhib;
+          chosenInhib = (u_branch_inhibition_enabled == 1) ? INHIBITION_MAX : 0.0;
           chosenType = CELL_TYPE_ROOT;
         }
       }
