@@ -90,7 +90,6 @@ const float ROOT_GATHER_RATE = 1.0;
 const float RESOURCE_RELAX_BRANCH = 0.0;
 const float RESOURCE_RELAX_ROOT = 0.0;
 const float RESOURCE_DIFF_TRANSFER_FRACTION = 0.5;
-const float RESOURCE_UPSTREAM_MIN_ALIGNMENT = 0.5;
 // Version: Energy conversation version
 // const float RESOURCE_ZERO_BYTE = 127.0;
 // const float RESOURCE_MIN_BYTE = 0.0;
@@ -102,6 +101,31 @@ const float RESOURCE_UPSTREAM_MIN_ALIGNMENT = 0.5;
 // const float RESOURCE_RELAX_ROOT = 0.0;
 
 float unpackByte(float packed);
+bool isOccupied(vec4 b);
+vec2 dirFromEncoded(float encoded);
+float unpackDir(float packedDirErr);
+float unpackErr(float packedDirErr);
+void lineStepper(vec2 dir, out vec2 primaryStep, out vec2 secondaryStep, out float slopeMix);
+
+struct NodeState {
+  bool occupied;
+  float treeIdByte;
+  float cellType;
+  vec2 dir;
+  float err;
+  ivec2 pos;
+};
+
+struct ParentHit {
+  bool found;
+  ivec2 pos;
+  ivec2 step;
+  NodeState parent;
+};
+
+NodeState makeEmptyNodeState();
+ParentHit makeParentMiss();
+ParentHit makeParentFound(NodeState parentState, ivec2 parentStep);
 
 float selectByType(float cellType, float branchValue, float rootValue) {
   return (cellType >= 0.5) ? rootValue : branchValue;
@@ -151,6 +175,122 @@ float packResourceSigned(float signedResource) {
 vec2 edgeSafeUV(vec2 uv, vec2 texelSize) {
   vec2 halfTexel = texelSize * 0.5;
   return clamp(uv, halfTexel, vec2(1.0) - halfTexel);
+}
+
+ivec2 latticePosFromUV(vec2 uv) {
+  ivec2 sizeI = textureSize(u_matter, 0);
+  vec2 size = vec2(sizeI);
+  vec2 texelSize = 1.0 / size;
+  vec2 safeUV = edgeSafeUV(uv, texelSize);
+  vec2 scaled = safeUV * size;
+  return ivec2(floor(scaled));
+}
+
+NodeState makeNodeState(vec2 uv, vec4 foliageSample, vec4 branchTex2Sample) {
+  NodeState state;
+  state.occupied = isOccupied(foliageSample);
+  state.treeIdByte = unpackByte(foliageSample.r);
+  state.cellType = sourceCellType(uv, foliageSample);
+  state.dir = dirFromEncoded(unpackDir(foliageSample.g));
+  state.err = unpackErr(foliageSample.g);
+  state.pos = latticePosFromUV(uv);
+  return state;
+}
+
+NodeState decodeNodeStateAtUV(vec2 uv) {
+  ivec2 sizeI = textureSize(u_matter, 0);
+  vec2 texelSize = 1.0 / vec2(sizeI);
+  vec2 safeUV = edgeSafeUV(uv, texelSize);
+  vec4 foliageSample = texture(u_foliage_prev, safeUV);
+  vec4 branchTex2Sample = texture(u_branch_tex2_prev, safeUV);
+  return makeNodeState(safeUV, foliageSample, branchTex2Sample);
+}
+
+bool latticePosInBounds(ivec2 pos) {
+  ivec2 sizeI = textureSize(u_matter, 0);
+  return pos.x >= 0 && pos.y >= 0 && pos.x < sizeI.x && pos.y < sizeI.y;
+}
+
+vec2 uvFromLatticePos(ivec2 pos) {
+  ivec2 sizeI = textureSize(u_matter, 0);
+  vec2 size = vec2(sizeI);
+  return (vec2(pos) + vec2(0.5)) / size;
+}
+
+NodeState decodeNodeStateAtPos(ivec2 pos) {
+  if (!latticePosInBounds(pos)) {
+    return makeEmptyNodeState();
+  }
+  return decodeNodeStateAtUV(uvFromLatticePos(pos));
+}
+
+ivec2 expectedBackwardStepFromDirErr(vec2 dir, float err) {
+  vec2 primaryStep;
+  vec2 secondaryStep;
+  float slopeMix;
+  lineStepper(dir, primaryStep, secondaryStep, slopeMix);
+
+  float errNext = err + slopeMix;
+  bool takeSecondary = errNext >= 1.0;
+  vec2 childForwardStep = takeSecondary ? secondaryStep : primaryStep;
+  vec2 backwardStep = -childForwardStep;
+  return ivec2(int(backwardStep.x), int(backwardStep.y));
+}
+
+bool isChildOf(NodeState child, NodeState parent) {
+  if (!child.occupied || !parent.occupied) return false;
+  if (child.treeIdByte != parent.treeIdByte) return false;
+
+  ivec2 expectedParentPos = child.pos + expectedBackwardStepFromDirErr(child.dir, child.err);
+  return all(equal(parent.pos, expectedParentPos));
+}
+
+bool isParentOf(NodeState parent, NodeState child) {
+  return isChildOf(child, parent);
+}
+
+ParentHit getParent(NodeState child) {
+  if (!child.occupied) {
+    return makeParentMiss();
+  }
+
+  ivec2 backwardStep = expectedBackwardStepFromDirErr(child.dir, child.err);
+  ivec2 parentPos = child.pos + backwardStep;
+  NodeState parentState = decodeNodeStateAtPos(parentPos);
+
+  if (!isChildOf(child, parentState)) {
+    return makeParentMiss();
+  }
+  return makeParentFound(parentState, backwardStep);
+}
+
+NodeState makeEmptyNodeState() {
+  NodeState state;
+  state.occupied = false;
+  state.treeIdByte = 0.0;
+  state.cellType = CELL_TYPE_BRANCH;
+  state.dir = vec2(0.0, -1.0);
+  state.err = 0.0;
+  state.pos = ivec2(0);
+  return state;
+}
+
+ParentHit makeParentMiss() {
+  ParentHit hit;
+  hit.found = false;
+  hit.pos = ivec2(0);
+  hit.step = ivec2(0);
+  hit.parent = makeEmptyNodeState();
+  return hit;
+}
+
+ParentHit makeParentFound(NodeState parentState, ivec2 parentStep) {
+  ParentHit hit;
+  hit.found = true;
+  hit.pos = parentState.pos;
+  hit.step = parentStep;
+  hit.parent = parentState;
+  return hit;
 }
 
 vec4 withCellTypeAndResource(vec4 branchTex2Prev, float cellType, float signedResource) {
@@ -240,34 +380,6 @@ vec4 emptyCell(float inhibition) {
   return vec4(0.0, 0.0, packInhibition(inhibition), 0.0);
 }
 
-bool sameStep(vec2 a, vec2 b) {
-  return distance(a, b) < 0.25;
-}
-
-vec2 nearestStep8(vec2 dir) {
-  vec2 steps[8] = vec2[8](
-    vec2(0.0, -1.0),
-    vec2(1.0, -1.0),
-    vec2(1.0, 0.0),
-    vec2(1.0, 1.0),
-    vec2(0.0, 1.0),
-    vec2(-1.0, 1.0),
-    vec2(-1.0, 0.0),
-    vec2(-1.0, -1.0)
-  );
-
-  float bestDot = -2.0;
-  int bestIdx = 0;
-  for (int i = 0; i < 8; i++) {
-    float s = dot(normalize(steps[i]), normalize(dir));
-    if (s > bestDot) {
-      bestDot = s;
-      bestIdx = i;
-    }
-  }
-  return steps[bestIdx];
-}
-
 void lineStepper(vec2 dir, out vec2 primaryStep, out vec2 secondaryStep, out float slopeMix) {
   float vx = dir.x;
   float vy = dir.y;
@@ -342,43 +454,12 @@ void main() {
     float hereResourcePrev = unpackResourceSigned(branchTex2Prev);
 
     float resourceStepDelta = 0.0;
-    float hereTreeIdByte = unpackByte(branchPrev.r);
-    vec2 latticeOffsets[8] = vec2[8](
-      vec2(0.0, -1.0),
-      vec2(1.0, -1.0),
-      vec2(1.0, 0.0),
-      vec2(1.0, 1.0),
-      vec2(0.0, 1.0),
-      vec2(-1.0, 1.0),
-      vec2(-1.0, 0.0),
-      vec2(-1.0, -1.0)
-    );
-
-    vec2 hereDir = dirFromEncoded(unpackDir(branchPrev.g));
-    vec2 canopyDir = (hereType == CELL_TYPE_ROOT) ? normalize(-hereDir) : normalize(hereDir);
-    vec2 upstreamDir = -canopyDir;
-    float bestUpstreamScore = -2.0;
-    float bestUpstreamResource = 0.0;
-    bool hasUpstream = false;
-    for (int i = 0; i < 8; i++) {
-      vec2 step = latticeOffsets[i];
-      vec2 nbUV = edgeSafeUV(v_uv + vec2(step.x * texelSize.x, step.y * texelSize.y), texelSize);
-      vec4 nb = texture(u_foliage_prev, nbUV);
-      if (!isOccupied(nb)) continue;
-      float nbTreeIdByte = unpackByte(nb.r);
-      if (nbTreeIdByte != hereTreeIdByte) continue;
-
-      float score = dot(normalize(step), upstreamDir);
-      if (score > bestUpstreamScore) {
-        bestUpstreamScore = score;
-        vec4 nbMeta = texture(u_branch_tex2_prev, nbUV);
-        bestUpstreamResource = unpackResourceSigned(nbMeta);
-        hasUpstream = true;
-      }
-    }
-
-    if (hasUpstream && bestUpstreamScore > RESOURCE_UPSTREAM_MIN_ALIGNMENT) {
-      resourceStepDelta += max(0.0, computeResourceTransfer(bestUpstreamResource, hereResourcePrev));
+    NodeState hereNode = makeNodeState(v_uv, branchPrev, branchTex2Prev);
+    ParentHit upstreamHit = getParent(hereNode);
+    if (upstreamHit.found) {
+      vec2 parentUV = uvFromLatticePos(upstreamHit.parent.pos);
+      float parentResource = unpackResourceSigned(texture(u_branch_tex2_prev, parentUV));
+      resourceStepDelta += max(0.0, computeResourceTransfer(parentResource, hereResourcePrev));
     }
     float hereResource = hereResourcePrev + resourceStepDelta;
 
@@ -421,17 +502,6 @@ void main() {
     out_branch_tex2 = withCellTypeAndResource(branchTex2Prev, hereType, hereResource);
     return;
   } else {
-    vec2 latticeOffsets[8] = vec2[8](
-      vec2(0.0, -1.0),
-      vec2(1.0, -1.0),
-      vec2(1.0, 0.0),
-      vec2(1.0, 1.0),
-      vec2(0.0, 1.0),
-      vec2(-1.0, 1.0),
-      vec2(-1.0, 0.0),
-      vec2(-1.0, -1.0)
-    );
-
     int claimCount = 0;
     float chosenId = 0.0;
     float chosenDir = 0.0;
@@ -439,6 +509,7 @@ void main() {
     float chosenInhib = 0.0;
     float chosenType = CELL_TYPE_BRANCH;
     float chosenResource = 0.0;
+    ivec2 candidatePos = latticePosFromUV(v_uv);
     bool candidateIsAir = isAir(mHere);
     bool candidateIsDirt = isDirt(mHere);
     bool touchingWater = false;
@@ -472,6 +543,8 @@ void main() {
       vec2 sourceUV = edgeSafeUV(v_uv + offsets[i], texelSize);
       vec4 sourceBranch = texture(u_foliage_prev, sourceUV);
       if (!isOccupied(sourceBranch)) continue;
+      vec4 sourceMeta = texture(u_branch_tex2_prev, sourceUV);
+      NodeState sourceNode = makeNodeState(sourceUV, sourceBranch, sourceMeta);
       float sourceType = sourceCellType(sourceUV, sourceBranch);
       bool sourceIsRoot = sourceType == CELL_TYPE_ROOT;
       if (sourceIsRoot && !candidateIsDirt) continue;
@@ -496,20 +569,12 @@ void main() {
         ? unpackInhibition(sourceBranch.b)
         : 0.0;
       vec2 sourceDir = dirFromEncoded(unpackDir(sourcePacked));
-      vec2 toCurrent = -latticeOffsets[i];
 
       // Root seed: use the same step/error claim logic as forward growth, but backward.
       if (!sourceIsRoot && candidateIsDirt) {
-        float sourceTreeIdByte = unpackByte(sourceBranch.r);
-        vec2 sourceParentStep = nearestStep8(-sourceDir);
-        vec2 sourceParentUV = edgeSafeUV(sourceUV + vec2(sourceParentStep.x * texelSize.x, sourceParentStep.y * texelSize.y), texelSize);
-        vec4 sourceParentBranch = texture(u_foliage_prev, sourceParentUV);
-        if (isOccupied(sourceParentBranch)) {
-          float sourceParentTreeIdByte = unpackByte(sourceParentBranch.r);
-          if (sourceParentTreeIdByte == sourceTreeIdByte) {
-            float sourceParentType = sourceCellType(sourceParentUV, sourceParentBranch);
-            if (sourceParentType == CELL_TYPE_ROOT) continue;
-          }
+        ParentHit sourceParentHit = getParent(sourceNode);
+        if (sourceParentHit.found && sourceParentHit.parent.cellType == CELL_TYPE_ROOT) {
+          continue;
         }
 
         vec2 seedDir = normalize(-sourceDir);
@@ -518,12 +583,29 @@ void main() {
         float seedSlopeMix;
         lineStepper(seedDir, seedPrimaryStep, seedSecondaryStep, seedSlopeMix);
 
-        float seedErrNext = sourceErr + seedSlopeMix;
-        bool seedTakeSecondary = seedErrNext >= 1.0;
-        vec2 seedExpectedStep = seedTakeSecondary ? seedSecondaryStep : seedPrimaryStep;
-        float seedChildErr = seedTakeSecondary ? (seedErrNext - 1.0) : seedErrNext;
+        ivec2 stepToParent = sourceNode.pos - candidatePos;
+        ivec2 backwardPrimary = ivec2(-int(seedPrimaryStep.x), -int(seedPrimaryStep.y));
+        ivec2 backwardSecondary = ivec2(-int(seedSecondaryStep.x), -int(seedSecondaryStep.y));
+        bool matchPrimary = all(equal(stepToParent, backwardPrimary));
+        bool matchSecondary = all(equal(stepToParent, backwardSecondary));
+        if (!matchPrimary && !matchSecondary) {
+          continue;
+        }
 
-        if (sameStep(toCurrent, seedExpectedStep)) {
+        float seedChildErr = 0.0;
+        if (!matchPrimary && matchSecondary) {
+          seedChildErr = clamp(1.0 - seedSlopeMix, 0.0, 0.999999);
+        }
+
+        NodeState seedCandidate = makeEmptyNodeState();
+        seedCandidate.occupied = true;
+        seedCandidate.treeIdByte = sourceNode.treeIdByte;
+        seedCandidate.cellType = CELL_TYPE_ROOT;
+        seedCandidate.dir = seedDir;
+        seedCandidate.err = seedChildErr;
+        seedCandidate.pos = candidatePos;
+
+        if (isChildOf(seedCandidate, sourceNode)) {
           if (blockedInForwardCone(v_uv, sourceUV, seedDir, texelSize)) continue;
           claimCount++;
           if (claimCount == 1) {
@@ -554,9 +636,8 @@ void main() {
       }
       bool isTipSource = sourceNeighborCount == 1;
 
-      vec2 parentStep = nearestStep8(-sourceDir);
-      vec2 parentUV = edgeSafeUV(sourceUV + vec2(parentStep.x * texelSize.x, parentStep.y * texelSize.y), texelSize);
-      bool hasParent = isOccupied(texture(u_foliage_prev, parentUV));
+      ParentHit sourceParentHit = getParent(sourceNode);
+      bool hasParent = sourceParentHit.found;
 
       // Main path steering for this source (small deterministic turn, mostly at tips).
       vec2 steeredDir = sourceDir;
@@ -590,7 +671,6 @@ void main() {
       float err = sourceErr;
       float errNext = err + slopeMix;
       bool takeSecondary = errNext >= 1.0;
-      vec2 expectedStep = takeSecondary ? secondaryStep : primaryStep;
       float childErr = takeSecondary ? (errNext - 1.0) : errNext;
 
       // Side branch candidate from source.
@@ -602,14 +682,12 @@ void main() {
         && (!forwardOccupied)
         && (sideHash < branchGate);
 
-      vec2 sideStep = vec2(999.0);
       float sideEncodedDir = 0.0;
       float sideChildErr = 0.0;
       if (emitSide) {
         float angleMix = hash12(sourceUV * sideAngleSalt + sourcePacked * 53.0);
         float sideAngle = mix(sideAngleMin, sideAngleMax, angleMix);
         vec2 sideDir = normalize(rotateVec(steeredDir, sideSign * sideAngle));
-        sideStep = nearestStep8(sideDir);
         sideChildErr = 0.0;
         sideEncodedDir = encodeDir(sideDir);
       }
@@ -624,7 +702,15 @@ void main() {
       float claimType = sourceType;
       float claimResource = -NEW_GROWTH_RESOURCE_COST;
 
-      if (sameStep(toCurrent, expectedStep)) {
+      NodeState claimCandidate = makeEmptyNodeState();
+      claimCandidate.occupied = true;
+      claimCandidate.treeIdByte = sourceNode.treeIdByte;
+      claimCandidate.cellType = sourceType;
+      claimCandidate.pos = candidatePos;
+
+      claimCandidate.dir = steeredDir;
+      claimCandidate.err = childErr;
+      if (isChildOf(claimCandidate, sourceNode)) {
         if (blockedInForwardCone(v_uv, sourceUV, steeredDir, texelSize)) continue;
         claimed = true;
         claimId = sourceBranch.r;
@@ -633,8 +719,13 @@ void main() {
         claimInhib = sourceInhib;
         claimType = sourceType;
         claimResource = -NEW_GROWTH_RESOURCE_COST;
-      } else if (emitSide && sameStep(toCurrent, sideStep)) {
+      } else if (emitSide) {
         vec2 sideDir = dirFromEncoded(sideEncodedDir);
+        claimCandidate.dir = sideDir;
+        claimCandidate.err = sideChildErr;
+        if (!isChildOf(claimCandidate, sourceNode)) {
+          continue;
+        }
         if (blockedInForwardCone(v_uv, sourceUV, sideDir, texelSize)) continue;
         claimed = true;
         claimId = sourceBranch.r;
