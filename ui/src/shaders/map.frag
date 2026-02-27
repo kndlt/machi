@@ -281,7 +281,9 @@ void main() {
       float t = clamp((signedResource + 127.0) / 254.0, 0.0, 1.0);
       vec3 heat = heatMap(t);
       float isBranchOrRoot = step(0.05, fol.a);
-      float backgroundBlend = min(0.90, 0.20 + 0.70 * sqrt(mag)) * 0.30;
+      float backgroundBaseBlend = min(0.90, 0.20 + 0.70 * sqrt(mag));
+      float dirtBlendScale = isDirtMatter(m) ? 0.75 : 0.30;
+      float backgroundBlend = backgroundBaseBlend * dirtBlendScale;
       float blend = mix(backgroundBlend, 1.0, isBranchOrRoot);
       out_color = vec4(mix(base, heat, blend), 1.0);
       return;

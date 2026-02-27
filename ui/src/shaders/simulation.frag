@@ -83,14 +83,15 @@ const float ROOT_INHIBITION_DECAY = 32.0;
 const float RESOURCE_ZERO_BYTE = 127.0;
 const float RESOURCE_MIN_BYTE = 0.0;
 const float RESOURCE_MAX_BYTE = 255.0;
-const float ROOT_CREATION_COST = 3.0;
-const float BRANCH_CREATION_COST = 3.0;
+const float ROOT_CREATION_COST = 1.0;
+const float BRANCH_CREATION_COST = 1.0;
 const float RESOURCE_SIGNED_MIN = RESOURCE_MIN_BYTE - RESOURCE_ZERO_BYTE;
 const float RESOURCE_SIGNED_MAX = RESOURCE_MAX_BYTE - RESOURCE_ZERO_BYTE - 1.0;
 const float RESOURCE_RELAX_BRANCH = 0.0;
 const float RESOURCE_RELAX_ROOT = 0.0;
 const float RESOURCE_CANOPY_TRANSFER_FRACTION = 0.75;
 const float RESOURCE_ANTI_CANOPY_TRANSFER_FRACTION = 0.1;
+const float DIRT_DIFFUSION_FRACTION = 0.25;
 // Version: Energy conversation version
 // const float RESOURCE_ZERO_BYTE = 127.0;
 // const float RESOURCE_MIN_BYTE = 0.0;
@@ -185,6 +186,24 @@ float computeResourceTransfer(float sourceResource, float sinkResource, bool par
       : RESOURCE_CANOPY_TRANSFER_FRACTION;
   }
   float transferredMagnitude = floor(magnitude * transferFraction);
+  return signDiff * transferredMagnitude;
+}
+
+float computeDirtDiffusionFlow(float sourceResource, float sinkResource) {
+  float diff = sourceResource - sinkResource;
+  if (diff == 0.0) return 0.0;
+
+  float signDiff = (diff < 0.0) ? -1.0 : 1.0;
+  float magnitude = abs(diff);
+  if (magnitude == 1.0) {
+    return signDiff;
+  } else if (magnitude == 2.0) {
+    return signDiff;
+  } else if (magnitude == 3.0) {
+    return signDiff;
+  }
+
+  float transferredMagnitude = floor(magnitude * DIRT_DIFFUSION_FRACTION);
   return signDiff * transferredMagnitude;
 }
 
@@ -471,8 +490,19 @@ void main() {
     vec2(-texelSize.x, -texelSize.y)
   );
 
+  int phase = u_tick % 4;
+  bool diffusionPhase = (phase == 0) || (phase == 1);
+  bool internalPhase = (phase == 2);
+  bool growthPhase = (phase == 3);
+
   // Existing occupied cell persists and carries inhibition diffusion/decay.
   if (isOccupied(branchPrev)) {
+    if (!internalPhase) {
+      out_color = branchPrev;
+      out_branch_tex2 = branchTex2Prev;
+      return;
+    }
+
     float hereResourcePrev = unpackResourceSigned(branchTex2Prev);
 
     float resourceIncoming = 0.0;
@@ -549,9 +579,45 @@ void main() {
     bool candidateIsDirt = isDirt(mHere);
     bool touchingWater = false;
 
+    if (candidateIsDirt && diffusionPhase) {
+      int diffusionCycle = u_tick / 4;
+      int diffusionParityOffset = diffusionCycle % 2;
+      ivec2 partnerPos = candidatePos;
+      if (phase == 0) {
+        int xParity = candidatePos.x % 2;
+        int dx = (xParity == diffusionParityOffset) ? 1 : -1;
+        partnerPos += ivec2(dx, 0);
+      } else {
+        int yParity = candidatePos.y % 2;
+        int dy = (yParity == diffusionParityOffset) ? 1 : -1;
+        partnerPos += ivec2(0, dy);
+      }
+
+      if (latticePosInBounds(partnerPos)) {
+        vec2 partnerUV = uvFromLatticePos(partnerPos);
+        vec4 mN = texture(u_matter, partnerUV);
+        vec4 branchN = texture(u_foliage_prev, partnerUV);
+        if (isDirt(mN) && !isOccupied(branchN)) {
+          float neighborNutrient = unpackResourceSigned(texture(u_branch_tex2_prev, partnerUV));
+          candidateNutrient += computeDirtDiffusionFlow(neighborNutrient, candidateNutrient);
+        }
+      }
+
+      candidateNutrient = clamp(candidateNutrient, RESOURCE_SIGNED_MIN, RESOURCE_SIGNED_MAX);
+    }
+
+    vec4 emptyMeta = branchTex2Prev;
+    emptyMeta.g = packResourceSigned(candidateNutrient);
+
     if (!candidateIsAir && !candidateIsDirt) {
       out_color = branchPrev;
       out_branch_tex2 = branchTex2Prev;
+      return;
+    }
+
+    if (!growthPhase) {
+      out_color = branchPrev;
+      out_branch_tex2 = emptyMeta;
       return;
     }
 
@@ -563,13 +629,7 @@ void main() {
 
     if (touchingWater) {
       out_color = branchPrev;
-      out_branch_tex2 = branchTex2Prev;
-      return;
-    }
-
-    if ((u_tick % 2) == 0) {
-      out_color = branchPrev;
-      out_branch_tex2 = branchTex2Prev;
+      out_branch_tex2 = emptyMeta;
       return;
     }
 
@@ -795,7 +855,7 @@ void main() {
     // Accept only unambiguous claims to avoid clumping.
     if (claimCount != 1) {
       out_color = branchPrev;
-      out_branch_tex2 = branchTex2Prev;
+      out_branch_tex2 = emptyMeta;
       return;
     }
 
