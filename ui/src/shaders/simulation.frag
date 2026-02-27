@@ -77,7 +77,7 @@ const vec2 HASH_SALT_SIDE_ANGLE_ROOT = vec2(1747.0, 1303.0);
 
 const float FORWARD_CONE_COS = 0.5; // cos(60 deg)
 const float INHIBITION_MAX = 255.0;
-const float BRANCH_INHIBITION_DECAY = 8.0;
+const float BRANCH_INHIBITION_DECAY = 3.0;
 const float ROOT_INHIBITION_DECAY = 32.0;
 
 const float RESOURCE_ZERO_BYTE = 127.0;
@@ -490,10 +490,10 @@ void main() {
     vec2(-texelSize.x, -texelSize.y)
   );
 
-  int phase = u_tick % 4;
+  int phase = u_tick % 5;
   bool diffusionPhase = (phase == 0) || (phase == 1);
-  bool internalPhase = (phase == 2);
-  bool growthPhase = (phase == 3);
+  bool internalPhase = (phase == 2) || (phase == 3);
+  bool growthPhase = (phase == 4);
 
   // Existing occupied cell persists and carries inhibition diffusion/decay.
   if (isOccupied(branchPrev)) {
@@ -504,6 +504,7 @@ void main() {
     }
 
     float hereResourcePrev = unpackResourceSigned(branchTex2Prev);
+    float hereResource = hereResourcePrev;
 
     float resourceIncoming = 0.0;
     float resourceOutgoing = 0.0;
@@ -529,7 +530,7 @@ void main() {
       bool parentToChildTowardCanopy = (childNode.cellType != CELL_TYPE_ROOT);
       resourceOutgoing += computeResourceTransfer(hereResourcePrev, childResourcePrev, parentToChildTowardCanopy);
     }
-    float hereResource = hereResourcePrev + resourceIncoming - resourceOutgoing;
+    hereResource = hereResourcePrev + resourceIncoming - resourceOutgoing;
 
     // float relaxRate = (hereType == CELL_TYPE_ROOT) ? RESOURCE_RELAX_ROOT : RESOURCE_RELAX_BRANCH;
     // if (hereResource > 0.0) {
@@ -580,7 +581,7 @@ void main() {
     bool touchingWater = false;
 
     if (candidateIsDirt && diffusionPhase) {
-      int diffusionCycle = u_tick / 4;
+      int diffusionCycle = u_tick / 5;
       int diffusionParityOffset = diffusionCycle % 2;
       ivec2 partnerPos = candidatePos;
       if (phase == 0) {
