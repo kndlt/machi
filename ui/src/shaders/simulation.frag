@@ -197,11 +197,13 @@ float computeDirtDiffusionFlow(float sourceResource, float sinkResource) {
   float magnitude = abs(diff);
   if (magnitude == 1.0) {
     return signDiff;
-  } else if (magnitude == 2.0) {
-    return signDiff;
-  } else if (magnitude == 3.0) {
-    return signDiff;
-  }
+  } 
+  // else if (magnitude == 2.0) {
+  //   return signDiff;
+  // } 
+  // else if (magnitude == 3.0) {
+  //   return signDiff;
+  // }
 
   float transferredMagnitude = floor(magnitude * DIRT_DIFFUSION_FRACTION);
   return signDiff * transferredMagnitude;
