@@ -8,6 +8,7 @@ import { createSimulationRenderer } from "./simulation/SimulationRenderer";
 import { createCameraControls } from "./controls/CameraControls";
 import { loadWorld } from "./world/WorldLoader";
 import { createCanvasWebpRecorder } from "./utils/canvasWebpRecorder";
+import { createNutrientHud } from "./utils/nutrientHud";
 
 const DEFAULT_WORLD_NAME = "world1";
 
@@ -100,6 +101,10 @@ function readBranchInhibitionEnabled(): boolean {
   return readBooleanParam("inhibition", true);
 }
 
+function readNutrientHudEnabled(): boolean {
+  return readBooleanParam("nutrienthud", true);
+}
+
 function readViewMode(): number | null {
   const raw = readLocationParam("view");
   if (raw == null) return null;
@@ -159,21 +164,17 @@ async function initApp(canvas: HTMLCanvasElement, callbacks: InitAppCallbacks): 
 
     simulation.branchingEnabled = readBranchingEnabled();
     simulation.branchInhibitionEnabled = readBranchInhibitionEnabled();
+    const nutrientHudEnabled = readNutrientHudEnabled();
+    nutrientHud.setEnabled(nutrientHudEnabled);
 
     const speedMultiplier = readSimulationSpeedMultiplier() ?? 1;
     renderer.simInterval = Math.round(BASE_SIM_INTERVAL_MS / speedMultiplier);
     renderer.simStartDelayMs = readSimulationStartDelayMs() ?? 0;
 
     console.log(
-      `Location controls applied: perturb=${simulation.noiseSpeed}, speed=${speedMultiplier}, simInterval=${renderer.simInterval}ms, delay=${renderer.simStartDelayMs}ms, seed=${simulationSeed ?? "random"}, view=${mapRenderer.viewMode}, branching=${simulation.branchingEnabled}, inhibition=${simulation.branchInhibitionEnabled}`,
+      `Location controls applied: perturb=${simulation.noiseSpeed}, speed=${speedMultiplier}, simInterval=${renderer.simInterval}ms, delay=${renderer.simStartDelayMs}ms, seed=${simulationSeed ?? "random"}, view=${mapRenderer.viewMode}, branching=${simulation.branchingEnabled}, inhibition=${simulation.branchInhibitionEnabled}, nutrienthud=${nutrientHudEnabled}`,
     );
   };
-  applyLocationControls();
-
-  const onHashChange = () => {
-    applyLocationControls();
-  };
-  window.addEventListener("hashchange", onHashChange);
 
   // 5. Controls
   const controls = createCameraControls(canvas, camera, mapRenderer, simulation, renderer);
@@ -183,7 +184,17 @@ async function initApp(canvas: HTMLCanvasElement, callbacks: InitAppCallbacks): 
     "position:absolute;left:10px;bottom:54px;display:none;" +
     "color:rgba(210,255,220,0.95);font:11px monospace;pointer-events:none;z-index:11;" +
     "text-shadow:0 0 1px #000";
+  resourceHoverEl.style.whiteSpace = "pre";
   canvas.parentElement?.appendChild(resourceHoverEl);
+
+  const nutrientHud = createNutrientHud(gl, world);
+
+  applyLocationControls();
+
+  const onHashChange = () => {
+    applyLocationControls();
+  };
+  window.addEventListener("hashchange", onHashChange);
 
   const sampleFbo = gl.createFramebuffer();
   const samplePixel = new Uint8Array(4);
@@ -222,8 +233,14 @@ async function initApp(canvas: HTMLCanvasElement, callbacks: InitAppCallbacks): 
       return;
     }
 
+    const nutrientLine = nutrientHud.getLabel();
     if (!hoverActive) {
-      resourceHoverEl.style.display = "none";
+      if (nutrientLine) {
+        resourceHoverEl.textContent = nutrientLine;
+        resourceHoverEl.style.display = "block";
+      } else {
+        resourceHoverEl.style.display = "none";
+      }
       return;
     }
 
@@ -237,7 +254,12 @@ async function initApp(canvas: HTMLCanvasElement, callbacks: InitAppCallbacks): 
     ));
 
     if (!placement || !placement.map.layers.branch2) {
-      resourceHoverEl.style.display = "none";
+      if (nutrientLine) {
+        resourceHoverEl.textContent = nutrientLine;
+        resourceHoverEl.style.display = "block";
+      } else {
+        resourceHoverEl.style.display = "none";
+      }
       return;
     }
 
@@ -253,11 +275,17 @@ async function initApp(canvas: HTMLCanvasElement, callbacks: InitAppCallbacks): 
     );
 
     if (signedResource == null) {
-      resourceHoverEl.style.display = "none";
+      if (nutrientLine) {
+        resourceHoverEl.textContent = nutrientLine;
+        resourceHoverEl.style.display = "block";
+      } else {
+        resourceHoverEl.style.display = "none";
+      }
       return;
     }
 
-    resourceHoverEl.textContent = `cell ${localX},${localY} | resource ${signedResource >= 0 ? "+" : ""}${signedResource}`;
+    const cellLine = `cell ${localX},${localY} | resource ${signedResource >= 0 ? "+" : ""}${signedResource}`;
+    resourceHoverEl.textContent = nutrientLine ? `${nutrientLine}\n${cellLine}` : cellLine;
     resourceHoverEl.style.display = "block";
   };
 
@@ -271,13 +299,12 @@ async function initApp(canvas: HTMLCanvasElement, callbacks: InitAppCallbacks): 
 
   const onCanvasMouseLeave = () => {
     hoverActive = false;
-    resourceHoverEl.style.display = "none";
+    refreshHoverResource();
   };
 
-  const hoverTick = () => {
-    if (hoverActive) {
-      refreshHoverResource();
-    }
+  const hoverTick = (now: number) => {
+    nutrientHud.tick(now, mapRenderer.viewMode === 11);
+    refreshHoverResource();
     hoverRafId = requestAnimationFrame(hoverTick);
   };
   hoverRafId = requestAnimationFrame(hoverTick);
@@ -312,6 +339,7 @@ async function initApp(canvas: HTMLCanvasElement, callbacks: InitAppCallbacks): 
       canvas.removeEventListener("mouseleave", onCanvasMouseLeave);
       cancelAnimationFrame(hoverRafId);
       resourceHoverEl.remove();
+      nutrientHud.dispose();
       if (sampleFbo) {
         gl.deleteFramebuffer(sampleFbo);
       }
