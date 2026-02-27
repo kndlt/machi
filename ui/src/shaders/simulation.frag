@@ -83,13 +83,13 @@ const float ROOT_INHIBITION_DECAY = 32.0;
 const float RESOURCE_ZERO_BYTE = 127.0;
 const float RESOURCE_MIN_BYTE = 0.0;
 const float RESOURCE_MAX_BYTE = 255.0;
-const float NEW_GROWTH_RESOURCE_COST = 1.0;
+const float NEW_GROWTH_RESOURCE_COST = 0.0;
 const float RESOURCE_SIGNED_MIN = RESOURCE_MIN_BYTE - RESOURCE_ZERO_BYTE;
 const float RESOURCE_SIGNED_MAX = RESOURCE_MAX_BYTE - RESOURCE_ZERO_BYTE - 1.0;
-const float ROOT_GATHER_RATE = 1.0;
 const float RESOURCE_RELAX_BRANCH = 0.0;
 const float RESOURCE_RELAX_ROOT = 0.0;
-const float RESOURCE_DIFF_TRANSFER_FRACTION = 0.5;
+const float RESOURCE_CANOPY_TRANSFER_FRACTION = 0.75;
+const float RESOURCE_ANTI_CANOPY_TRANSFER_FRACTION = 0.1;
 // Version: Energy conversation version
 // const float RESOURCE_ZERO_BYTE = 127.0;
 // const float RESOURCE_MIN_BYTE = 0.0;
@@ -155,14 +155,31 @@ float unpackResourceSigned(vec4 branchTex2) {
   return clamp(signedResource, RESOURCE_SIGNED_MIN, RESOURCE_SIGNED_MAX);
 }
 
-float computeResourceTransfer(float sourceResource, float sinkResource) {
+float computeResourceTransfer(float sourceResource, float sinkResource, bool parentToChildTowardCanopy) {
   float diff = sourceResource - sinkResource;
   if (diff == 0.0) return 0.0;
 
   float signDiff = (diff < 0.0) ? -1.0 : 1.0;
   float magnitude = abs(diff);
-  if (magnitude == 1.0) return signDiff;
-  float transferredMagnitude = floor(magnitude * RESOURCE_DIFF_TRANSFER_FRACTION);
+
+  bool isCanopyDirectionFlow =
+    (parentToChildTowardCanopy && diff > 0.0) ||
+    (!parentToChildTowardCanopy && diff < 0.0);
+  if (isCanopyDirectionFlow && magnitude == 1.0) {
+    return signDiff;
+  }
+
+  float transferFraction;
+  if (parentToChildTowardCanopy) {
+    transferFraction = (diff > 0.0)
+      ? RESOURCE_CANOPY_TRANSFER_FRACTION
+      : RESOURCE_ANTI_CANOPY_TRANSFER_FRACTION;
+  } else {
+    transferFraction = (diff > 0.0)
+      ? RESOURCE_ANTI_CANOPY_TRANSFER_FRACTION
+      : RESOURCE_CANOPY_TRANSFER_FRACTION;
+  }
+  float transferredMagnitude = floor(magnitude * transferFraction);
   return signDiff * transferredMagnitude;
 }
 
@@ -453,19 +470,31 @@ void main() {
   if (isOccupied(branchPrev)) {
     float hereResourcePrev = unpackResourceSigned(branchTex2Prev);
 
-    float resourceStepDelta = 0.0;
+    float resourceIncoming = 0.0;
+    float resourceOutgoing = 0.0;
     NodeState hereNode = makeNodeState(v_uv, branchPrev, branchTex2Prev);
     ParentHit upstreamHit = getParent(hereNode);
     if (upstreamHit.found) {
       vec2 parentUV = uvFromLatticePos(upstreamHit.parent.pos);
       float parentResource = unpackResourceSigned(texture(u_branch_tex2_prev, parentUV));
-      resourceStepDelta += max(0.0, computeResourceTransfer(parentResource, hereResourcePrev));
+      bool parentToChildTowardCanopy = (hereType != CELL_TYPE_ROOT);
+      resourceIncoming += computeResourceTransfer(parentResource, hereResourcePrev, parentToChildTowardCanopy);
     }
-    float hereResource = hereResourcePrev + resourceStepDelta;
 
-    if (hereType == CELL_TYPE_ROOT && isDirt(mHere)) {
-      hereResource += ROOT_GATHER_RATE;
+    for (int i = 0; i < 8; i++) {
+      vec2 childUV = edgeSafeUV(v_uv + offsets[i], texelSize);
+      vec4 childBranch = texture(u_foliage_prev, childUV);
+      if (!isOccupied(childBranch)) continue;
+
+      vec4 childMeta = texture(u_branch_tex2_prev, childUV);
+      NodeState childNode = makeNodeState(childUV, childBranch, childMeta);
+      if (!isChildOf(childNode, hereNode)) continue;
+
+      float childResourcePrev = unpackResourceSigned(childMeta);
+      bool parentToChildTowardCanopy = (childNode.cellType != CELL_TYPE_ROOT);
+      resourceOutgoing += computeResourceTransfer(hereResourcePrev, childResourcePrev, parentToChildTowardCanopy);
     }
+    float hereResource = hereResourcePrev + resourceIncoming - resourceOutgoing;
 
     // float relaxRate = (hereType == CELL_TYPE_ROOT) ? RESOURCE_RELAX_ROOT : RESOURCE_RELAX_BRANCH;
     // if (hereResource > 0.0) {
@@ -509,6 +538,7 @@ void main() {
     float chosenInhib = 0.0;
     float chosenType = CELL_TYPE_BRANCH;
     float chosenResource = 0.0;
+    float candidateNutrient = unpackResourceSigned(branchTex2Prev);
     ivec2 candidatePos = latticePosFromUV(v_uv);
     bool candidateIsAir = isAir(mHere);
     bool candidateIsDirt = isDirt(mHere);
@@ -614,7 +644,7 @@ void main() {
             chosenErr = seedChildErr;
             chosenInhib = (u_branch_inhibition_enabled == 1) ? INHIBITION_MAX : 0.0;
             chosenType = CELL_TYPE_ROOT;
-            chosenResource = -NEW_GROWTH_RESOURCE_COST;
+            chosenResource = candidateNutrient - NEW_GROWTH_RESOURCE_COST;
           }
         }
         continue;
@@ -700,7 +730,9 @@ void main() {
       float claimErr = 0.0;
       float claimInhib = sourceInhib;
       float claimType = sourceType;
-      float claimResource = -NEW_GROWTH_RESOURCE_COST;
+      float claimResource = (sourceType == CELL_TYPE_ROOT && candidateIsDirt)
+        ? (candidateNutrient - NEW_GROWTH_RESOURCE_COST)
+        : -NEW_GROWTH_RESOURCE_COST;
 
       NodeState claimCandidate = makeEmptyNodeState();
       claimCandidate.occupied = true;
@@ -718,7 +750,6 @@ void main() {
         claimErr = childErr;
         claimInhib = sourceInhib;
         claimType = sourceType;
-        claimResource = -NEW_GROWTH_RESOURCE_COST;
       } else if (emitSide) {
         vec2 sideDir = dirFromEncoded(sideEncodedDir);
         claimCandidate.dir = sideDir;
@@ -733,7 +764,6 @@ void main() {
         claimErr = sideChildErr;
         claimInhib = (u_branch_inhibition_enabled == 1) ? INHIBITION_MAX : 0.0;
         claimType = sourceType;
-        claimResource = -NEW_GROWTH_RESOURCE_COST;
       }
 
       if (claimed) {

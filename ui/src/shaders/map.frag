@@ -36,6 +36,10 @@ const vec3 HUE_BRANCH_A  = vec3(1.0, 1.0, 1.0);     // alpha (A)
 const vec3 HUE_INHIBITION = vec3(1.0, 0.2, 0.65);   // inhibition (B)
 const vec3 HUE_NOISE     = vec3(0.71, 0.47, 1.0);   // purple
 const vec3 ROOT_SUBTLE_TINT = vec3(0.32, 0.40, 0.52);
+const vec3 DIRT_REF_COLOR = vec3(0.404, 0.322, 0.294);
+const float DIRT_COLOR_THRESHOLD = 0.12;
+const vec3 DEBUG_DARK_DIRT_TINT = vec3(0.22, 0.32, 0.22);
+const float DEBUG_DARK_DIRT_LUMA = 0.28;
 const vec3 HEAT_COLD = vec3(0.05, 0.10, 0.45);
 const vec3 HEAT_MID_LOW = vec3(0.00, 0.75, 1.00);
 const vec3 HEAT_MID_HIGH = vec3(1.00, 0.95, 0.10);
@@ -91,6 +95,10 @@ bool isRootCell(vec2 uv) {
   float packed = floor(clamp(meta.r, 0.0, 1.0) * 255.0 + 0.5);
   float typeNibble = mod(packed, 16.0);
   return typeNibble == 1.0;
+}
+
+bool isDirtMatter(vec4 m) {
+  return m.a > 0.5 && distance(m.rgb, DIRT_REF_COLOR) < DIRT_COLOR_THRESHOLD;
 }
 
 // Convert foliage resource channels to visual color
@@ -221,6 +229,15 @@ void main() {
         base = mix(base, ROOT_OUTLINE_COLOR, 0.45);
       }
     }
+
+    vec4 m = texture(u_matter, uv);
+    if (isDirtMatter(m)) {
+      float luma = dot(base, vec3(0.299, 0.587, 0.114));
+      if (luma < DEBUG_DARK_DIRT_LUMA) {
+        base = mix(base, DEBUG_DARK_DIRT_TINT, 0.45);
+      }
+    }
+
     base *= 0.3; // dim
 
     if (u_view_mode == 8) {
@@ -263,7 +280,9 @@ void main() {
       float mag = min(abs(signedResource) / 127.0, 1.0);
       float t = clamp((signedResource + 127.0) / 254.0, 0.0, 1.0);
       vec3 heat = heatMap(t);
-      float blend = min(0.90, 0.20 + 0.70 * sqrt(mag));
+      float isBranchOrRoot = step(0.05, fol.a);
+      float backgroundBlend = min(0.90, 0.20 + 0.70 * sqrt(mag)) * 0.30;
+      float blend = mix(backgroundBlend, 1.0, isBranchOrRoot);
       out_color = vec4(mix(base, heat, blend), 1.0);
       return;
     }
