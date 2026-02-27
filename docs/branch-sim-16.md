@@ -1,5 +1,9 @@
 # Branch Sim v0.16
 
+## Original Goal
+
+Limit nutrients so dirt is not infinite by using finite per-cell nutrient values that roots consume.
+
 Currently, the dirt provide infinite amount of resources.
 
 We need a way to limit that.
@@ -21,6 +25,10 @@ Make nutrients finite using one shared 8-bit nutrient field (no separate dirt-vs
 - When a root grows into cell `A`, it takes ownership of nutrient `A` (no separate gather tick from that dirt cell).
 - `ROOT_GATHER_RATE` is removed.
 - No nutrient diffusion between dirt cells (for now).
+
+### Related Follow-up
+
+Consumption + spawn gating details are tracked in `branch-sim-17.md`.
 
 ### Storage Choice
 

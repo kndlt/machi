@@ -83,7 +83,8 @@ const float ROOT_INHIBITION_DECAY = 32.0;
 const float RESOURCE_ZERO_BYTE = 127.0;
 const float RESOURCE_MIN_BYTE = 0.0;
 const float RESOURCE_MAX_BYTE = 255.0;
-const float NEW_GROWTH_RESOURCE_COST = 0.0;
+const float ROOT_CREATION_COST = 2.0;
+const float BRANCH_CREATION_COST = 2.0;
 const float RESOURCE_SIGNED_MIN = RESOURCE_MIN_BYTE - RESOURCE_ZERO_BYTE;
 const float RESOURCE_SIGNED_MAX = RESOURCE_MAX_BYTE - RESOURCE_ZERO_BYTE - 1.0;
 const float RESOURCE_RELAX_BRANCH = 0.0;
@@ -129,6 +130,10 @@ ParentHit makeParentFound(NodeState parentState, ivec2 parentStep);
 
 float selectByType(float cellType, float branchValue, float rootValue) {
   return (cellType >= 0.5) ? rootValue : branchValue;
+}
+
+float creationCostForType(float cellType) {
+  return selectByType(cellType, BRANCH_CREATION_COST, ROOT_CREATION_COST);
 }
 
 vec2 selectVec2ByType(float cellType, vec2 branchValue, vec2 rootValue) {
@@ -575,6 +580,7 @@ void main() {
       if (!isOccupied(sourceBranch)) continue;
       vec4 sourceMeta = texture(u_branch_tex2_prev, sourceUV);
       NodeState sourceNode = makeNodeState(sourceUV, sourceBranch, sourceMeta);
+      float sourceNutrient = unpackResourceSigned(sourceMeta);
       float sourceType = sourceCellType(sourceUV, sourceBranch);
       bool sourceIsRoot = sourceType == CELL_TYPE_ROOT;
       if (sourceIsRoot && !candidateIsDirt) continue;
@@ -637,6 +643,9 @@ void main() {
 
         if (isChildOf(seedCandidate, sourceNode)) {
           if (blockedInForwardCone(v_uv, sourceUV, seedDir, texelSize)) continue;
+          float requiredCost = creationCostForType(CELL_TYPE_ROOT);
+          float availableForSpawn = sourceNutrient + candidateNutrient;
+          if (availableForSpawn < requiredCost) continue;
           claimCount++;
           if (claimCount == 1) {
             chosenId = sourceBranch.r;
@@ -644,7 +653,7 @@ void main() {
             chosenErr = seedChildErr;
             chosenInhib = (u_branch_inhibition_enabled == 1) ? INHIBITION_MAX : 0.0;
             chosenType = CELL_TYPE_ROOT;
-            chosenResource = candidateNutrient - NEW_GROWTH_RESOURCE_COST;
+            chosenResource = candidateNutrient - requiredCost;
           }
         }
         continue;
@@ -730,9 +739,7 @@ void main() {
       float claimErr = 0.0;
       float claimInhib = sourceInhib;
       float claimType = sourceType;
-      float claimResource = (sourceType == CELL_TYPE_ROOT && candidateIsDirt)
-        ? (candidateNutrient - NEW_GROWTH_RESOURCE_COST)
-        : -NEW_GROWTH_RESOURCE_COST;
+      float claimResource = candidateNutrient;
 
       NodeState claimCandidate = makeEmptyNodeState();
       claimCandidate.occupied = true;
@@ -767,6 +774,12 @@ void main() {
       }
 
       if (claimed) {
+        float requiredCost = creationCostForType(claimType);
+        float availableForSpawn = sourceNutrient + candidateNutrient;
+        if (availableForSpawn < requiredCost) {
+          continue;
+        }
+        claimResource = candidateNutrient - requiredCost;
         claimCount++;
         if (claimCount == 1) {
           chosenId = claimId;
