@@ -96,22 +96,7 @@ export function createSimulationRenderer(
     const initialBranchTex = placement.map.layers.foliage;
     const initialBranchTex2 = placement.map.layers.branch2;
 
-    if (placement.path === "synthetic") {
-      const initialState = new Uint8Array(width * height * 4);
-      const cx = Math.floor(width * 0.5);
-      const cy = Math.floor(height * 0.5);
-      const idx = (cy * width + cx) * 4;
-
-      // Single manual branch seed at center:
-      // R=1 (occupied), G=0 (packed dir=up, err=0), B=0 (reserved), A=1 (occupied)
-      initialState[idx + 0] = 255;
-      initialState[idx + 1] = 0;
-      initialState[idx + 2] = 0;
-      initialState[idx + 3] = 255;
-
-      const initialState2 = new Uint8Array(width * height * 4);
-      sim.setInitialState(initialState, initialState2);
-    } else if (initialBranchTex) {
+    if (initialBranchTex) {
       const initialState = readTexturePixels(initialBranchTex, width, height);
       const initialState2 = initialBranchTex2
         ? readTexturePixels(initialBranchTex2, width, height)

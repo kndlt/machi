@@ -37,6 +37,7 @@ function readQueryBool(name: string, defaultValue: boolean): boolean {
 const BRANCHING_ENABLED = readQueryBool("branching", true);
 const INHIBITION_ENABLED = readQueryBool("inhibition", true);
 const RESOURCE_MAP_ENABLED = readQueryBool("resourcemap", false);
+const ROOT_DIAG_ENABLED = readQueryBool("rootdiag", false);
 
 // ── Output helper ────────────────────────────────────────────────────────────
 const outputEl = document.getElementById("output");
@@ -83,7 +84,6 @@ const PAD = 2;         // gap between cells
 function renderGrid(
   gl: WebGL2RenderingContext,
   steps: Snapshot[],
-  stepSimFn: () => void,
 ): string {
   const numSteps = steps.length;
   const numCols = GRID_COLUMNS.length;
@@ -367,11 +367,12 @@ function readTextureU8(tex: WebGLTexture): Uint8Array {
 }
 
 // ── ASCII rendering ──────────────────────────────────────────────────────────
-function renderASCII(foliage: PixelGrid, step: number): string {
+function renderASCII(foliage: PixelGrid, step: number, branch2?: PixelGridU8): string {
   const lines: string[] = [];
   lines.push(`\n═══ Step ${step} ${"═".repeat(40)}`);
 
   let aliveCount = 0;
+  let rootCount = 0;
   let totalEnergy = 0;
   let totalNutrients = 0;
   let totalLight = 0;
@@ -385,10 +386,25 @@ function renderASCII(foliage: PixelGrid, step: number): string {
       const light = foliage.data[idx + 2];
       const alive = foliage.data[idx + 3];
       const isDirt = y >= (H - DIRT_ROWS);
+      const isAlive = alive > 0.05;
 
-      if (isDirt) {
+      let isRoot = false;
+      if (branch2 && isAlive) {
+        const packedMeta = branch2.data[idx + 0];
+        const cellType = packedMeta & 0x0f;
+        isRoot = cellType === 1;
+      }
+
+      if (isAlive && isRoot) {
+        row += "R";
+        rootCount++;
+        aliveCount++;
+        totalEnergy += energy;
+        totalNutrients += nutrients;
+        totalLight += light;
+      } else if (isDirt) {
         row += "█";
-      } else if (alive > 0.05) {
+      } else if (isAlive) {
         const level = Math.max(1, Math.min(9, Math.ceil(energy * 9)));
         row += level.toString();
         aliveCount++;
@@ -407,7 +423,7 @@ function renderASCII(foliage: PixelGrid, step: number): string {
   const avgL = aliveCount > 0 ? (totalLight / aliveCount).toFixed(3) : "—";
   lines.push(
     `Alive: ${aliveCount}/${W * (H - DIRT_ROWS)} | ` +
-    `Energy: ${avgE} | Nutrients: ${avgN} | Light: ${avgL}`
+    `Roots: ${rootCount} | Energy: ${avgE} | Nutrients: ${avgN} | Light: ${avgL}`
   );
 
   return lines.join("\n");
@@ -467,11 +483,50 @@ function renderResourceASCII(foliageU8: PixelGridU8, branch2U8: PixelGridU8, ste
   return lines.join("\n");
 }
 
+function renderRootDiag(foliageU8: PixelGridU8, branch2U8: PixelGridU8, step: number): string {
+  let rootCount = 0;
+  let sumX = 0;
+  let left = 0;
+  let center = 0;
+  let right = 0;
+  let minX = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+
+  const centerX = Math.floor(W * 0.5);
+
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const idx = (y * W + x) * 4;
+      const alive = foliageU8.data[idx + 3] > 12;
+      if (!alive) continue;
+
+      const packedMeta = branch2U8.data[idx + 0];
+      const cellType = packedMeta & 0x0f;
+      if (cellType !== 1) continue;
+
+      rootCount++;
+      sumX += x;
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+      if (x < centerX) left++;
+      else if (x > centerX) right++;
+      else center++;
+    }
+  }
+
+  if (rootCount === 0) {
+    return `RootDiag t${step}: roots=0`;
+  }
+
+  const meanX = (sumX / rootCount).toFixed(2);
+  return `RootDiag t${step}: roots=${rootCount} meanX=${meanX} minX=${minX} maxX=${maxX} left=${left} center=${center} right=${right}`;
+}
+
 // ── RUN SIMULATION ───────────────────────────────────────────────────────────
 
 function run() {
   log(
-    `Simulation Lab — ${W}×${H} grid, ${DIRT_ROWS} dirt rows${SEED != null ? `, seed=${SEED}` : ""}, branching=${BRANCHING_ENABLED}, inhibition=${INHIBITION_ENABLED}, resourcemap=${RESOURCE_MAP_ENABLED}`,
+    `Simulation Lab — ${W}×${H} grid, ${DIRT_ROWS} dirt rows${SEED != null ? `, seed=${SEED}` : ""}, branching=${BRANCHING_ENABLED}, inhibition=${INHIBITION_ENABLED}, resourcemap=${RESOURCE_MAP_ENABLED}, rootdiag=${ROOT_DIAG_ENABLED}`,
   );
   log(`Running ${NUM_STEPS} steps...\n`);
 
@@ -518,12 +573,20 @@ function run() {
 
     // Log every step for the first 10, then every 5th
     if (step < 10 || step % 5 === 0 || step === NUM_STEPS - 1) {
-      log(renderASCII(pixels, step));
+      const branch2Tex = placement.map.layers.branch2;
+      const branch2U8Data = branch2Tex ? readTextureU8(branch2Tex) : undefined;
+
+      log(renderASCII(pixels, step, branch2U8Data ? { data: branch2U8Data } : undefined));
       if (RESOURCE_MAP_ENABLED) {
-        const branch2Tex = placement.map.layers.branch2;
-        if (branch2Tex) {
-          const branch2U8Data = readTextureU8(branch2Tex);
+        if (branch2U8Data) {
           log(renderResourceASCII({ data: foliageU8Data }, { data: branch2U8Data }, step));
+          if (ROOT_DIAG_ENABLED) {
+            log(renderRootDiag({ data: foliageU8Data }, { data: branch2U8Data }, step));
+          }
+        }
+      } else if (ROOT_DIAG_ENABLED) {
+        if (branch2U8Data) {
+          log(renderRootDiag({ data: foliageU8Data }, { data: branch2U8Data }, step));
         }
       }
     }
@@ -541,7 +604,7 @@ function run() {
   simulation.dispose();
 
   // Render the composite grid image (creates its own world + renderer internally)
-  const gridDataUrl = renderGrid(gl, snapshots, () => {});
+  const gridDataUrl = renderGrid(gl, snapshots);
   (window as unknown as Record<string, unknown>).__SIM_GRID__ = gridDataUrl;
 
   // Capture per-step animation frames for animated WebP generation

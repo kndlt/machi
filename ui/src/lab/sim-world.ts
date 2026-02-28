@@ -30,6 +30,9 @@ export const DEFAULT_SIM_WORLD: SimWorldConfig = {
 // Dirt color must match shader: (103, 82, 75, 255)
 export const DIRT_RGBA = [103, 82, 75, 255] as const;
 export const AIR_RGBA = [0, 0, 0, 0] as const;
+const RESOURCE_ZERO_BYTE = 127;
+const SYNTHETIC_DIRT_RESOURCE_BASE = 129;
+const SYNTHETIC_DIRT_RESOURCE_STEP = 1;
 
 // ── Matter texture ───────────────────────────────────────────────────────────
 
@@ -59,12 +62,58 @@ function createMatterTexture(
   return createTexture(gl, width, height, pixels);
 }
 
+function createSyntheticFoliageTexture(
+  gl: WebGL2RenderingContext,
+  config: SimWorldConfig,
+): WebGLTexture {
+  const { width, height, dirtRows } = config;
+  const pixels = new Uint8Array(width * height * 4);
+
+  const cx = Math.floor(width * 0.5);
+  const dirtTopRow = Math.max(0, Math.min(height - 1, height - dirtRows));
+  const seedY = Math.max(0, dirtTopRow - 1);
+  const idx = (seedY * width + cx) * 4;
+
+  // Single branch seed one tile above dirt, facing up (-y).
+  // R=255 (tree id), G=0 (dir up + err 0), B=0, A=255 (occupied)
+  pixels[idx + 0] = 255;
+  pixels[idx + 1] = 0;
+  pixels[idx + 2] = 0;
+  pixels[idx + 3] = 255;
+
+  return createTexture(gl, width, height, pixels);
+}
+
+function createSyntheticBranch2Texture(
+  gl: WebGL2RenderingContext,
+  config: SimWorldConfig,
+): WebGLTexture {
+  const { width, height, dirtRows } = config;
+  const pixels = new Uint8Array(width * height * 4);
+
+  for (let i = 0; i < pixels.length; i += 4) {
+    pixels[i + 1] = RESOURCE_ZERO_BYTE;
+  }
+
+  const dirtTopRow = Math.max(0, Math.min(height, height - dirtRows));
+  for (let y = dirtTopRow; y < height; y++) {
+    const depth = y - dirtTopRow;
+    const nutrientByte = Math.min(255, SYNTHETIC_DIRT_RESOURCE_BASE + depth * SYNTHETIC_DIRT_RESOURCE_STEP);
+    for (let x = 0; x < width; x++) {
+      const idx = (y * width + x) * 4;
+      pixels[idx + 1] = nutrientByte;
+    }
+  }
+
+  return createTexture(gl, width, height, pixels);
+}
+
 // ── World builder ────────────────────────────────────────────────────────────
 
 /**
  * Build a synthetic World object suitable for createMapRenderer and
  * createSimulationRenderer. Uses a programmatic dirt/air matter texture
- * with all other layers set to a 1×1 transparent dummy.
+ * plus synthetic foliage/branch2 initialization for deterministic lab runs.
  */
 export function createSyntheticWorld(
   gl: WebGL2RenderingContext,
@@ -81,8 +130,8 @@ export function createSyntheticWorld(
     foreground: dummy,
     support: dummy,
     matter: createMatterTexture(gl, config),
-    foliage: null,   // populated by SimulationRenderer
-    branch2: null,   // populated/managed by SimulationRenderer
+    foliage: createSyntheticFoliageTexture(gl, config),
+    branch2: createSyntheticBranch2Texture(gl, config),
     noise: null,      // populated by SimulationRenderer
     light: null,      // populated by SimulationRenderer
   };
