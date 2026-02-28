@@ -36,6 +36,7 @@ function readQueryBool(name: string, defaultValue: boolean): boolean {
 
 const BRANCHING_ENABLED = readQueryBool("branching", true);
 const INHIBITION_ENABLED = readQueryBool("inhibition", true);
+const MAIN_TURN_ENABLED = readQueryBool("swerving", true);
 const RESOURCE_MAP_ENABLED = readQueryBool("resourcemap", false);
 const ROOT_DIAG_ENABLED = readQueryBool("rootdiag", false);
 
@@ -118,6 +119,7 @@ function renderGrid(
     seed: SEED,
     branchingEnabled: BRANCHING_ENABLED,
     branchInhibitionEnabled: INHIBITION_ENABLED,
+    mainTurnEnabled: MAIN_TURN_ENABLED,
   });
 
   // Camera set up to look at the entire map (1:1 pixels)
@@ -228,6 +230,7 @@ function captureAnimationFrames(gl: WebGL2RenderingContext): AnimFrames {
     seed: SEED,
     branchingEnabled: BRANCHING_ENABLED,
     branchInhibitionEnabled: INHIBITION_ENABLED,
+    mainTurnEnabled: MAIN_TURN_ENABLED,
   });
 
   const camera = createCamera();
@@ -536,6 +539,7 @@ function run() {
     seed: SEED,
     branchingEnabled: BRANCHING_ENABLED,
     branchInhibitionEnabled: INHIBITION_ENABLED,
+    mainTurnEnabled: MAIN_TURN_ENABLED,
   });
 
   // Access the per-map foliage sim for readPixels (via the World's layers)

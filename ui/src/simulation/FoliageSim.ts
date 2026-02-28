@@ -19,6 +19,9 @@ export interface FoliageSim {
   /** Toggle inhibition field update + inhibition effect on side branching. */
   branchInhibitionEnabled: boolean;
 
+  /** Toggle main-path turn/swerve behavior. */
+  mainTurnEnabled: boolean;
+
   /** Upload explicit initial branch-state textures into both ping-pong buffers. */
   setInitialState(branchTex1: Uint8Array, branchTex2?: Uint8Array): void;
 
@@ -48,6 +51,7 @@ export function createFoliageSim(
   const u_light = gl.getUniformLocation(program, "u_light");
   const u_branching_enabled = gl.getUniformLocation(program, "u_branching_enabled");
   const u_branch_inhibition_enabled = gl.getUniformLocation(program, "u_branch_inhibition_enabled");
+  const u_main_turn_enabled = gl.getUniformLocation(program, "u_main_turn_enabled");
   const u_tick = gl.getUniformLocation(program, "u_tick");
 
   const emptyVAO = gl.createVertexArray()!;
@@ -85,6 +89,7 @@ export function createFoliageSim(
   let readIdx = 0;
   let branchingEnabled = true;
   let branchInhibitionEnabled = true;
+  let mainTurnEnabled = true;
 
   function setInitialState(branchTex1: Uint8Array, branchTex2?: Uint8Array): void {
     const expectedSize = width * height * 4;
@@ -134,6 +139,7 @@ export function createFoliageSim(
     gl.uniform1i(u_tick, tick);
     gl.uniform1i(u_branching_enabled, branchingEnabled ? 1 : 0);
     gl.uniform1i(u_branch_inhibition_enabled, branchInhibitionEnabled ? 1 : 0);
+    gl.uniform1i(u_main_turn_enabled, mainTurnEnabled ? 1 : 0);
 
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, matterTex);
@@ -190,6 +196,8 @@ export function createFoliageSim(
     set branchingEnabled(v: boolean) { branchingEnabled = v; },
     get branchInhibitionEnabled() { return branchInhibitionEnabled; },
     set branchInhibitionEnabled(v: boolean) { branchInhibitionEnabled = v; },
+    get mainTurnEnabled() { return mainTurnEnabled; },
+    set mainTurnEnabled(v: boolean) { mainTurnEnabled = v; },
     setInitialState,
     currentTexture,
     currentTexture2,

@@ -32,6 +32,8 @@ export interface SimulationRenderer {
   branchingEnabled: boolean;
   /** Toggle inhibition field and inhibition-based branch suppression. */
   branchInhibitionEnabled: boolean;
+  /** Toggle main-path turn/swerve behavior. */
+  mainTurnEnabled: boolean;
   /** Noise iterations per step (1 = default) */
   noiseSpeed: number;
   /** Noise rate magnitude multiplier (1.0 = default) */
@@ -46,6 +48,8 @@ export interface SimulationOptions {
   branchingEnabled?: boolean;
   /** Enable inhibition system (default true). */
   branchInhibitionEnabled?: boolean;
+  /** Enable main-path turn/swerve behavior (default true). */
+  mainTurnEnabled?: boolean;
 }
 
 export function createSimulationRenderer(
@@ -56,6 +60,7 @@ export function createSimulationRenderer(
   const LIGHT_PREWARM_ITERATIONS = 100;
   let branchingEnabled = options?.branchingEnabled ?? true;
   let branchInhibitionEnabled = options?.branchInhibitionEnabled ?? true;
+  let mainTurnEnabled = options?.mainTurnEnabled ?? true;
 
   function readTexturePixels(
     tex: WebGLTexture,
@@ -90,6 +95,7 @@ export function createSimulationRenderer(
     const sim = createFoliageSim(gl, width, height);
     sim.branchingEnabled = branchingEnabled;
     sim.branchInhibitionEnabled = branchInhibitionEnabled;
+    sim.mainTurnEnabled = mainTurnEnabled;
     const noise = createNoiseSim(gl, width, height, options?.seed);
     const light = createLightTransportSim(gl, width, height);
 
@@ -185,6 +191,11 @@ export function createSimulationRenderer(
     set branchInhibitionEnabled(v: boolean) {
       branchInhibitionEnabled = v;
       for (const ms of mapSims) ms.sim.branchInhibitionEnabled = v;
+    },
+    get mainTurnEnabled() { return mainTurnEnabled; },
+    set mainTurnEnabled(v: boolean) {
+      mainTurnEnabled = v;
+      for (const ms of mapSims) ms.sim.mainTurnEnabled = v;
     },
     get noiseSpeed() { return mapSims[0]?.noise.speed ?? 1; },
     set noiseSpeed(v: number) { for (const ms of mapSims) ms.noise.speed = v; },

@@ -29,6 +29,7 @@ uniform sampler2D u_light;   // currently unused in v0.3 model
 uniform sampler2D u_noise;
 uniform int u_branching_enabled;
 uniform int u_branch_inhibition_enabled;
+uniform int u_main_turn_enabled;
 uniform int u_tick;
 
 layout(location = 0) out vec4 out_color;
@@ -380,8 +381,8 @@ float unpackByte(float packed) {
 }
 
 float packDirErr(float encodedDir, float errorAcc) {
-  float dirQ = floor(fract(encodedDir) * 31.0 + 0.5);
-  float errQ = floor(clamp(errorAcc, 0.0, 0.999999) * 7.0 + 0.5);
+  float dirQ = floor(fract(encodedDir) * 32.0);
+  float errQ = floor(clamp(errorAcc, 0.0, 0.999999) * 8.0);
   float packed = dirQ * 8.0 + errQ;
   return packed / 255.0;
 }
@@ -389,7 +390,7 @@ float packDirErr(float encodedDir, float errorAcc) {
 float unpackDir(float packedDirErr) {
   float packed = unpackByte(packedDirErr);
   float dirQ = floor(packed / 8.0);
-  return dirQ / 31.0;
+  return dirQ / 32.0;
 }
 
 float unpackErr(float packedDirErr) {
@@ -799,7 +800,7 @@ void runGrowthPhase(vec4 mHere, vec4 branchPrev, vec4 branchTex2Prev, vec2 texel
     vec2 mainStepUV = edgeSafeUV(sourceUV + vec2(unsteeredPrimaryStep.x * texelSize.x, unsteeredPrimaryStep.y * texelSize.y), texelSize);
     bool forwardOccupied = isOccupied(texture(u_foliage_prev, mainStepUV));
 
-    if (isTipSource) {
+    if ((u_main_turn_enabled == 1) && isTipSource) {
       float turnHash = hash12(sourceUV * turnSaltA + sourceErr * 127.0);
       float turnSignHash = hash12(sourceUV * turnSaltSign + sourcePacked * 389.0);
       float turnChance = (forwardOccupied ? mainTurnRateBlocked : mainTurnRate) * max(fertility, 0.25);

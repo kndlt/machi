@@ -69,7 +69,7 @@ vec3 heatMap(float t) {
 float unpackDirFromPacked(float packedDirErr) {
   float packed = floor(clamp(packedDirErr, 0.0, 1.0) * 255.0 + 0.5);
   float dirQ = floor(packed / 8.0);
-  return dirQ / 31.0;
+  return dirQ / 32.0;
 }
 
 float unpackErrFromPacked(float packedDirErr) {

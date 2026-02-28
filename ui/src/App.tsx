@@ -101,6 +101,10 @@ function readBranchInhibitionEnabled(): boolean {
   return readBooleanParam("inhibition", true);
 }
 
+function readMainTurnEnabled(): boolean {
+  return readBooleanParam("swerving", true);
+}
+
 function readNutrientHudEnabled(): boolean {
   return readBooleanParam("nutrienthud", true);
 }
@@ -148,6 +152,7 @@ async function initApp(canvas: HTMLCanvasElement, callbacks: InitAppCallbacks): 
     seed: simulationSeed,
     branchingEnabled: readBranchingEnabled(),
     branchInhibitionEnabled: readBranchInhibitionEnabled(),
+    mainTurnEnabled: readMainTurnEnabled(),
   });
   simulation.prewarm();
 
@@ -164,6 +169,7 @@ async function initApp(canvas: HTMLCanvasElement, callbacks: InitAppCallbacks): 
 
     simulation.branchingEnabled = readBranchingEnabled();
     simulation.branchInhibitionEnabled = readBranchInhibitionEnabled();
+    simulation.mainTurnEnabled = readMainTurnEnabled();
     const nutrientHudEnabled = readNutrientHudEnabled();
     nutrientHud.setEnabled(nutrientHudEnabled);
 
@@ -172,7 +178,7 @@ async function initApp(canvas: HTMLCanvasElement, callbacks: InitAppCallbacks): 
     renderer.simStartDelayMs = readSimulationStartDelayMs() ?? 0;
 
     console.log(
-      `Location controls applied: perturb=${simulation.noiseSpeed}, speed=${speedMultiplier}, simInterval=${renderer.simInterval}ms, delay=${renderer.simStartDelayMs}ms, seed=${simulationSeed ?? "random"}, view=${mapRenderer.viewMode}, branching=${simulation.branchingEnabled}, inhibition=${simulation.branchInhibitionEnabled}, nutrienthud=${nutrientHudEnabled}`,
+      `Location controls applied: perturb=${simulation.noiseSpeed}, speed=${speedMultiplier}, simInterval=${renderer.simInterval}ms, delay=${renderer.simStartDelayMs}ms, seed=${simulationSeed ?? "random"}, view=${mapRenderer.viewMode}, branching=${simulation.branchingEnabled}, inhibition=${simulation.branchInhibitionEnabled}, swerving=${simulation.mainTurnEnabled}, nutrienthud=${nutrientHudEnabled}`,
     );
   };
 
@@ -203,13 +209,13 @@ async function initApp(canvas: HTMLCanvasElement, callbacks: InitAppCallbacks): 
   let hoverActive = false;
   let hoverRafId = 0;
 
-  function sampleResourceAtCell(
+  function samplePixelAtCell(
     texture: WebGLTexture,
     localX: number,
     localY: number,
     width: number,
     height: number,
-  ): number | null {
+  ): Uint8Array | null {
     if (!sampleFbo) return null;
     if (localX < 0 || localY < 0 || localX >= width || localY >= height) return null;
 
@@ -224,7 +230,19 @@ async function initApp(canvas: HTMLCanvasElement, callbacks: InitAppCallbacks): 
 
     gl.readPixels(localX, localY, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, samplePixel);
     gl.bindFramebuffer(gl.FRAMEBUFFER, prevFbo);
-    return samplePixel[1] - 127;
+    return new Uint8Array(samplePixel);
+  }
+
+  function sampleResourceAtCell(
+    texture: WebGLTexture,
+    localX: number,
+    localY: number,
+    width: number,
+    height: number,
+  ): number | null {
+    const pixel = samplePixelAtCell(texture, localX, localY, width, height);
+    if (!pixel) return null;
+    return pixel[1] - 127;
   }
 
   const refreshHoverResource = () => {
@@ -285,7 +303,42 @@ async function initApp(canvas: HTMLCanvasElement, callbacks: InitAppCallbacks): 
     }
 
     const cellLine = `cell ${localX},${localY} | resource ${signedResource >= 0 ? "+" : ""}${signedResource}`;
-    resourceHoverEl.textContent = nutrientLine ? `${nutrientLine}\n${cellLine}` : cellLine;
+
+    let directionLine: string | null = null;
+    if (placement.map.layers.foliage) {
+      const foliagePixel = samplePixelAtCell(
+        placement.map.layers.foliage,
+        localX,
+        localY,
+        placement.map.width,
+        placement.map.height,
+      );
+
+      const branch2Pixel = samplePixelAtCell(
+        placement.map.layers.branch2,
+        localX,
+        localY,
+        placement.map.width,
+        placement.map.height,
+      );
+
+      if (foliagePixel && branch2Pixel) {
+        const occupied = foliagePixel[3] > 127;
+        if (occupied) {
+          const packedDirErr = foliagePixel[1];
+          const dirBand = Math.floor(packedDirErr / 8);
+          const errBand = packedDirErr % 8;
+          const directionDegrees = (dirBand / 32) * 360;
+          const bresenhamError = errBand / 8;
+          const typeNibble = branch2Pixel[0] & 0x0f;
+          const typeLabel = typeNibble === 1 ? "root" : "branch";
+          directionLine = `${typeLabel} dir=${directionDegrees.toFixed(1)}° band=${dirBand} (of 32) err=${bresenhamError.toFixed(3)} (${errBand} of 8)`;
+        }
+      }
+    }
+
+    const infoLines = directionLine ? `${cellLine}\n${directionLine}` : cellLine;
+    resourceHoverEl.textContent = nutrientLine ? `${nutrientLine}\n${infoLines}` : infoLines;
     resourceHoverEl.style.display = "block";
   };
 

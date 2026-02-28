@@ -36,6 +36,7 @@ function hasFlag(name: string): boolean {
 
 const RESOURCE_MAP = hasFlag("--resource-map");
 const ROOT_DIAG = hasFlag("--root-diag");
+const NO_SWERVING = hasFlag("--no-swerving");
 
 async function main() {
   // ── 1. Start a temporary Vite server ─────────────────────────────────────
@@ -55,6 +56,7 @@ async function main() {
     if (SEED != null) query.set("seed", String(SEED));
     if (RESOURCE_MAP) query.set("resourcemap", "1");
     if (ROOT_DIAG) query.set("rootdiag", "1");
+    if (NO_SWERVING) query.set("swerving", "0");
     const qs = query.toString();
     const url = `http://localhost:${address.port}/sim.html${qs ? `?${qs}` : ""}`;
     console.log(`\n🔬 Vite server on port ${address.port}${SEED != null ? ` (seed=${SEED})` : ""}`);
