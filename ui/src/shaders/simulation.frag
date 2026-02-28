@@ -45,6 +45,19 @@ const float COLOR_THRESHOLD = 0.12;
 const float PI = 3.141592653589793;
 const float TAU = 6.283185307179586;
 const float DEG_TO_RAD = PI / 180.0;
+const int DIR_BUCKET_COUNT = 32;      // 5 bits for direction bucket
+const int ERROR_LEVEL_COUNT = 8;      // 3 bits for error quantization (0..7)
+const int DEFAULT_DIR_MAX_COMP = 8;   // tuned to ERROR_LEVEL_COUNT
+const ivec2 DIR_DY_DX_LUT_32_MAX8[32] = ivec2[32](
+  ivec2( 8,  0), ivec2( 5,  1), ivec2( 5,  2), ivec2( 6,  4),
+  ivec2( 7,  7), ivec2( 4,  6), ivec2( 2,  5), ivec2( 1,  5),
+  ivec2( 0,  8), ivec2(-1,  5), ivec2(-2,  5), ivec2(-4,  6),
+  ivec2(-7,  7), ivec2(-6,  4), ivec2(-5,  2), ivec2(-5,  1),
+  ivec2(-8,  0), ivec2(-5, -1), ivec2(-5, -2), ivec2(-6, -4),
+  ivec2(-8, -8), ivec2(-4, -6), ivec2(-2, -5), ivec2(-1, -5),
+  ivec2( 0, -8), ivec2( 1, -5), ivec2( 2, -5), ivec2( 4, -6),
+  ivec2( 8, -8), ivec2( 6, -4), ivec2( 5, -2), ivec2( 5, -1)
+);
 
 const float BRANCH_ALPHA_MIN = 127.0;
 const float BRANCH_SIDE_RATE = 0.18;
@@ -116,10 +129,11 @@ const int ROOT_SAP_AMOUNT_I = 1;
 // const float RESOURCE_RELAX_ROOT = 0.0;
 
 bool isOccupied(uvec4 b);
-vec2 dirFromEncoded(float encoded);
+ivec2 dirFromEncoded(float encoded);
 float unpackDir(float packedDirErr);
 float unpackErr(float packedDirErr);
-void lineStepper(vec2 dir, out vec2 primaryStep, out vec2 secondaryStep, out float slopeMix);
+void lineStepper(ivec2 dir, out ivec2 primaryStep, out ivec2 secondaryStep, out float slopeMix);
+ivec2 bucketIdMaxCompToDyDx(int bucketId, int maxComp);
 
 uvec4 sampleFoliage(vec2 uv) {
   return texture(u_foliage_prev, uv);
@@ -133,7 +147,7 @@ struct NodeState {
   bool occupied;
   float treeIdByte;
   uint cellType;
-  vec2 dir;
+  ivec2 dir;
   float err;
   ivec2 pos;
 };
@@ -288,17 +302,17 @@ NodeState decodeNodeStateAtPos(ivec2 pos) {
   return decodeNodeStateAtUV(uvFromLatticePos(pos));
 }
 
-ivec2 expectedBackwardStepFromDirErr(vec2 dir, float err) {
-  vec2 primaryStep;
-  vec2 secondaryStep;
+ivec2 expectedBackwardStepFromDirErr(ivec2 dir, float err) {
+  ivec2 primaryStep;
+  ivec2 secondaryStep;
   float slopeMix;
   lineStepper(dir, primaryStep, secondaryStep, slopeMix);
 
   float errNext = err + slopeMix;
   bool takeSecondary = errNext >= 1.0;
-  vec2 childForwardStep = takeSecondary ? secondaryStep : primaryStep;
-  vec2 backwardStep = -childForwardStep;
-  return ivec2(int(backwardStep.x), int(backwardStep.y));
+  ivec2 childForwardStep = takeSecondary ? secondaryStep : primaryStep;
+  ivec2 backwardStep = -childForwardStep;
+  return backwardStep;
 }
 
 bool isChildOf(NodeState child, NodeState parent) {
@@ -333,7 +347,7 @@ NodeState makeEmptyNodeState() {
   state.occupied = false;
   state.treeIdByte = 0.0;
   state.cellType = CELL_TYPE_BRANCH;
-  state.dir = vec2(0.0, -1.0);
+  state.dir = ivec2(0, -1);
   state.err = 0.0;
   state.pos = ivec2(0);
   return state;
@@ -379,34 +393,84 @@ bool isOccupied(uvec4 b) {
   return float(b.a) > BRANCH_ALPHA_MIN;
 }
 
-vec2 dirFromEncoded(float encoded) {
-  float angle = encoded * TAU;
-  return vec2(sin(angle), -cos(angle));
+ivec2 dirFromEncoded(float encoded) {
+  int bucket = int(floor(fract(encoded) * float(DIR_BUCKET_COUNT) + 0.5));
+  bucket = (bucket % DIR_BUCKET_COUNT + DIR_BUCKET_COUNT) % DIR_BUCKET_COUNT;
+  ivec2 dyDx = DIR_DY_DX_LUT_32_MAX8[bucket];
+  return ivec2(dyDx.y, -dyDx.x);
 }
 
-float encodeDir(vec2 direction) {
-  float angle = atan(direction.x, -direction.y);
-  if (angle < 0.0) angle += TAU;
-  return angle / TAU;
+ivec2 quantizeDir(vec2 direction) {
+  vec2 d = normalize(direction);
+  float bestDot = -1e30;
+  int bestBucket = 0;
+  for (int i = 0; i < DIR_BUCKET_COUNT; i++) {
+    ivec2 dyDx = DIR_DY_DX_LUT_32_MAX8[i];
+    vec2 lutDir = normalize(vec2(float(dyDx.y), -float(dyDx.x)));
+    float score = dot(d, lutDir);
+    if (score > bestDot) {
+      bestDot = score;
+      bestBucket = i;
+    }
+  }
+  ivec2 bestDyDx = DIR_DY_DX_LUT_32_MAX8[bestBucket];
+  return ivec2(bestDyDx.y, -bestDyDx.x);
+}
+
+float encodeDir(ivec2 direction) {
+  vec2 d = normalize(vec2(direction));
+  float bestDot = -1e30;
+  int bestBucket = 0;
+  for (int i = 0; i < DIR_BUCKET_COUNT; i++) {
+    ivec2 dyDx = DIR_DY_DX_LUT_32_MAX8[i];
+    vec2 lutDir = normalize(vec2(float(dyDx.y), -float(dyDx.x)));
+    float score = dot(d, lutDir);
+    if (score > bestDot) {
+      bestDot = score;
+      bestBucket = i;
+    }
+  }
+  return float(bestBucket) / float(DIR_BUCKET_COUNT);
+}
+
+// Fast LUT mapping for maxComp=8.
+// Input table is (dx,dy); function returns ivec2(dy,dx).
+ivec2 bucketIdMaxCompToDyDx(int bucketId, int maxComp) {
+  int wrappedBucket = (bucketId % DIR_BUCKET_COUNT + DIR_BUCKET_COUNT) % DIR_BUCKET_COUNT;
+
+  if (maxComp <= 0 || maxComp == DEFAULT_DIR_MAX_COMP) {
+    return DIR_DY_DX_LUT_32_MAX8[wrappedBucket];
+  }
+
+  float scale = float(max(1, maxComp)) / float(DEFAULT_DIR_MAX_COMP);
+  ivec2 base = DIR_DY_DX_LUT_32_MAX8[wrappedBucket];
+  return ivec2(
+    int(round(float(base.x) * scale)),
+    int(round(float(base.y) * scale))
+  );
 }
 
 float packDirErr(float encodedDir, float errorAcc) {
-  float dirQ = floor(fract(encodedDir) * 32.0);
-  float errQ = floor(clamp(errorAcc, 0.0, 0.999999) * 8.0);
-  float packed = dirQ * 8.0 + errQ;
+  float dirBucketsF = float(DIR_BUCKET_COUNT);
+  float errorLevelsF = float(ERROR_LEVEL_COUNT);
+  float dirQ = floor(fract(encodedDir) * dirBucketsF);
+  float errQ = floor(clamp(errorAcc, 0.0, 0.999999) * errorLevelsF);
+  float packed = dirQ * errorLevelsF + errQ;
   return packed;
 }
 
 float unpackDir(float packedDirErr) {
   float packed = floor(packedDirErr + 0.5);
-  float dirQ = floor(packed / 8.0);
-  return dirQ / 32.0;
+  float errorLevelsF = float(ERROR_LEVEL_COUNT);
+  float dirBucketsF = float(DIR_BUCKET_COUNT);
+  float dirQ = floor(packed / errorLevelsF);
+  return dirQ / dirBucketsF;
 }
 
 float unpackErr(float packedDirErr) {
   float packed = floor(packedDirErr + 0.5);
-  float errQ = mod(packed, 8.0);
-  return errQ / 7.0;
+  float errQ = mod(packed, float(ERROR_LEVEL_COUNT));
+  return errQ / float(ERROR_LEVEL_COUNT - 1);
 }
 
 float packInhibition(float inhibition) {
@@ -440,22 +504,22 @@ uvec4 emptyCell(float inhibition) {
   return uvec4(0u, 0u, uint(packInhibition(inhibition)), 0u);
 }
 
-void lineStepper(vec2 dir, out vec2 primaryStep, out vec2 secondaryStep, out float slopeMix) {
-  float vx = dir.x;
-  float vy = dir.y;
-  float ax = abs(vx);
-  float ay = abs(vy);
-  float sx = (vx > 0.0) ? 1.0 : ((vx < 0.0) ? -1.0 : 0.0);
-  float sy = (vy > 0.0) ? 1.0 : ((vy < 0.0) ? -1.0 : 0.0);
+void lineStepper(ivec2 dir, out ivec2 primaryStep, out ivec2 secondaryStep, out float slopeMix) {
+  int vx = dir.x;
+  int vy = dir.y;
+  int ax = abs(vx);
+  int ay = abs(vy);
+  int sx = (vx > 0) ? 1 : ((vx < 0) ? -1 : 0);
+  int sy = (vy > 0) ? 1 : ((vy < 0) ? -1 : 0);
 
   if (ax >= ay) {
-    primaryStep = vec2(sx, 0.0);
-    secondaryStep = vec2(sx, sy);
-    slopeMix = (ax > 0.0) ? (ay / ax) : 0.0;
+    primaryStep = ivec2(sx, 0);
+    secondaryStep = ivec2(sx, sy);
+    slopeMix = (ax > 0) ? (float(ay) / float(ax)) : 0.0;
   } else {
-    primaryStep = vec2(0.0, sy);
-    secondaryStep = vec2(sx, sy);
-    slopeMix = (ay > 0.0) ? (ax / ay) : 0.0;
+    primaryStep = ivec2(0, sy);
+    secondaryStep = ivec2(sx, sy);
+    slopeMix = (ay > 0) ? (float(ax) / float(ay)) : 0.0;
   }
 }
 
@@ -728,7 +792,7 @@ void runGrowthPhase(vec4 mHere, uvec4 branchPrev, uvec4 branchTex2Prev, vec2 tex
     float sourceInhib = (u_branch_inhibition_enabled == 1)
       ? unpackInhibition(float(sourceBranch.b))
       : 0.0;
-    vec2 sourceDir = dirFromEncoded(unpackDir(sourcePacked));
+    ivec2 sourceDir = dirFromEncoded(unpackDir(sourcePacked));
 
     if (!sourceIsRoot && candidateIsDirt) {
       ParentHit sourceParentHit = getParent(sourceNode);
@@ -736,15 +800,15 @@ void runGrowthPhase(vec4 mHere, uvec4 branchPrev, uvec4 branchTex2Prev, vec2 tex
         continue;
       }
 
-      vec2 seedDir = normalize(-sourceDir);
-      vec2 seedPrimaryStep;
-      vec2 seedSecondaryStep;
+      ivec2 seedDir = -sourceDir;
+      ivec2 seedPrimaryStep;
+      ivec2 seedSecondaryStep;
       float seedSlopeMix;
       lineStepper(seedDir, seedPrimaryStep, seedSecondaryStep, seedSlopeMix);
 
       ivec2 stepToParent = sourceNode.pos - candidatePos;
-      ivec2 backwardPrimary = ivec2(-int(seedPrimaryStep.x), -int(seedPrimaryStep.y));
-      ivec2 backwardSecondary = ivec2(-int(seedSecondaryStep.x), -int(seedSecondaryStep.y));
+      ivec2 backwardPrimary = -seedPrimaryStep;
+      ivec2 backwardSecondary = -seedSecondaryStep;
       bool matchPrimary = all(equal(stepToParent, backwardPrimary));
       bool matchSecondary = all(equal(stepToParent, backwardSecondary));
       if (!matchPrimary && !matchSecondary) {
@@ -765,7 +829,7 @@ void runGrowthPhase(vec4 mHere, uvec4 branchPrev, uvec4 branchTex2Prev, vec2 tex
       seedCandidate.pos = candidatePos;
 
       if (isChildOf(seedCandidate, sourceNode)) {
-        if (blockedInForwardCone(v_uv, sourceUV, seedDir, texelSize)) continue;
+        if (blockedInForwardCone(v_uv, sourceUV, vec2(seedDir), texelSize)) continue;
         int requiredCost = ROOT_CREATION_COST_I;
         int availableForSpawn = sourceNutrient + candidateNutrient;
         if (availableForSpawn < requiredCost) continue;
@@ -801,14 +865,17 @@ void runGrowthPhase(vec4 mHere, uvec4 branchPrev, uvec4 branchTex2Prev, vec2 tex
     ParentHit sourceParentHit = getParent(sourceNode);
     bool hasParent = sourceParentHit.found;
 
-    vec2 steeredDir = sourceDir;
+    ivec2 steeredDir = sourceDir;
 
-    vec2 unsteeredPrimaryStep;
-    vec2 unsteeredSecondaryStep;
+    ivec2 unsteeredPrimaryStep;
+    ivec2 unsteeredSecondaryStep;
     float unsteeredSlopeMix;
     lineStepper(sourceDir, unsteeredPrimaryStep, unsteeredSecondaryStep, unsteeredSlopeMix);
 
-    vec2 mainStepUV = edgeSafeUV(sourceUV + vec2(unsteeredPrimaryStep.x * texelSize.x, unsteeredPrimaryStep.y * texelSize.y), texelSize);
+    vec2 mainStepUV = edgeSafeUV(
+      sourceUV + vec2(float(unsteeredPrimaryStep.x) * texelSize.x, float(unsteeredPrimaryStep.y) * texelSize.y),
+      texelSize
+    );
     bool forwardOccupied = isOccupied(sampleFoliage(mainStepUV));
 
     if ((u_main_turn_enabled == 1) && isTipSource) {
@@ -818,12 +885,12 @@ void runGrowthPhase(vec4 mHere, uvec4 branchPrev, uvec4 branchTex2Prev, vec2 tex
       if (turnHash < turnChance) {
         float turnSign = turnSignHash < 0.5 ? -1.0 : 1.0;
         float turnMagnitude = mainTurnMax * (0.35 + 0.65 * hash12(sourceUV * turnSaltMag + sourceErr * 43.0));
-        steeredDir = normalize(rotateVec(sourceDir, turnSign * turnMagnitude));
+        steeredDir = quantizeDir(rotateVec(vec2(sourceDir), turnSign * turnMagnitude));
       }
     }
 
-    vec2 primaryStep;
-    vec2 secondaryStep;
+    ivec2 primaryStep;
+    ivec2 secondaryStep;
     float slopeMix;
     lineStepper(steeredDir, primaryStep, secondaryStep, slopeMix);
 
@@ -845,7 +912,7 @@ void runGrowthPhase(vec4 mHere, uvec4 branchPrev, uvec4 branchTex2Prev, vec2 tex
     if (emitSide) {
       float angleMix = hash12(sourceUV * sideAngleSalt + sourcePackedNorm * 53.0);
       float sideAngle = mix(sideAngleMin, sideAngleMax, angleMix);
-      vec2 sideDir = normalize(rotateVec(steeredDir, sideSign * sideAngle));
+      ivec2 sideDir = quantizeDir(rotateVec(vec2(steeredDir), sideSign * sideAngle));
       sideChildErr = 0.0;
       sideEncodedDir = encodeDir(sideDir);
     }
@@ -867,7 +934,7 @@ void runGrowthPhase(vec4 mHere, uvec4 branchPrev, uvec4 branchTex2Prev, vec2 tex
     claimCandidate.dir = steeredDir;
     claimCandidate.err = childErr;
     if (isChildOf(claimCandidate, sourceNode)) {
-      if (blockedInForwardCone(v_uv, sourceUV, steeredDir, texelSize)) continue;
+      if (blockedInForwardCone(v_uv, sourceUV, vec2(steeredDir), texelSize)) continue;
       claimed = true;
       claimId = float(sourceBranch.r);
       claimDir = encodeDir(steeredDir);
@@ -875,13 +942,13 @@ void runGrowthPhase(vec4 mHere, uvec4 branchPrev, uvec4 branchTex2Prev, vec2 tex
       claimInhib = sourceInhib;
       claimType = sourceType;
     } else if (emitSide) {
-      vec2 sideDir = dirFromEncoded(sideEncodedDir);
+      ivec2 sideDir = dirFromEncoded(sideEncodedDir);
       claimCandidate.dir = sideDir;
       claimCandidate.err = sideChildErr;
       if (!isChildOf(claimCandidate, sourceNode)) {
         continue;
       }
-      if (blockedInForwardCone(v_uv, sourceUV, sideDir, texelSize)) continue;
+      if (blockedInForwardCone(v_uv, sourceUV, vec2(sideDir), texelSize)) continue;
       claimed = true;
       claimId = float(sourceBranch.r);
       claimDir = sideEncodedDir;

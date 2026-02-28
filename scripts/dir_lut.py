@@ -1,7 +1,7 @@
 import argparse
 import math
 import numpy as np
-import matplotlib.pyplot as plt
+from PIL import Image
 
 
 def _build_candidates(max_comp: int, require_maxcomp: bool):
@@ -200,16 +200,11 @@ def main():
             print(f"{i:2d}: {as_pairs}")
 
     img = draw_star(dirs, length=args.length)
-
-    plt.figure(figsize=(6, 6))
-    plt.imshow(img, cmap="gray", interpolation="nearest")
-    plt.title(f"Best integer directions: buckets={args.buckets}, maxcomp={args.maxcomp}, len={args.length}")
-    plt.axis("off")
-    plt.tight_layout()
+    print(f"# Raster image size: {img.shape[1]}x{img.shape[0]} px")
 
     out_path = args.out or f"dir_{args.buckets}_max{args.maxcomp}_len{args.length}.png"
-    plt.savefig(out_path, dpi=180)
-    # plt.show()
+    Image.fromarray(img, mode="L").save(out_path)
+    print(f"# Output image size: {img.shape[1]}x{img.shape[0]} px (exact)")
 
 if __name__ == "__main__":
     main()
