@@ -1,5 +1,6 @@
 #version 300 es
 precision highp float;
+precision highp usampler2D;
 
 // Branch simulation shader (v0.3 directional growth model).
 //
@@ -8,11 +9,11 @@ precision highp float;
 //   - u_foliage_prev: previous branch map
 //   - u_noise       : slowly evolving fertility noise
 //
-// OUT (branch map RGBA):
-//   R = tree ID (0.0 = empty; non-zero identifies a tree)
-//   G = packed direction+error (5 bits dir, 3 bits error)
-//   B = growth inhibition (shared by branch/root)
-//   A = occupancy alpha
+// OUT (branch map RGBA8 bytes):
+//   R = tree ID byte (0 = empty; non-zero identifies a tree)
+//   G = packed direction+error byte (5 bits dir, 3 bits error)
+//   B = growth inhibition byte (shared by branch/root)
+//   A = occupancy byte (0/255)
 //
 // Growth logic (no auto-seeding mode):
 // - Existing branches persist.
@@ -23,8 +24,8 @@ precision highp float;
 in vec2 v_uv;
 
 uniform sampler2D u_matter;
-uniform sampler2D u_foliage_prev;
-uniform sampler2D u_branch_tex2_prev;
+uniform usampler2D u_foliage_prev;
+uniform usampler2D u_branch_tex2_prev;
 uniform sampler2D u_light;   // currently unused in v0.3 model
 uniform sampler2D u_noise;
 uniform int u_branching_enabled;
@@ -32,8 +33,11 @@ uniform int u_branch_inhibition_enabled;
 uniform int u_main_turn_enabled;
 uniform int u_tick;
 
-layout(location = 0) out vec4 out_color;
-layout(location = 1) out vec4 out_branch_tex2;
+layout(location = 0) out uvec4 out_color_u;
+layout(location = 1) out uvec4 out_branch_tex2_u;
+
+vec4 out_color;
+vec4 out_branch_tex2;
 
 // Matter colors (from matter.png palette)
 const vec3 DIRT_COLOR  = vec3(0.404, 0.322, 0.294);  // (103, 82, 75)
@@ -45,7 +49,7 @@ const float PI = 3.141592653589793;
 const float TAU = 6.283185307179586;
 const float DEG_TO_RAD = PI / 180.0;
 
-const float BRANCH_ALPHA_MIN = 0.5;
+const float BRANCH_ALPHA_MIN = 127.0;
 const float BRANCH_SIDE_RATE = 0.18;
 const float BRANCH_SIDE_ANGLE_MIN = 20.0 * DEG_TO_RAD;
 const float BRANCH_SIDE_ANGLE_MAX = 45.0 * DEG_TO_RAD;
@@ -105,12 +109,24 @@ const float ROOT_SAP_AMOUNT = 1.0;
 // const float RESOURCE_RELAX_BRANCH = 0.0;
 // const float RESOURCE_RELAX_ROOT = 0.0;
 
-float unpackByte(float packed);
 bool isOccupied(vec4 b);
 vec2 dirFromEncoded(float encoded);
 float unpackDir(float packedDirErr);
 float unpackErr(float packedDirErr);
 void lineStepper(vec2 dir, out vec2 primaryStep, out vec2 secondaryStep, out float slopeMix);
+
+vec4 sampleFoliage(vec2 uv) {
+  return vec4(texture(u_foliage_prev, uv));
+}
+
+vec4 sampleBranchTex2(vec2 uv) {
+  return vec4(texture(u_branch_tex2_prev, uv));
+}
+
+void commitOutputs() {
+  out_color_u = uvec4(clamp(floor(out_color + 0.5), 0.0, 255.0));
+  out_branch_tex2_u = uvec4(clamp(floor(out_branch_tex2 + 0.5), 0.0, 255.0));
+}
 
 struct NodeState {
   bool occupied;
@@ -145,22 +161,22 @@ vec2 selectVec2ByType(float cellType, vec2 branchValue, vec2 rootValue) {
 }
 
 float sourceCellType(vec2 sourceUV, vec4 sourceBranch) {
-  vec4 meta = texture(u_branch_tex2_prev, sourceUV);
-  float packed = unpackByte(meta.r);
+  vec4 meta = sampleBranchTex2(sourceUV);
+  float packed = floor(meta.r + 0.5);
   float typeNibble = mod(packed, 16.0);
   return (typeNibble == CELL_TYPE_ROOT) ? CELL_TYPE_ROOT : CELL_TYPE_BRANCH;
 }
 
 vec4 withCellType(vec4 branchTex2Prev, float cellType) {
-  float packed = unpackByte(branchTex2Prev.r);
+  float packed = floor(branchTex2Prev.r + 0.5);
   float upper = floor(packed / 16.0) * 16.0;
   float lower = clamp(floor(cellType + 0.5), 0.0, 15.0);
   float combined = upper + lower;
-  return vec4(combined / 255.0, branchTex2Prev.g, branchTex2Prev.b, branchTex2Prev.a);
+  return vec4(combined, branchTex2Prev.g, branchTex2Prev.b, branchTex2Prev.a);
 }
 
 float unpackResourceSigned(vec4 branchTex2) {
-  float signedResource = unpackByte(branchTex2.g) - RESOURCE_ZERO_BYTE;
+  float signedResource = floor(branchTex2.g + 0.5) - RESOURCE_ZERO_BYTE;
   return clamp(signedResource, RESOURCE_SIGNED_MIN, RESOURCE_SIGNED_MAX);
 }
 
@@ -219,7 +235,7 @@ float computeRootSapAmount(float dirtNutrient, float rootNutrient) {
 float packResourceSigned(float signedResource) {
   float clampedSigned = clamp(signedResource, RESOURCE_SIGNED_MIN, RESOURCE_SIGNED_MAX);
   float byteVal = clamp(clampedSigned + RESOURCE_ZERO_BYTE, RESOURCE_MIN_BYTE, RESOURCE_MAX_BYTE);
-  return byteVal / 255.0;
+  return floor(byteVal + 0.5);
 }
 
 vec2 edgeSafeUV(vec2 uv, vec2 texelSize) {
@@ -239,7 +255,7 @@ ivec2 latticePosFromUV(vec2 uv) {
 NodeState makeNodeState(vec2 uv, vec4 foliageSample, vec4 branchTex2Sample) {
   NodeState state;
   state.occupied = isOccupied(foliageSample);
-  state.treeIdByte = unpackByte(foliageSample.r);
+  state.treeIdByte = floor(foliageSample.r + 0.5);
   state.cellType = sourceCellType(uv, foliageSample);
   state.dir = dirFromEncoded(unpackDir(foliageSample.g));
   state.err = unpackErr(foliageSample.g);
@@ -251,8 +267,8 @@ NodeState decodeNodeStateAtUV(vec2 uv) {
   ivec2 sizeI = textureSize(u_matter, 0);
   vec2 texelSize = 1.0 / vec2(sizeI);
   vec2 safeUV = edgeSafeUV(uv, texelSize);
-  vec4 foliageSample = texture(u_foliage_prev, safeUV);
-  vec4 branchTex2Sample = texture(u_branch_tex2_prev, safeUV);
+  vec4 foliageSample = sampleFoliage(safeUV);
+  vec4 branchTex2Sample = sampleBranchTex2(safeUV);
   return makeNodeState(safeUV, foliageSample, branchTex2Sample);
 }
 
@@ -376,36 +392,32 @@ float encodeDir(vec2 direction) {
   return angle / TAU;
 }
 
-float unpackByte(float packed) {
-  return floor(clamp(packed, 0.0, 1.0) * 255.0 + 0.5);
-}
-
 float packDirErr(float encodedDir, float errorAcc) {
   float dirQ = floor(fract(encodedDir) * 32.0);
   float errQ = floor(clamp(errorAcc, 0.0, 0.999999) * 8.0);
   float packed = dirQ * 8.0 + errQ;
-  return packed / 255.0;
+  return packed;
 }
 
 float unpackDir(float packedDirErr) {
-  float packed = unpackByte(packedDirErr);
+  float packed = floor(packedDirErr + 0.5);
   float dirQ = floor(packed / 8.0);
   return dirQ / 32.0;
 }
 
 float unpackErr(float packedDirErr) {
-  float packed = unpackByte(packedDirErr);
+  float packed = floor(packedDirErr + 0.5);
   float errQ = mod(packed, 8.0);
   return errQ / 7.0;
 }
 
 float packInhibition(float inhibition) {
   float q = floor(clamp(inhibition, 0.0, INHIBITION_MAX) + 0.5);
-  return q / INHIBITION_MAX;
+  return q;
 }
 
 float unpackInhibition(float encoded) {
-  return floor(clamp(encoded, 0.0, 1.0) * INHIBITION_MAX + 0.5);
+  return floor(clamp(encoded, 0.0, INHIBITION_MAX) + 0.5);
 }
 
 vec2 rotateVec(vec2 v, float angle) {
@@ -421,9 +433,9 @@ float hash12(vec2 p) {
 }
 
 vec4 makeBranch(float treeId, float encodedDir, float errorAcc, float inhibition) {
-  float id = clamp(treeId, 1.0 / 255.0, 1.0);
+  float id = clamp(treeId, 1.0, 255.0);
   float packedDirErr = packDirErr(encodedDir, errorAcc);
-  return vec4(id, packedDirErr, packInhibition(inhibition), 1.0);
+  return vec4(id, packedDirErr, packInhibition(inhibition), 255.0);
 }
 
 vec4 emptyCell(float inhibition) {
@@ -475,7 +487,7 @@ bool blockedInForwardCone(vec2 candidateUV, vec2 sourceUV, vec2 growthDir, vec2 
 
     vec2 probeUV = edgeSafeUV(candidateUV + vec2(lattice.x * texelSize.x, lattice.y * texelSize.y), texelSize);
     if (distance(probeUV, sourceUV) <= sourceEps) continue;
-    if (isOccupied(texture(u_foliage_prev, probeUV))) return true;
+    if (isOccupied(sampleFoliage(probeUV))) return true;
   }
 
   return false;
@@ -493,10 +505,10 @@ void runSappingPhase(vec4 mHere, vec4 branchPrev, vec4 branchTex2Prev, float her
         vec4 nbMatter = texture(u_matter, nbUV);
         if (!isDirt(nbMatter)) continue;
 
-        vec4 nbBranch = texture(u_foliage_prev, nbUV);
+        vec4 nbBranch = sampleFoliage(nbUV);
         if (isOccupied(nbBranch)) continue;
 
-        float dirtNutrient = unpackResourceSigned(texture(u_branch_tex2_prev, nbUV));
+        float dirtNutrient = unpackResourceSigned(sampleBranchTex2(nbUV));
         sapGain += computeRootSapAmount(dirtNutrient, hereResourcePrev);
       }
       hereResource += sapGain;
@@ -512,13 +524,13 @@ void runSappingPhase(vec4 mHere, vec4 branchPrev, vec4 branchTex2Prev, float her
     float sapLoss = 0.0;
     for (int i = 0; i < 8; i++) {
       vec2 nbUV = edgeSafeUV(v_uv + offsets[i], texelSize);
-      vec4 nbBranch = texture(u_foliage_prev, nbUV);
+      vec4 nbBranch = sampleFoliage(nbUV);
       if (!isOccupied(nbBranch)) continue;
 
       float nbType = sourceCellType(nbUV, nbBranch);
       if (nbType != CELL_TYPE_ROOT) continue;
 
-      float rootNutrient = unpackResourceSigned(texture(u_branch_tex2_prev, nbUV));
+      float rootNutrient = unpackResourceSigned(sampleBranchTex2(nbUV));
       sapLoss += computeRootSapAmount(candidateNutrient, rootNutrient);
     }
     candidateNutrient = clamp(candidateNutrient - sapLoss, RESOURCE_SIGNED_MIN, RESOURCE_SIGNED_MAX);
@@ -546,17 +558,17 @@ void runInternalPhase(vec4 branchPrev, vec4 branchTex2Prev, float hereType, vec2
   ParentHit upstreamHit = getParent(hereNode);
   if (upstreamHit.found) {
     vec2 parentUV = uvFromLatticePos(upstreamHit.parent.pos);
-    float parentResource = unpackResourceSigned(texture(u_branch_tex2_prev, parentUV));
+    float parentResource = unpackResourceSigned(sampleBranchTex2(parentUV));
     bool parentToChildTowardCanopy = (hereType != CELL_TYPE_ROOT);
     resourceIncoming += computeResourceTransfer(parentResource, hereResourcePrev, parentToChildTowardCanopy);
   }
 
   for (int i = 0; i < 8; i++) {
     vec2 childUV = edgeSafeUV(v_uv + offsets[i], texelSize);
-    vec4 childBranch = texture(u_foliage_prev, childUV);
+    vec4 childBranch = sampleFoliage(childUV);
     if (!isOccupied(childBranch)) continue;
 
-    vec4 childMeta = texture(u_branch_tex2_prev, childUV);
+    vec4 childMeta = sampleBranchTex2(childUV);
     NodeState childNode = makeNodeState(childUV, childBranch, childMeta);
     if (!isChildOf(childNode, hereNode)) continue;
 
@@ -579,7 +591,7 @@ void runInternalPhase(vec4 branchPrev, vec4 branchTex2Prev, float hereType, vec2
     : BRANCH_INHIBITION_DECAY;
   for (int i = 0; i < 8; i++) {
     vec2 nbUV = edgeSafeUV(v_uv + offsets[i], texelSize);
-    vec4 nb = texture(u_foliage_prev, nbUV);
+    vec4 nb = sampleFoliage(nbUV);
     if (!isOccupied(nb)) continue;
     float nbType = sourceCellType(nbUV, nb);
     if (nbType != hereType) continue;
@@ -623,9 +635,9 @@ void runDiffusionPhase(int phase, vec4 mHere, vec4 branchPrev, vec4 branchTex2Pr
     if (latticePosInBounds(partnerPos)) {
       vec2 partnerUV = uvFromLatticePos(partnerPos);
       vec4 mN = texture(u_matter, partnerUV);
-      vec4 branchN = texture(u_foliage_prev, partnerUV);
+      vec4 branchN = sampleFoliage(partnerUV);
       if (isDirt(mN) && !isOccupied(branchN)) {
-        float neighborNutrient = unpackResourceSigned(texture(u_branch_tex2_prev, partnerUV));
+        float neighborNutrient = unpackResourceSigned(sampleBranchTex2(partnerUV));
         candidateNutrient += computeDirtDiffusionFlow(neighborNutrient, candidateNutrient);
       }
     }
@@ -689,9 +701,9 @@ void runGrowthPhase(vec4 mHere, vec4 branchPrev, vec4 branchTex2Prev, vec2 texel
 
   for (int i = 0; i < 8; i++) {
     vec2 sourceUV = edgeSafeUV(v_uv + offsets[i], texelSize);
-    vec4 sourceBranch = texture(u_foliage_prev, sourceUV);
+    vec4 sourceBranch = sampleFoliage(sourceUV);
     if (!isOccupied(sourceBranch)) continue;
-    vec4 sourceMeta = texture(u_branch_tex2_prev, sourceUV);
+    vec4 sourceMeta = sampleBranchTex2(sourceUV);
     NodeState sourceNode = makeNodeState(sourceUV, sourceBranch, sourceMeta);
     float sourceNutrient = unpackResourceSigned(sourceMeta);
     float sourceType = sourceCellType(sourceUV, sourceBranch);
@@ -713,6 +725,7 @@ void runGrowthPhase(vec4 mHere, vec4 branchPrev, vec4 branchTex2Prev, vec2 texel
     vec2 sideAngleSalt = selectVec2ByType(sourceType, HASH_SALT_SIDE_ANGLE_BRANCH, HASH_SALT_SIDE_ANGLE_ROOT);
 
     float sourcePacked = sourceBranch.g;
+    float sourcePackedNorm = sourcePacked / 255.0;
     float sourceErr = unpackErr(sourcePacked);
     float sourceInhib = (u_branch_inhibition_enabled == 1)
       ? unpackInhibition(sourceBranch.b)
@@ -781,7 +794,7 @@ void runGrowthPhase(vec4 mHere, vec4 branchPrev, vec4 branchTex2Prev, vec2 texel
     int sourceNeighborCount = 0;
     for (int j = 0; j < 8; j++) {
       vec2 aroundUV = edgeSafeUV(sourceUV + offsets[j], texelSize);
-      if (isOccupied(texture(u_foliage_prev, aroundUV))) {
+      if (isOccupied(sampleFoliage(aroundUV))) {
         sourceNeighborCount++;
       }
     }
@@ -798,11 +811,11 @@ void runGrowthPhase(vec4 mHere, vec4 branchPrev, vec4 branchTex2Prev, vec2 texel
     lineStepper(sourceDir, unsteeredPrimaryStep, unsteeredSecondaryStep, unsteeredSlopeMix);
 
     vec2 mainStepUV = edgeSafeUV(sourceUV + vec2(unsteeredPrimaryStep.x * texelSize.x, unsteeredPrimaryStep.y * texelSize.y), texelSize);
-    bool forwardOccupied = isOccupied(texture(u_foliage_prev, mainStepUV));
+    bool forwardOccupied = isOccupied(sampleFoliage(mainStepUV));
 
     if ((u_main_turn_enabled == 1) && isTipSource) {
       float turnHash = hash12(sourceUV * turnSaltA + sourceErr * 127.0);
-      float turnSignHash = hash12(sourceUV * turnSaltSign + sourcePacked * 389.0);
+      float turnSignHash = hash12(sourceUV * turnSaltSign + sourcePackedNorm * 389.0);
       float turnChance = (forwardOccupied ? mainTurnRateBlocked : mainTurnRate) * max(fertility, 0.25);
       if (turnHash < turnChance) {
         float turnSign = turnSignHash < 0.5 ? -1.0 : 1.0;
@@ -821,7 +834,7 @@ void runGrowthPhase(vec4 mHere, vec4 branchPrev, vec4 branchTex2Prev, vec2 texel
     bool takeSecondary = errNext >= 1.0;
     float childErr = takeSecondary ? (errNext - 1.0) : errNext;
 
-    float sideHash = hash12(sourceUV * sideSalt + sourcePacked * 257.0);
+    float sideHash = hash12(sourceUV * sideSalt + sourcePackedNorm * 257.0);
     float sideSign = hash12(sourceUV * sideSignSalt + sourceErr * 911.0) < 0.5 ? -1.0 : 1.0;
     bool emitSide = (u_branching_enabled == 1)
       && isTipSource
@@ -832,7 +845,7 @@ void runGrowthPhase(vec4 mHere, vec4 branchPrev, vec4 branchTex2Prev, vec2 texel
     float sideEncodedDir = 0.0;
     float sideChildErr = 0.0;
     if (emitSide) {
-      float angleMix = hash12(sourceUV * sideAngleSalt + sourcePacked * 53.0);
+      float angleMix = hash12(sourceUV * sideAngleSalt + sourcePackedNorm * 53.0);
       float sideAngle = mix(sideAngleMin, sideAngleMax, angleMix);
       vec2 sideDir = normalize(rotateVec(steeredDir, sideSign * sideAngle));
       sideChildErr = 0.0;
@@ -910,8 +923,8 @@ void runGrowthPhase(vec4 mHere, vec4 branchPrev, vec4 branchTex2Prev, vec2 texel
 
 void main() {
   vec4 mHere = texture(u_matter, v_uv);
-  vec4 branchPrev = texture(u_foliage_prev, v_uv);
-  vec4 branchTex2Prev = texture(u_branch_tex2_prev, v_uv);
+  vec4 branchPrev = sampleFoliage(v_uv);
+  vec4 branchTex2Prev = sampleBranchTex2(v_uv);
   float hereType = sourceCellType(v_uv, branchPrev);
   vec2 texelSize = 1.0 / vec2(textureSize(u_matter, 0));
 
@@ -932,6 +945,7 @@ void main() {
 
   if (sappingPhase) {
     runSappingPhase(mHere, branchPrev, branchTex2Prev, hereType, texelSize, offsets);
+    commitOutputs();
     return;
   }
 
@@ -941,8 +955,10 @@ void main() {
     } else {
       runDiffusionPhase(phase, mHere, branchPrev, branchTex2Prev, texelSize);
     }
+    commitOutputs();
     return;
   }
 
   runGrowthPhase(mHere, branchPrev, branchTex2Prev, texelSize, offsets);
+  commitOutputs();
 }

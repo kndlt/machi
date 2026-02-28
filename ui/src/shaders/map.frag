@@ -1,5 +1,6 @@
 #version 300 es
 precision highp float;
+precision highp usampler2D;
 
 in vec2 v_uv;
 
@@ -8,8 +9,8 @@ uniform sampler2D u_background;
 uniform sampler2D u_foreground;
 uniform sampler2D u_support;
 uniform sampler2D u_matter;
-uniform sampler2D u_foliage;
-uniform sampler2D u_branch_tex2;
+uniform usampler2D u_foliage;
+uniform usampler2D u_branch_tex2;
 uniform sampler2D u_noise;
 uniform sampler2D u_light;
 uniform int u_view_mode;       // 0=visual, 1=matter, 2=segmentation, 3=foliage,
@@ -66,14 +67,26 @@ vec3 heatMap(float t) {
   return mix(HEAT_MID_HIGH, HEAT_HOT, k);
 }
 
-float unpackDirFromPacked(float packedDirErr) {
-  float packed = floor(clamp(packedDirErr, 0.0, 1.0) * 255.0 + 0.5);
+vec4 sampleFoliage(vec2 uv) {
+  return vec4(texture(u_foliage, uv)) / 255.0;
+}
+
+uvec4 sampleFoliageRaw(vec2 uv) {
+  return texture(u_foliage, uv);
+}
+
+uvec4 sampleBranchTex2Raw(vec2 uv) {
+  return texture(u_branch_tex2, uv);
+}
+
+float unpackDirFromPacked(float packedByte) {
+  float packed = floor(clamp(packedByte, 0.0, 255.0) + 0.5);
   float dirQ = floor(packed / 8.0);
   return dirQ / 32.0;
 }
 
-float unpackErrFromPacked(float packedDirErr) {
-  float packed = floor(clamp(packedDirErr, 0.0, 1.0) * 255.0 + 0.5);
+float unpackErrFromPacked(float packedByte) {
+  float packed = floor(clamp(packedByte, 0.0, 255.0) + 0.5);
   float errQ = mod(packed, 8.0);
   return errQ / 7.0;
 }
@@ -91,10 +104,9 @@ float unpackNibble(vec4 packed, int dir) {
 }
 
 bool isRootCell(vec2 uv) {
-  vec4 meta = texture(u_branch_tex2, uv);
-  float packed = floor(clamp(meta.r, 0.0, 1.0) * 255.0 + 0.5);
-  float typeNibble = mod(packed, 16.0);
-  return typeNibble == 1.0;
+  uint packed = sampleBranchTex2Raw(uv).r;
+  uint typeNibble = packed & 15u;
+  return typeNibble == 1u;
 }
 
 bool isDirtMatter(vec4 m) {
@@ -107,8 +119,8 @@ vec3 foliageColor(vec4 fol) {
 }
 
 // Check if a pixel is an outline for branch neighbors.
-bool isFoliageOutline(sampler2D folTex, vec2 uv, vec2 ts) {
-  if (texture(folTex, uv).a > 0.05) return false; // is foliage → not outline (we want outset)
+bool isFoliageOutline(vec2 uv, vec2 ts) {
+  if (sampleFoliage(uv).a > 0.05) return false; // is foliage → not outline (we want outset)
 
   // Check 4 neighbors, but only outline around branch cells (not roots).
   vec2 n0 = uv + vec2( ts.x, 0.0);
@@ -116,34 +128,34 @@ bool isFoliageOutline(sampler2D folTex, vec2 uv, vec2 ts) {
   vec2 n2 = uv + vec2(0.0,  ts.y);
   vec2 n3 = uv + vec2(0.0, -ts.y);
 
-  vec4 f0 = texture(folTex, n0);
+  vec4 f0 = sampleFoliage(n0);
   if (f0.a > 0.05 && !isRootCell(n0)) return true;
-  vec4 f1 = texture(folTex, n1);
+  vec4 f1 = sampleFoliage(n1);
   if (f1.a > 0.05 && !isRootCell(n1)) return true;
-  vec4 f2 = texture(folTex, n2);
+  vec4 f2 = sampleFoliage(n2);
   if (f2.a > 0.05 && !isRootCell(n2)) return true;
-  vec4 f3 = texture(folTex, n3);
+  vec4 f3 = sampleFoliage(n3);
   if (f3.a > 0.05 && !isRootCell(n3)) return true;
 
   return false;
 }
 
 // Check if a pixel is an outline for root neighbors.
-bool isRootOutline(sampler2D folTex, vec2 uv, vec2 ts) {
-  if (texture(folTex, uv).a > 0.05) return false;
+bool isRootOutline(vec2 uv, vec2 ts) {
+  if (sampleFoliage(uv).a > 0.05) return false;
 
   vec2 n0 = uv + vec2( ts.x, 0.0);
   vec2 n1 = uv + vec2(-ts.x, 0.0);
   vec2 n2 = uv + vec2(0.0,  ts.y);
   vec2 n3 = uv + vec2(0.0, -ts.y);
 
-  vec4 f0 = texture(folTex, n0);
+  vec4 f0 = sampleFoliage(n0);
   if (f0.a > 0.05 && isRootCell(n0)) return true;
-  vec4 f1 = texture(folTex, n1);
+  vec4 f1 = sampleFoliage(n1);
   if (f1.a > 0.05 && isRootCell(n1)) return true;
-  vec4 f2 = texture(folTex, n2);
+  vec4 f2 = sampleFoliage(n2);
   if (f2.a > 0.05 && isRootCell(n2)) return true;
-  vec4 f3 = texture(folTex, n3);
+  vec4 f3 = sampleFoliage(n3);
   if (f3.a > 0.05 && isRootCell(n3)) return true;
 
   return false;
@@ -185,7 +197,7 @@ void main() {
 
   if (u_view_mode == 3) {
     // Foliage-only view (resource channels → visual color)
-    vec4 fol = texture(u_foliage, uv);
+    vec4 fol = sampleFoliage(uv);
     if (fol.a > 0.05) {
       vec3 fColor = foliageColor(fol);
       if (isRootCell(uv)) {
@@ -193,9 +205,9 @@ void main() {
       } else {
         out_color = vec4(fColor, 1.0);
       }
-    } else if (u_outline_enabled == 1 && isFoliageOutline(u_foliage, uv, folTexelSize)) {
+    } else if (u_outline_enabled == 1 && isFoliageOutline(uv, folTexelSize)) {
       out_color = vec4(OUTLINE_COLOR, 1.0); // branch outline
-    } else if (u_outline_enabled == 1 && isRootOutline(u_foliage, uv, folTexelSize)) {
+    } else if (u_outline_enabled == 1 && isRootOutline(uv, folTexelSize)) {
       out_color = vec4(ROOT_OUTLINE_COLOR, 1.0); // subtle root outline
     } else {
       out_color = vec4(0.0);
@@ -213,7 +225,7 @@ void main() {
     base = mix(base, bg.rgb, bg.a);
     base = mix(base, sp.rgb, sp.a);
     base = mix(base, fg.rgb, fg.a);
-    vec4 fol = texture(u_foliage, uv);
+    vec4 fol = sampleFoliage(uv);
     if (u_foliage_enabled == 1) {
       if (fol.a > 0.05) {
         vec3 fColor = foliageColor(fol);
@@ -223,9 +235,9 @@ void main() {
         } else {
           base = mix(base, fColor, 1.0);
         }
-      } else if (u_outline_enabled == 1 && isFoliageOutline(u_foliage, uv, folTexelSize)) {
+      } else if (u_outline_enabled == 1 && isFoliageOutline(uv, folTexelSize)) {
         base = mix(base, OUTLINE_COLOR, 1.0);
-      } else if (u_outline_enabled == 1 && isRootOutline(u_foliage, uv, folTexelSize)) {
+      } else if (u_outline_enabled == 1 && isRootOutline(uv, folTexelSize)) {
         base = mix(base, ROOT_OUTLINE_COLOR, 0.45);
       }
     }
@@ -268,14 +280,14 @@ void main() {
     }
 
     if (u_view_mode == 10) {
-      float val = texture(u_foliage, uv).b;
+      float val = sampleFoliage(uv).b;
       vec3 c = HUE_INHIBITION * val;
       out_color = vec4(mix(base, c, val * 0.9), 1.0);
       return;
     }
 
     if (u_view_mode == 11) {
-      float resourceByte = floor(clamp(texture(u_branch_tex2, uv).g, 0.0, 1.0) * 255.0 + 0.5);
+      float resourceByte = float(sampleBranchTex2Raw(uv).g);
       float signedResource = resourceByte - 127.0;
       float mag = min(abs(signedResource) / 127.0, 1.0);
       float t = clamp((signedResource + 127.0) / 254.0, 0.0, 1.0);
@@ -290,17 +302,18 @@ void main() {
     }
 
     if (fol.a > 0.05) {
+      uvec4 folRaw = sampleFoliageRaw(uv);
       if (u_view_mode == 5) {
         // Branch direction decoded from packed channel (G) as cyclic hue wheel.
-        out_color = vec4(hueWheel(fract(unpackDirFromPacked(fol.g))), 1.0);
+        out_color = vec4(hueWheel(fract(unpackDirFromPacked(float(folRaw.g)))), 1.0);
       } else {
         float val;
         vec3 hue;
         if (u_view_mode == 4) {
-          out_color = vec4(hueWheel(fract(fol.r * 255.0 * 0.61803398875)), 1.0);
+          out_color = vec4(hueWheel(fract(float(folRaw.r) * 0.61803398875)), 1.0);
           return;
         }
-        else if (u_view_mode == 6) { val = unpackErrFromPacked(fol.g); hue = HUE_BRANCH_B; }
+        else if (u_view_mode == 6) { val = unpackErrFromPacked(float(folRaw.g)); hue = HUE_BRANCH_B; }
         else                       { val = fol.a; hue = HUE_BRANCH_A; } // mode 7
         out_color = vec4(hue * val, 1.0);
       }
@@ -319,7 +332,7 @@ void main() {
 
   // Composite foliage layer on top of foreground
   if (u_foliage_enabled == 1) {
-    vec4 fol = texture(u_foliage, uv);
+    vec4 fol = sampleFoliage(uv);
     
     if (fol.a > 0.05) {
       vec3 fColor = foliageColor(fol);
@@ -329,9 +342,9 @@ void main() {
       } else {
         c = mix(c, fColor, 1.0);
       }
-    } else if (u_outline_enabled == 1 && isFoliageOutline(u_foliage, uv, folTexelSize)) {
+    } else if (u_outline_enabled == 1 && isFoliageOutline(uv, folTexelSize)) {
       c = mix(c, OUTLINE_COLOR, 1.0);
-    } else if (u_outline_enabled == 1 && isRootOutline(u_foliage, uv, folTexelSize)) {
+    } else if (u_outline_enabled == 1 && isRootOutline(uv, folTexelSize)) {
       c = mix(c, ROOT_OUTLINE_COLOR, 0.45);
     }
   }

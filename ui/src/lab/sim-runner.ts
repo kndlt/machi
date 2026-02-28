@@ -363,7 +363,7 @@ function readTextureU8(tex: WebGLTexture): Uint8Array {
   const fbo = createFBO(gl, tex);
   const buf = new Uint8Array(W * H * 4);
   gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
-  gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+  gl.readPixels(0, 0, W, H, gl.RGBA_INTEGER, gl.UNSIGNED_BYTE, buf);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.deleteFramebuffer(fbo);
   return buf;

@@ -7,7 +7,7 @@
 
 import simVert from "../shaders/simulation.vert";
 import simFrag from "../shaders/simulation.frag";
-import { createTexture, createProgram } from "../utils/gl-utils";
+import { createIntegerTexture, createProgram } from "../utils/gl-utils";
 
 export interface FoliageSim {
   /** Run one simulation step. Swaps ping-pong buffers internally. */
@@ -31,8 +31,8 @@ export interface FoliageSim {
   /** The branchTex2 metadata texture that holds the latest result (read source). */
   currentTexture2(): WebGLTexture;
 
-  /** Read back the current foliage FBO as normalized floats (0–1). */
-  readPixels(): Float32Array;
+  /** Read back the current foliage FBO as raw bytes (0–255). */
+  readPixels(): Uint8Array;
 
   /** Clean up all GPU resources. */
   dispose(): void;
@@ -56,10 +56,10 @@ export function createFoliageSim(
 
   const emptyVAO = gl.createVertexArray()!;
 
-  const texA = createTexture(gl, width, height);
-  const texB = createTexture(gl, width, height);
-  const tex2A = createTexture(gl, width, height);
-  const tex2B = createTexture(gl, width, height);
+  const texA = createIntegerTexture(gl, width, height);
+  const texB = createIntegerTexture(gl, width, height);
+  const tex2A = createIntegerTexture(gl, width, height);
+  const tex2B = createIntegerTexture(gl, width, height);
 
   function createMRTFBO(tex1: WebGLTexture, tex2: WebGLTexture): WebGLFramebuffer {
     const fbo = gl.createFramebuffer();
@@ -101,9 +101,9 @@ export function createFoliageSim(
     }
 
     gl.bindTexture(gl.TEXTURE_2D, texA);
-    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, branchTex1);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, height, gl.RGBA_INTEGER, gl.UNSIGNED_BYTE, branchTex1);
     gl.bindTexture(gl.TEXTURE_2D, texB);
-    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, branchTex1);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, height, gl.RGBA_INTEGER, gl.UNSIGNED_BYTE, branchTex1);
 
     const initialMeta = branchTex2 ?? new Uint8Array(width * height * 4);
     if (!branchTex2) {
@@ -112,9 +112,9 @@ export function createFoliageSim(
       }
     }
     gl.bindTexture(gl.TEXTURE_2D, tex2A);
-    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, initialMeta);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, height, gl.RGBA_INTEGER, gl.UNSIGNED_BYTE, initialMeta);
     gl.bindTexture(gl.TEXTURE_2D, tex2B);
-    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, initialMeta);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, height, gl.RGBA_INTEGER, gl.UNSIGNED_BYTE, initialMeta);
 
     readIdx = 0;
   }
@@ -165,18 +165,13 @@ export function createFoliageSim(
     return textures2[readIdx];
   }
 
-  function readPixelsOut(): Float32Array {
+  function readPixelsOut(): Uint8Array {
     const readFbo = fbos[readIdx];
     const buf = new Uint8Array(width * height * 4);
     gl.bindFramebuffer(gl.FRAMEBUFFER, readFbo);
-    gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+    gl.readPixels(0, 0, width, height, gl.RGBA_INTEGER, gl.UNSIGNED_BYTE, buf);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-
-    const data = new Float32Array(buf.length);
-    for (let i = 0; i < buf.length; i++) {
-      data[i] = buf[i] / 255;
-    }
-    return data;
+    return buf;
   }
 
   function dispose(): void {

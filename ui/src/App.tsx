@@ -228,7 +228,7 @@ async function initApp(canvas: HTMLCanvasElement, callbacks: InitAppCallbacks): 
       return null;
     }
 
-    gl.readPixels(localX, localY, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, samplePixel);
+    gl.readPixels(localX, localY, 1, 1, gl.RGBA_INTEGER, gl.UNSIGNED_BYTE, samplePixel);
     gl.bindFramebuffer(gl.FRAMEBUFFER, prevFbo);
     return new Uint8Array(samplePixel);
   }
