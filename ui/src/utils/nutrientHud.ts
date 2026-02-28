@@ -26,6 +26,13 @@ interface ReductionPyramid {
   levels: ReductionLevel[];
 }
 
+interface NormalizedTextureCacheEntry {
+  width: number;
+  height: number;
+  texture: WebGLTexture;
+  fbo: WebGLFramebuffer;
+}
+
 interface NutrientLikeTotals {
   dirtNutrient: number;
   rootNutrient: number;
@@ -54,6 +61,24 @@ void main() {
   }
   v_uv = p * 0.5 + 0.5;
   gl_Position = vec4(p, 0.0, 1.0);
+}
+`;
+
+const NORMALIZE_UINT_FRAG = `#version 300 es
+precision highp float;
+precision highp usampler2D;
+
+uniform usampler2D u_uint_tex;
+
+in vec2 v_uv;
+out vec4 out_color;
+
+void main() {
+  ivec2 size = textureSize(u_uint_tex, 0);
+  ivec2 p = ivec2(v_uv * vec2(size));
+  p = clamp(p, ivec2(0), size - ivec2(1));
+  uvec4 raw = texelFetch(u_uint_tex, p, 0);
+  out_color = vec4(raw) / 255.0;
 }
 `;
 
@@ -138,6 +163,7 @@ export function createNutrientHud(
   const sampleFbo = gl.createFramebuffer();
   const readbackCache = new Map<string, Uint8Array>();
   const pyramidCache = new Map<string, ReductionPyramid>();
+  const normalizedTextureCache = new Map<WebGLTexture, NormalizedTextureCacheEntry>();
 
   const reduceVAO = gl.createVertexArray();
   let reduceProgram: WebGLProgram | null = null;
@@ -150,9 +176,14 @@ export function createNutrientHud(
   let uRootCost: WebGLUniformLocation | null = null;
   let uBranchCost: WebGLUniformLocation | null = null;
 
+  let normalizeProgram: WebGLProgram | null = null;
+  let uNormalizeUintTex: WebGLUniformLocation | null = null;
+
   let gpuReductionAvailable = false;
   try {
     const ext = gl.getExtension("EXT_color_buffer_float");
+    normalizeProgram = createProgram(gl, REDUCE_VERT, NORMALIZE_UINT_FRAG);
+    uNormalizeUintTex = gl.getUniformLocation(normalizeProgram, "u_uint_tex");
     if (ext) {
       reduceProgram = createProgram(gl, REDUCE_VERT, REDUCE_FRAG);
       uSource = gl.getUniformLocation(reduceProgram, "u_source");
@@ -180,6 +211,10 @@ export function createNutrientHud(
     if (reduceProgram) {
       gl.deleteProgram(reduceProgram);
       reduceProgram = null;
+    }
+    if (normalizeProgram) {
+      gl.deleteProgram(normalizeProgram);
+      normalizeProgram = null;
     }
   }
 
@@ -218,6 +253,89 @@ export function createNutrientHud(
     }
 
     return { width, height, texture, fbo };
+  }
+
+  function createNormalizedTexture(width: number, height: number): NormalizedTextureCacheEntry | null {
+    const texture = gl.createTexture();
+    const fbo = gl.createFramebuffer();
+    if (!texture || !fbo) {
+      if (texture) gl.deleteTexture(texture);
+      if (fbo) gl.deleteFramebuffer(fbo);
+      return null;
+    }
+
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+    const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+    if (status !== gl.FRAMEBUFFER_COMPLETE) {
+      gl.deleteTexture(texture);
+      gl.deleteFramebuffer(fbo);
+      return null;
+    }
+
+    return { width, height, texture, fbo };
+  }
+
+  function ensureNormalizedTexture(texture: WebGLTexture, width: number, height: number): NormalizedTextureCacheEntry | null {
+    const cached = normalizedTextureCache.get(texture);
+    if (cached && cached.width === width && cached.height === height) {
+      return cached;
+    }
+
+    if (cached) {
+      gl.deleteFramebuffer(cached.fbo);
+      gl.deleteTexture(cached.texture);
+      normalizedTextureCache.delete(texture);
+    }
+
+    const created = createNormalizedTexture(width, height);
+    if (!created) return null;
+    normalizedTextureCache.set(texture, created);
+    return created;
+  }
+
+  function normalizeIntegerTexture(sourceTexture: WebGLTexture, width: number, height: number): WebGLTexture {
+    if (!normalizeProgram || !uNormalizeUintTex || !reduceVAO) {
+      return sourceTexture;
+    }
+
+    const target = ensureNormalizedTexture(sourceTexture, width, height);
+    if (!target) {
+      return sourceTexture;
+    }
+
+    const prevFbo = gl.getParameter(gl.FRAMEBUFFER_BINDING) as WebGLFramebuffer | null;
+    const prevProgram = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram | null;
+    const prevVAO = gl.getParameter(gl.VERTEX_ARRAY_BINDING) as WebGLVertexArrayObject | null;
+    const prevViewport = gl.getParameter(gl.VIEWPORT) as Int32Array;
+    const prevActiveTex = gl.getParameter(gl.ACTIVE_TEXTURE) as number;
+
+    gl.useProgram(normalizeProgram);
+    gl.bindVertexArray(reduceVAO);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, target.fbo);
+    gl.viewport(0, 0, width, height);
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, sourceTexture);
+    gl.uniform1i(uNormalizeUintTex, 0);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+    gl.activeTexture(prevActiveTex);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, prevFbo);
+    gl.bindVertexArray(prevVAO);
+    gl.useProgram(prevProgram);
+    gl.viewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
+
+    return target.texture;
   }
 
   function disposePyramid(pyramid: ReductionPyramid): void {
@@ -477,10 +595,13 @@ export function createNutrientHud(
     let rootCells = 0;
     let branchCells = 0;
     for (const placement of world.mapPlacements) {
-      const branch2Tex = placement.map.layers.branch2;
-      const foliageTex = placement.map.layers.foliage;
+      const branch2TexRaw = placement.map.layers.branch2;
+      const foliageTexRaw = placement.map.layers.foliage;
       const matterTex = placement.map.layers.matter;
-      if (!branch2Tex || !foliageTex || !matterTex) continue;
+      if (!branch2TexRaw || !foliageTexRaw || !matterTex) continue;
+
+      const branch2Tex = normalizeIntegerTexture(branch2TexRaw, placement.map.width, placement.map.height);
+      const foliageTex = normalizeIntegerTexture(foliageTexRaw, placement.map.width, placement.map.height);
 
       const partial = readNutrientLikeTotals(
         branch2Tex,
@@ -565,9 +686,18 @@ export function createNutrientHud(
       gl.deleteProgram(reduceProgram);
       reduceProgram = null;
     }
+    if (normalizeProgram) {
+      gl.deleteProgram(normalizeProgram);
+      normalizeProgram = null;
+    }
     if (reduceVAO) {
       gl.deleteVertexArray(reduceVAO);
     }
+    for (const entry of normalizedTextureCache.values()) {
+      gl.deleteFramebuffer(entry.fbo);
+      gl.deleteTexture(entry.texture);
+    }
+    normalizedTextureCache.clear();
     readbackCache.clear();
   }
 
