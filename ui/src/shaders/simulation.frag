@@ -61,8 +61,8 @@ const float ROOT_TURN_RATE = 0.04;
 const float ROOT_TURN_RATE_BLOCKED = 0.70;
 const float ROOT_TURN_MAX = 7.0 * DEG_TO_RAD;
 
-const float CELL_TYPE_BRANCH = 0.0;
-const float CELL_TYPE_ROOT = 1.0;
+const uint CELL_TYPE_BRANCH = 0u;
+const uint CELL_TYPE_ROOT = 1u;
 
 const vec2 HASH_SALT_TURN_A_BRANCH = vec2(311.0, 173.0);
 const vec2 HASH_SALT_TURN_A_ROOT = vec2(619.0, 241.0);
@@ -96,6 +96,15 @@ const float RESOURCE_ANTI_CANOPY_TRANSFER_FRACTION = 0.1;
 const float DIRT_DIFFUSION_FRACTION = 0.25;
 const float ROOT_SAP_THRESHOLD = 4.0;
 const float ROOT_SAP_AMOUNT = 1.0;
+const int RESOURCE_ZERO_BYTE_I = 127;
+const int RESOURCE_MIN_BYTE_I = 0;
+const int RESOURCE_MAX_BYTE_I = 255;
+const int RESOURCE_SIGNED_MIN_I = -127;
+const int RESOURCE_SIGNED_MAX_I = 127;
+const int ROOT_CREATION_COST_I = 1;
+const int BRANCH_CREATION_COST_I = 1;
+const int ROOT_SAP_THRESHOLD_I = 4;
+const int ROOT_SAP_AMOUNT_I = 1;
 // Version: Energy conversation version
 // const float RESOURCE_ZERO_BYTE = 127.0;
 // const float RESOURCE_MIN_BYTE = 0.0;
@@ -123,7 +132,7 @@ uvec4 sampleBranchTex2(vec2 uv) {
 struct NodeState {
   bool occupied;
   float treeIdByte;
-  float cellType;
+  uint cellType;
   vec2 dir;
   float err;
   ivec2 pos;
@@ -140,73 +149,70 @@ NodeState makeEmptyNodeState();
 ParentHit makeParentMiss();
 ParentHit makeParentFound(NodeState parentState, ivec2 parentStep);
 
-float selectByType(float cellType, float branchValue, float rootValue) {
-  return (cellType >= 0.5) ? rootValue : branchValue;
+float selectByType(uint cellType, float branchValue, float rootValue) {
+  return (cellType == CELL_TYPE_ROOT) ? rootValue : branchValue;
 }
 
-float creationCostForType(float cellType) {
+float creationCostForType(uint cellType) {
   return selectByType(cellType, BRANCH_CREATION_COST, ROOT_CREATION_COST);
 }
 
-vec2 selectVec2ByType(float cellType, vec2 branchValue, vec2 rootValue) {
-  return (cellType >= 0.5) ? rootValue : branchValue;
+vec2 selectVec2ByType(uint cellType, vec2 branchValue, vec2 rootValue) {
+  return (cellType == CELL_TYPE_ROOT) ? rootValue : branchValue;
 }
 
-float sourceCellType(vec2 sourceUV, uvec4 sourceBranch) {
+uint sourceCellType(vec2 sourceUV, uvec4 sourceBranch) {
   uvec4 meta = sampleBranchTex2(sourceUV);
-  float packed = float(meta.r);
-  float typeNibble = mod(packed, 16.0);
+  uint typeNibble = meta.r & 15u;
   return (typeNibble == CELL_TYPE_ROOT) ? CELL_TYPE_ROOT : CELL_TYPE_BRANCH;
 }
 
-uvec4 withCellType(uvec4 branchTex2Prev, float cellType) {
-  float packed = float(branchTex2Prev.r);
-  float upper = floor(packed / 16.0) * 16.0;
-  float lower = clamp(floor(cellType + 0.5), 0.0, 15.0);
-  float combined = upper + lower;
-  return uvec4(uint(combined), branchTex2Prev.g, branchTex2Prev.b, branchTex2Prev.a);
+uvec4 withCellType(uvec4 branchTex2Prev, uint cellType) {
+  uint upper = branchTex2Prev.r & 240u;
+  uint lower = cellType & 15u;
+  return uvec4(upper | lower, branchTex2Prev.g, branchTex2Prev.b, branchTex2Prev.a);
 }
 
-float unpackResourceSigned(uvec4 branchTex2) {
-  float signedResource = float(branchTex2.g) - RESOURCE_ZERO_BYTE;
-  return clamp(signedResource, RESOURCE_SIGNED_MIN, RESOURCE_SIGNED_MAX);
+int unpackResourceSigned(uvec4 branchTex2) {
+  int signedResource = int(branchTex2.g) - RESOURCE_ZERO_BYTE_I;
+  return clamp(signedResource, RESOURCE_SIGNED_MIN_I, RESOURCE_SIGNED_MAX_I);
 }
 
-float computeResourceTransfer(float sourceResource, float sinkResource, bool parentToChildTowardCanopy) {
-  float diff = sourceResource - sinkResource;
-  if (diff == 0.0) return 0.0;
+int computeResourceTransfer(int sourceResource, int sinkResource, bool parentToChildTowardCanopy) {
+  int diff = sourceResource - sinkResource;
+  if (diff == 0) return 0;
 
-  float signDiff = (diff < 0.0) ? -1.0 : 1.0;
-  float magnitude = abs(diff);
+  int signDiff = (diff < 0) ? -1 : 1;
+  int magnitude = abs(diff);
 
   bool isCanopyDirectionFlow =
-    (parentToChildTowardCanopy && diff > 0.0) ||
-    (!parentToChildTowardCanopy && diff < 0.0);
-  if (isCanopyDirectionFlow && magnitude == 1.0) {
+    (parentToChildTowardCanopy && diff > 0) ||
+    (!parentToChildTowardCanopy && diff < 0);
+  if (isCanopyDirectionFlow && magnitude == 1) {
     return signDiff;
   }
 
   float transferFraction;
   if (parentToChildTowardCanopy) {
-    transferFraction = (diff > 0.0)
+    transferFraction = (diff > 0)
       ? RESOURCE_CANOPY_TRANSFER_FRACTION
       : RESOURCE_ANTI_CANOPY_TRANSFER_FRACTION;
   } else {
-    transferFraction = (diff > 0.0)
+    transferFraction = (diff > 0)
       ? RESOURCE_ANTI_CANOPY_TRANSFER_FRACTION
       : RESOURCE_CANOPY_TRANSFER_FRACTION;
   }
-  float transferredMagnitude = floor(magnitude * transferFraction);
+  int transferredMagnitude = int(floor(float(magnitude) * transferFraction));
   return signDiff * transferredMagnitude;
 }
 
-float computeDirtDiffusionFlow(float sourceResource, float sinkResource) {
-  float diff = sourceResource - sinkResource;
-  if (diff == 0.0) return 0.0;
+int computeDirtDiffusionFlow(int sourceResource, int sinkResource) {
+  int diff = sourceResource - sinkResource;
+  if (diff == 0) return 0;
 
-  float signDiff = (diff < 0.0) ? -1.0 : 1.0;
-  float magnitude = abs(diff);
-  if (magnitude == 1.0) {
+  int signDiff = (diff < 0) ? -1 : 1;
+  int magnitude = abs(diff);
+  if (magnitude == 1) {
     return signDiff;
   } 
   // else if (magnitude == 2.0) {
@@ -216,18 +222,18 @@ float computeDirtDiffusionFlow(float sourceResource, float sinkResource) {
   //   return signDiff;
   // }
 
-  float transferredMagnitude = floor(magnitude * DIRT_DIFFUSION_FRACTION);
+  int transferredMagnitude = int(floor(float(magnitude) * DIRT_DIFFUSION_FRACTION));
   return signDiff * transferredMagnitude;
 }
 
-float computeRootSapAmount(float dirtNutrient, float rootNutrient) {
-  return ((dirtNutrient - rootNutrient) >= ROOT_SAP_THRESHOLD) ? ROOT_SAP_AMOUNT : 0.0;
+int computeRootSapAmount(int dirtNutrient, int rootNutrient) {
+  return ((dirtNutrient - rootNutrient) >= ROOT_SAP_THRESHOLD_I) ? ROOT_SAP_AMOUNT_I : 0;
 }
 
-float packResourceSigned(float signedResource) {
-  float clampedSigned = clamp(signedResource, RESOURCE_SIGNED_MIN, RESOURCE_SIGNED_MAX);
-  float byteVal = clamp(clampedSigned + RESOURCE_ZERO_BYTE, RESOURCE_MIN_BYTE, RESOURCE_MAX_BYTE);
-  return floor(byteVal + 0.5);
+uint packResourceSigned(int signedResource) {
+  int clampedSigned = clamp(signedResource, RESOURCE_SIGNED_MIN_I, RESOURCE_SIGNED_MAX_I);
+  int byteVal = clamp(clampedSigned + RESOURCE_ZERO_BYTE_I, RESOURCE_MIN_BYTE_I, RESOURCE_MAX_BYTE_I);
+  return uint(byteVal);
 }
 
 vec2 edgeSafeUV(vec2 uv, vec2 texelSize) {
@@ -351,9 +357,9 @@ ParentHit makeParentFound(NodeState parentState, ivec2 parentStep) {
   return hit;
 }
 
-uvec4 withCellTypeAndResource(uvec4 branchTex2Prev, float cellType, float signedResource) {
+uvec4 withCellTypeAndResource(uvec4 branchTex2Prev, uint cellType, int signedResource) {
   uvec4 outMeta = withCellType(branchTex2Prev, cellType);
-  outMeta.g = uint(packResourceSigned(signedResource));
+  outMeta.g = packResourceSigned(signedResource);
   return outMeta;
 }
 
@@ -485,13 +491,13 @@ bool blockedInForwardCone(vec2 candidateUV, vec2 sourceUV, vec2 growthDir, vec2 
   return false;
 }
 
-void runSappingPhase(vec4 mHere, uvec4 branchPrev, uvec4 branchTex2Prev, float hereType, vec2 texelSize, in vec2 offsets[8]) {
+void runSappingPhase(vec4 mHere, uvec4 branchPrev, uvec4 branchTex2Prev, uint hereType, vec2 texelSize, in vec2 offsets[8]) {
   if (isOccupied(branchPrev)) {
-    float hereResourcePrev = unpackResourceSigned(branchTex2Prev);
-    float hereResource = hereResourcePrev;
+    int hereResourcePrev = unpackResourceSigned(branchTex2Prev);
+    int hereResource = hereResourcePrev;
 
     if (hereType == CELL_TYPE_ROOT) {
-      float sapGain = 0.0;
+      int sapGain = 0;
       for (int i = 0; i < 8; i++) {
         vec2 nbUV = edgeSafeUV(v_uv + offsets[i], texelSize);
         vec4 nbMatter = texture(u_matter, nbUV);
@@ -500,7 +506,7 @@ void runSappingPhase(vec4 mHere, uvec4 branchPrev, uvec4 branchTex2Prev, float h
         uvec4 nbBranch = sampleFoliage(nbUV);
         if (isOccupied(nbBranch)) continue;
 
-        float dirtNutrient = unpackResourceSigned(sampleBranchTex2(nbUV));
+        int dirtNutrient = unpackResourceSigned(sampleBranchTex2(nbUV));
         sapGain += computeRootSapAmount(dirtNutrient, hereResourcePrev);
       }
       hereResource += sapGain;
@@ -511,46 +517,46 @@ void runSappingPhase(vec4 mHere, uvec4 branchPrev, uvec4 branchTex2Prev, float h
     return;
   }
 
-  float candidateNutrient = unpackResourceSigned(branchTex2Prev);
+  int candidateNutrient = unpackResourceSigned(branchTex2Prev);
   if (isDirt(mHere)) {
-    float sapLoss = 0.0;
+    int sapLoss = 0;
     for (int i = 0; i < 8; i++) {
       vec2 nbUV = edgeSafeUV(v_uv + offsets[i], texelSize);
       uvec4 nbBranch = sampleFoliage(nbUV);
       if (!isOccupied(nbBranch)) continue;
 
-      float nbType = sourceCellType(nbUV, nbBranch);
+      uint nbType = sourceCellType(nbUV, nbBranch);
       if (nbType != CELL_TYPE_ROOT) continue;
 
-      float rootNutrient = unpackResourceSigned(sampleBranchTex2(nbUV));
+      int rootNutrient = unpackResourceSigned(sampleBranchTex2(nbUV));
       sapLoss += computeRootSapAmount(candidateNutrient, rootNutrient);
     }
-    candidateNutrient = clamp(candidateNutrient - sapLoss, RESOURCE_SIGNED_MIN, RESOURCE_SIGNED_MAX);
+    candidateNutrient = clamp(candidateNutrient - sapLoss, RESOURCE_SIGNED_MIN_I, RESOURCE_SIGNED_MAX_I);
   }
 
   out_color_u = branchPrev;
   uvec4 sapMeta = branchTex2Prev;
-  sapMeta.g = uint(packResourceSigned(candidateNutrient));
+  sapMeta.g = packResourceSigned(candidateNutrient);
   out_branch_tex2_u = sapMeta;
 }
 
-void runInternalPhase(uvec4 branchPrev, uvec4 branchTex2Prev, float hereType, vec2 texelSize, in vec2 offsets[8]) {
+void runInternalPhase(uvec4 branchPrev, uvec4 branchTex2Prev, uint hereType, vec2 texelSize, in vec2 offsets[8]) {
   if (!isOccupied(branchPrev)) {
     out_color_u = branchPrev;
     out_branch_tex2_u = branchTex2Prev;
     return;
   }
 
-  float hereResourcePrev = unpackResourceSigned(branchTex2Prev);
-  float hereResource = hereResourcePrev;
+  int hereResourcePrev = unpackResourceSigned(branchTex2Prev);
+  int hereResource = hereResourcePrev;
 
-  float resourceIncoming = 0.0;
-  float resourceOutgoing = 0.0;
+  int resourceIncoming = 0;
+  int resourceOutgoing = 0;
   NodeState hereNode = makeNodeState(v_uv, branchPrev, branchTex2Prev);
   ParentHit upstreamHit = getParent(hereNode);
   if (upstreamHit.found) {
     vec2 parentUV = uvFromLatticePos(upstreamHit.parent.pos);
-    float parentResource = unpackResourceSigned(sampleBranchTex2(parentUV));
+    int parentResource = unpackResourceSigned(sampleBranchTex2(parentUV));
     bool parentToChildTowardCanopy = (hereType != CELL_TYPE_ROOT);
     resourceIncoming += computeResourceTransfer(parentResource, hereResourcePrev, parentToChildTowardCanopy);
   }
@@ -564,7 +570,7 @@ void runInternalPhase(uvec4 branchPrev, uvec4 branchTex2Prev, float hereType, ve
     NodeState childNode = makeNodeState(childUV, childBranch, childMeta);
     if (!isChildOf(childNode, hereNode)) continue;
 
-    float childResourcePrev = unpackResourceSigned(childMeta);
+    int childResourcePrev = unpackResourceSigned(childMeta);
     bool parentToChildTowardCanopy = (childNode.cellType != CELL_TYPE_ROOT);
     resourceOutgoing += computeResourceTransfer(hereResourcePrev, childResourcePrev, parentToChildTowardCanopy);
   }
@@ -585,7 +591,7 @@ void runInternalPhase(uvec4 branchPrev, uvec4 branchTex2Prev, float hereType, ve
     vec2 nbUV = edgeSafeUV(v_uv + offsets[i], texelSize);
     uvec4 nb = sampleFoliage(nbUV);
     if (!isOccupied(nb)) continue;
-    float nbType = sourceCellType(nbUV, nb);
+    uint nbType = sourceCellType(nbUV, nb);
     if (nbType != hereType) continue;
     float n = unpackInhibition(float(nb.b));
     inhibNeighborMax = max(inhibNeighborMax, n);
@@ -605,7 +611,7 @@ void runDiffusionPhase(int phase, vec4 mHere, uvec4 branchPrev, uvec4 branchTex2
     return;
   }
 
-  float candidateNutrient = unpackResourceSigned(branchTex2Prev);
+  int candidateNutrient = unpackResourceSigned(branchTex2Prev);
   ivec2 candidatePos = latticePosFromUV(v_uv);
   bool candidateIsAir = isAir(mHere);
   bool candidateIsDirt = isDirt(mHere);
@@ -629,16 +635,16 @@ void runDiffusionPhase(int phase, vec4 mHere, uvec4 branchPrev, uvec4 branchTex2
       vec4 mN = texture(u_matter, partnerUV);
       uvec4 branchN = sampleFoliage(partnerUV);
       if (isDirt(mN) && !isOccupied(branchN)) {
-        float neighborNutrient = unpackResourceSigned(sampleBranchTex2(partnerUV));
+        int neighborNutrient = unpackResourceSigned(sampleBranchTex2(partnerUV));
         candidateNutrient += computeDirtDiffusionFlow(neighborNutrient, candidateNutrient);
       }
     }
 
-    candidateNutrient = clamp(candidateNutrient, RESOURCE_SIGNED_MIN, RESOURCE_SIGNED_MAX);
+    candidateNutrient = clamp(candidateNutrient, RESOURCE_SIGNED_MIN_I, RESOURCE_SIGNED_MAX_I);
   }
 
   uvec4 emptyMeta = branchTex2Prev;
-  emptyMeta.g = uint(packResourceSigned(candidateNutrient));
+  emptyMeta.g = packResourceSigned(candidateNutrient);
 
   if (!candidateIsAir && !candidateIsDirt) {
     out_color_u = branchPrev;
@@ -662,16 +668,16 @@ void runGrowthPhase(vec4 mHere, uvec4 branchPrev, uvec4 branchTex2Prev, vec2 tex
   float chosenDir = 0.0;
   float chosenErr = 0.0;
   float chosenInhib = 0.0;
-  float chosenType = CELL_TYPE_BRANCH;
-  float chosenResource = 0.0;
-  float candidateNutrient = unpackResourceSigned(branchTex2Prev);
+  uint chosenType = CELL_TYPE_BRANCH;
+  int chosenResource = 0;
+  int candidateNutrient = unpackResourceSigned(branchTex2Prev);
   ivec2 candidatePos = latticePosFromUV(v_uv);
   bool candidateIsAir = isAir(mHere);
   bool candidateIsDirt = isDirt(mHere);
   bool touchingWater = false;
 
   uvec4 emptyMeta = branchTex2Prev;
-  emptyMeta.g = uint(packResourceSigned(candidateNutrient));
+  emptyMeta.g = packResourceSigned(candidateNutrient);
 
   if (!candidateIsAir && !candidateIsDirt) {
     out_color_u = branchPrev;
@@ -697,8 +703,8 @@ void runGrowthPhase(vec4 mHere, uvec4 branchPrev, uvec4 branchTex2Prev, vec2 tex
     if (!isOccupied(sourceBranch)) continue;
     uvec4 sourceMeta = sampleBranchTex2(sourceUV);
     NodeState sourceNode = makeNodeState(sourceUV, sourceBranch, sourceMeta);
-    float sourceNutrient = unpackResourceSigned(sourceMeta);
-    float sourceType = sourceCellType(sourceUV, sourceBranch);
+    int sourceNutrient = unpackResourceSigned(sourceMeta);
+    uint sourceType = sourceCellType(sourceUV, sourceBranch);
     bool sourceIsRoot = sourceType == CELL_TYPE_ROOT;
     if (sourceIsRoot && !candidateIsDirt) continue;
 
@@ -760,8 +766,8 @@ void runGrowthPhase(vec4 mHere, uvec4 branchPrev, uvec4 branchTex2Prev, vec2 tex
 
       if (isChildOf(seedCandidate, sourceNode)) {
         if (blockedInForwardCone(v_uv, sourceUV, seedDir, texelSize)) continue;
-        float requiredCost = creationCostForType(CELL_TYPE_ROOT);
-        float availableForSpawn = sourceNutrient + candidateNutrient;
+        int requiredCost = ROOT_CREATION_COST_I;
+        int availableForSpawn = sourceNutrient + candidateNutrient;
         if (availableForSpawn < requiredCost) continue;
         claimCount++;
         if (claimCount == 1) {
@@ -849,8 +855,8 @@ void runGrowthPhase(vec4 mHere, uvec4 branchPrev, uvec4 branchTex2Prev, vec2 tex
     float claimDir = 0.0;
     float claimErr = 0.0;
     float claimInhib = sourceInhib;
-    float claimType = sourceType;
-    float claimResource = candidateNutrient;
+    uint claimType = sourceType;
+    int claimResource = candidateNutrient;
 
     NodeState claimCandidate = makeEmptyNodeState();
     claimCandidate.occupied = true;
@@ -885,8 +891,8 @@ void runGrowthPhase(vec4 mHere, uvec4 branchPrev, uvec4 branchTex2Prev, vec2 tex
     }
 
     if (claimed) {
-      float requiredCost = creationCostForType(claimType);
-      float availableForSpawn = sourceNutrient + candidateNutrient;
+      int requiredCost = (claimType == CELL_TYPE_ROOT) ? ROOT_CREATION_COST_I : BRANCH_CREATION_COST_I;
+      int availableForSpawn = sourceNutrient + candidateNutrient;
       if (availableForSpawn < requiredCost) {
         continue;
       }
@@ -917,7 +923,7 @@ void main() {
   vec4 mHere = texture(u_matter, v_uv);
   uvec4 branchPrev = sampleFoliage(v_uv);
   uvec4 branchTex2Prev = sampleBranchTex2(v_uv);
-  float hereType = sourceCellType(v_uv, branchPrev);
+  uint hereType = sourceCellType(v_uv, branchPrev);
   vec2 texelSize = 1.0 / vec2(textureSize(u_matter, 0));
 
   vec2 offsets[8] = vec2[8](
