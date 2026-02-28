@@ -841,7 +841,11 @@ void runGrowthPhase(vec4 mHere, uvec4 branchPrev, uvec4 branchTex2Prev, vec2 tex
       if (isChildOf(seedCandidate, sourceNode)) {
         if (blockedInForwardCone(v_uv, sourceUV, vec2(seedDir), texelSize)) continue;
         int requiredCost = rootCreationCostI();
-        int availableForSpawn = sourceNutrient + candidateNutrient;
+        int availableForSpawn = sourceNutrient;
+        // Root seeding booster
+        if (sourceType == CELL_TYPE_BRANCH) {
+          availableForSpawn += candidateNutrient;
+        }
         if (availableForSpawn < requiredCost) continue;
         claimCount++;
         if (claimCount == 1) {
