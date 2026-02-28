@@ -14,6 +14,10 @@ import type { World, MapPlacement } from "../world/types";
 import { createFoliageSim, type FoliageSim } from "./FoliageSim";
 import { createLightTransportSim, type LightTransportSim } from "./LightTransportSim";
 import { createNoiseSim, type NoiseSim } from "./NoiseSim";
+import {
+  DEFAULT_FOLIAGE_TUNING_CONFIG,
+  type FoliageTuningConfig,
+} from "./FoliageTuningConfig";
 
 /** Per-map simulation instance */
 interface MapSim {
@@ -38,6 +42,8 @@ export interface SimulationRenderer {
   noiseSpeed: number;
   /** Noise rate magnitude multiplier (1.0 = default) */
   noiseMagnitude: number;
+  /** Shared foliage tuning object used by all foliage simulation shaders. */
+  foliageTuningConfig: FoliageTuningConfig;
   dispose(): void;
 }
 
@@ -50,6 +56,8 @@ export interface SimulationOptions {
   branchInhibitionEnabled?: boolean;
   /** Enable main-path turn/swerve behavior (default true). */
   mainTurnEnabled?: boolean;
+  /** Shared foliage tuning config instance vended to all foliage sims. */
+  foliageTuningConfig?: FoliageTuningConfig;
 }
 
 export function createSimulationRenderer(
@@ -61,6 +69,7 @@ export function createSimulationRenderer(
   let branchingEnabled = options?.branchingEnabled ?? true;
   let branchInhibitionEnabled = options?.branchInhibitionEnabled ?? true;
   let mainTurnEnabled = options?.mainTurnEnabled ?? true;
+  const foliageTuningConfig = options?.foliageTuningConfig ?? { ...DEFAULT_FOLIAGE_TUNING_CONFIG };
 
   function readTexturePixels(
     tex: WebGLTexture,
@@ -92,7 +101,7 @@ export function createSimulationRenderer(
   // ── Per-map FoliageSim + NoiseSim instances ──────────────────────────────
   const mapSims: MapSim[] = world.mapPlacements.map((placement) => {
     const { width, height } = placement.map;
-    const sim = createFoliageSim(gl, width, height);
+    const sim = createFoliageSim(gl, width, height, foliageTuningConfig);
     sim.branchingEnabled = branchingEnabled;
     sim.branchInhibitionEnabled = branchInhibitionEnabled;
     sim.mainTurnEnabled = mainTurnEnabled;
@@ -201,6 +210,7 @@ export function createSimulationRenderer(
     set noiseSpeed(v: number) { for (const ms of mapSims) ms.noise.speed = v; },
     get noiseMagnitude() { return mapSims[0]?.noise.magnitude ?? 1; },
     set noiseMagnitude(v: number) { for (const ms of mapSims) ms.noise.magnitude = v; },
+    get foliageTuningConfig() { return foliageTuningConfig; },
     dispose,
   };
 }

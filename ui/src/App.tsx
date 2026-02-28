@@ -193,7 +193,7 @@ async function initApp(canvas: HTMLCanvasElement, callbacks: InitAppCallbacks): 
   resourceHoverEl.style.whiteSpace = "pre";
   canvas.parentElement?.appendChild(resourceHoverEl);
 
-  const nutrientHud = createNutrientHud(gl, world);
+  const nutrientHud = createNutrientHud(gl, world, simulation.foliageTuningConfig);
 
   applyLocationControls();
 

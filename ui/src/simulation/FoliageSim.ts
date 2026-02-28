@@ -8,6 +8,25 @@
 import simVert from "../shaders/simulation.vert";
 import simFrag from "../shaders/simulation.frag";
 import { createIntegerTexture, createProgram } from "../utils/gl-utils";
+import {
+  DEFAULT_FOLIAGE_TUNING_CONFIG,
+  type FoliageTuningConfig,
+} from "./FoliageTuningConfig";
+
+export type { FoliageTuningConfig } from "./FoliageTuningConfig";
+
+export interface FoliageUniformConfig {
+  matterUnit: number;
+  foliagePrevUnit: number;
+  branchTex2PrevUnit: number;
+  noiseUnit: number;
+  lightUnit: number;
+  tick: number;
+  branchingEnabled: boolean;
+  branchInhibitionEnabled: boolean;
+  mainTurnEnabled: boolean;
+  tuning: FoliageTuningConfig;
+}
 
 export interface FoliageSim {
   /** Run one simulation step. Swaps ping-pong buffers internally. */
@@ -42,7 +61,16 @@ export function createFoliageSim(
   gl: WebGL2RenderingContext,
   width: number,
   height: number,
+  tuningConfig: FoliageTuningConfig = { ...DEFAULT_FOLIAGE_TUNING_CONFIG },
 ): FoliageSim {
+  const TEXTURE_UNITS = {
+    matter: 0,
+    foliagePrev: 1,
+    noise: 2,
+    light: 3,
+    branchTex2Prev: 4,
+  } as const;
+
   const program = createProgram(gl, simVert, simFrag);
   const u_matter = gl.getUniformLocation(program, "u_matter");
   const u_foliage_prev = gl.getUniformLocation(program, "u_foliage_prev");
@@ -53,6 +81,28 @@ export function createFoliageSim(
   const u_branch_inhibition_enabled = gl.getUniformLocation(program, "u_branch_inhibition_enabled");
   const u_main_turn_enabled = gl.getUniformLocation(program, "u_main_turn_enabled");
   const u_tick = gl.getUniformLocation(program, "u_tick");
+  const u_branch_side_rate = gl.getUniformLocation(program, "u_branch_side_rate");
+  const u_branch_side_angle_min = gl.getUniformLocation(program, "u_branch_side_angle_min");
+  const u_branch_side_angle_max = gl.getUniformLocation(program, "u_branch_side_angle_max");
+  const u_main_turn_rate = gl.getUniformLocation(program, "u_main_turn_rate");
+  const u_main_turn_rate_blocked = gl.getUniformLocation(program, "u_main_turn_rate_blocked");
+  const u_main_turn_max = gl.getUniformLocation(program, "u_main_turn_max");
+  const u_root_side_rate = gl.getUniformLocation(program, "u_root_side_rate");
+  const u_root_side_angle_min = gl.getUniformLocation(program, "u_root_side_angle_min");
+  const u_root_side_angle_max = gl.getUniformLocation(program, "u_root_side_angle_max");
+  const u_root_turn_rate = gl.getUniformLocation(program, "u_root_turn_rate");
+  const u_root_turn_rate_blocked = gl.getUniformLocation(program, "u_root_turn_rate_blocked");
+  const u_root_turn_max = gl.getUniformLocation(program, "u_root_turn_max");
+  const u_forward_cone_cos = gl.getUniformLocation(program, "u_forward_cone_cos");
+  const u_branch_inhibition_decay = gl.getUniformLocation(program, "u_branch_inhibition_decay");
+  const u_root_inhibition_decay = gl.getUniformLocation(program, "u_root_inhibition_decay");
+  const u_root_creation_cost = gl.getUniformLocation(program, "u_root_creation_cost");
+  const u_branch_creation_cost = gl.getUniformLocation(program, "u_branch_creation_cost");
+  const u_resource_canopy_transfer_fraction = gl.getUniformLocation(program, "u_resource_canopy_transfer_fraction");
+  const u_resource_anti_canopy_transfer_fraction = gl.getUniformLocation(program, "u_resource_anti_canopy_transfer_fraction");
+  const u_dirt_diffusion_fraction = gl.getUniformLocation(program, "u_dirt_diffusion_fraction");
+  const u_root_sap_threshold = gl.getUniformLocation(program, "u_root_sap_threshold");
+  const u_root_sap_amount = gl.getUniformLocation(program, "u_root_sap_amount");
 
   const emptyVAO = gl.createVertexArray()!;
 
@@ -91,6 +141,56 @@ export function createFoliageSim(
   let branchInhibitionEnabled = true;
   let mainTurnEnabled = true;
 
+  function buildUniformConfig(tick: number): FoliageUniformConfig {
+    return {
+      matterUnit: TEXTURE_UNITS.matter,
+      foliagePrevUnit: TEXTURE_UNITS.foliagePrev,
+      branchTex2PrevUnit: TEXTURE_UNITS.branchTex2Prev,
+      noiseUnit: TEXTURE_UNITS.noise,
+      lightUnit: TEXTURE_UNITS.light,
+      tick,
+      branchingEnabled,
+      branchInhibitionEnabled,
+      mainTurnEnabled,
+      tuning: tuningConfig,
+    };
+  }
+
+  function applyUniformConfig(config: FoliageUniformConfig): void {
+    gl.uniform1i(u_matter, config.matterUnit);
+    gl.uniform1i(u_foliage_prev, config.foliagePrevUnit);
+    gl.uniform1i(u_branch_tex2_prev, config.branchTex2PrevUnit);
+    gl.uniform1i(u_noise, config.noiseUnit);
+    gl.uniform1i(u_light, config.lightUnit);
+    gl.uniform1i(u_tick, config.tick);
+    gl.uniform1i(u_branching_enabled, config.branchingEnabled ? 1 : 0);
+    gl.uniform1i(u_branch_inhibition_enabled, config.branchInhibitionEnabled ? 1 : 0);
+    gl.uniform1i(u_main_turn_enabled, config.mainTurnEnabled ? 1 : 0);
+
+    gl.uniform1f(u_branch_side_rate, config.tuning.branchSideRate);
+    gl.uniform1f(u_branch_side_angle_min, config.tuning.branchSideAngleMin);
+    gl.uniform1f(u_branch_side_angle_max, config.tuning.branchSideAngleMax);
+    gl.uniform1f(u_main_turn_rate, config.tuning.mainTurnRate);
+    gl.uniform1f(u_main_turn_rate_blocked, config.tuning.mainTurnRateBlocked);
+    gl.uniform1f(u_main_turn_max, config.tuning.mainTurnMax);
+    gl.uniform1f(u_root_side_rate, config.tuning.rootSideRate);
+    gl.uniform1f(u_root_side_angle_min, config.tuning.rootSideAngleMin);
+    gl.uniform1f(u_root_side_angle_max, config.tuning.rootSideAngleMax);
+    gl.uniform1f(u_root_turn_rate, config.tuning.rootTurnRate);
+    gl.uniform1f(u_root_turn_rate_blocked, config.tuning.rootTurnRateBlocked);
+    gl.uniform1f(u_root_turn_max, config.tuning.rootTurnMax);
+    gl.uniform1f(u_forward_cone_cos, config.tuning.forwardConeCos);
+    gl.uniform1f(u_branch_inhibition_decay, config.tuning.branchInhibitionDecay);
+    gl.uniform1f(u_root_inhibition_decay, config.tuning.rootInhibitionDecay);
+    gl.uniform1f(u_root_creation_cost, config.tuning.rootCreationCost);
+    gl.uniform1f(u_branch_creation_cost, config.tuning.branchCreationCost);
+    gl.uniform1f(u_resource_canopy_transfer_fraction, config.tuning.resourceCanopyTransferFraction);
+    gl.uniform1f(u_resource_anti_canopy_transfer_fraction, config.tuning.resourceAntiCanopyTransferFraction);
+    gl.uniform1f(u_dirt_diffusion_fraction, config.tuning.dirtDiffusionFraction);
+    gl.uniform1f(u_root_sap_threshold, config.tuning.rootSapThreshold);
+    gl.uniform1f(u_root_sap_amount, config.tuning.rootSapAmount);
+  }
+
   function setInitialState(branchTex1: Uint8Array, branchTex2?: Uint8Array): void {
     const expectedSize = width * height * 4;
     if (branchTex1.length !== expectedSize) {
@@ -124,6 +224,7 @@ export function createFoliageSim(
     const readTex2 = textures2[readIdx];
     const writeIdx = 1 - readIdx;
     const writeFbo = fbos[writeIdx];
+    const config = buildUniformConfig(tick);
 
     gl.useProgram(program);
     gl.bindVertexArray(emptyVAO);
@@ -131,25 +232,17 @@ export function createFoliageSim(
     gl.bindFramebuffer(gl.FRAMEBUFFER, writeFbo);
     gl.viewport(0, 0, width, height);
 
-    gl.uniform1i(u_matter, 0);
-    gl.uniform1i(u_foliage_prev, 1);
-    gl.uniform1i(u_branch_tex2_prev, 4);
-    gl.uniform1i(u_noise, 2);
-    gl.uniform1i(u_light, 3);
-    gl.uniform1i(u_tick, tick);
-    gl.uniform1i(u_branching_enabled, branchingEnabled ? 1 : 0);
-    gl.uniform1i(u_branch_inhibition_enabled, branchInhibitionEnabled ? 1 : 0);
-    gl.uniform1i(u_main_turn_enabled, mainTurnEnabled ? 1 : 0);
+    applyUniformConfig(config);
 
-    gl.activeTexture(gl.TEXTURE0);
+    gl.activeTexture(gl.TEXTURE0 + config.matterUnit);
     gl.bindTexture(gl.TEXTURE_2D, matterTex);
-    gl.activeTexture(gl.TEXTURE1);
+    gl.activeTexture(gl.TEXTURE0 + config.foliagePrevUnit);
     gl.bindTexture(gl.TEXTURE_2D, readTex);
-    gl.activeTexture(gl.TEXTURE2);
+    gl.activeTexture(gl.TEXTURE0 + config.noiseUnit);
     gl.bindTexture(gl.TEXTURE_2D, noiseTex);
-    gl.activeTexture(gl.TEXTURE3);
+    gl.activeTexture(gl.TEXTURE0 + config.lightUnit);
     gl.bindTexture(gl.TEXTURE_2D, lightTex);
-    gl.activeTexture(gl.TEXTURE4);
+    gl.activeTexture(gl.TEXTURE0 + config.branchTex2PrevUnit);
     gl.bindTexture(gl.TEXTURE_2D, readTex2);
 
     gl.drawArrays(gl.TRIANGLES, 0, 3);

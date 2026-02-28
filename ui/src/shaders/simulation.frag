@@ -32,6 +32,28 @@ uniform int u_branching_enabled;
 uniform int u_branch_inhibition_enabled;
 uniform int u_main_turn_enabled;
 uniform int u_tick;
+uniform float u_branch_side_rate;
+uniform float u_branch_side_angle_min;
+uniform float u_branch_side_angle_max;
+uniform float u_main_turn_rate;
+uniform float u_main_turn_rate_blocked;
+uniform float u_main_turn_max;
+uniform float u_root_side_rate;
+uniform float u_root_side_angle_min;
+uniform float u_root_side_angle_max;
+uniform float u_root_turn_rate;
+uniform float u_root_turn_rate_blocked;
+uniform float u_root_turn_max;
+uniform float u_forward_cone_cos;
+uniform float u_branch_inhibition_decay;
+uniform float u_root_inhibition_decay;
+uniform float u_root_creation_cost;
+uniform float u_branch_creation_cost;
+uniform float u_resource_canopy_transfer_fraction;
+uniform float u_resource_anti_canopy_transfer_fraction;
+uniform float u_dirt_diffusion_fraction;
+uniform float u_root_sap_threshold;
+uniform float u_root_sap_amount;
 
 layout(location = 0) out uvec4 out_color_u;
 layout(location = 1) out uvec4 out_branch_tex2_u;
@@ -60,20 +82,6 @@ const ivec2 DIR_DY_DX_LUT_32_MAX8[32] = ivec2[32](
 );
 
 const float BRANCH_ALPHA_MIN = 127.0;
-const float BRANCH_SIDE_RATE = 0.18;
-const float BRANCH_SIDE_ANGLE_MIN = 20.0 * DEG_TO_RAD;
-const float BRANCH_SIDE_ANGLE_MAX = 50.0 * DEG_TO_RAD;
-const float MAIN_TURN_RATE = 0.08;
-const float MAIN_TURN_RATE_BLOCKED = 0.55;
-const float MAIN_TURN_MAX = 10.0 * DEG_TO_RAD;
-
-const float ROOT_SIDE_RATE = 0.36;
-const float ROOT_SIDE_ANGLE_MIN = 20.0 * DEG_TO_RAD;
-const float ROOT_SIDE_ANGLE_MAX = 60.0 * DEG_TO_RAD;
-const float ROOT_TURN_RATE = 0.04;
-const float ROOT_TURN_RATE_BLOCKED = 0.70;
-const float ROOT_TURN_MAX = 7.0 * DEG_TO_RAD;
-
 const uint CELL_TYPE_BRANCH = 0u;
 const uint CELL_TYPE_ROOT = 1u;
 
@@ -90,34 +98,20 @@ const vec2 HASH_SALT_SIDE_SIGN_ROOT = vec2(1289.0, 1063.0);
 const vec2 HASH_SALT_SIDE_ANGLE_BRANCH = vec2(1597.0, 1213.0);
 const vec2 HASH_SALT_SIDE_ANGLE_ROOT = vec2(1747.0, 1303.0);
 
-const float FORWARD_CONE_COS = 0.5; // cos(60 deg)
 const float INHIBITION_MAX = 255.0;
-const float BRANCH_INHIBITION_DECAY = 3.0;
-const float ROOT_INHIBITION_DECAY = 32.0;
 
 const float RESOURCE_ZERO_BYTE = 127.0;
 const float RESOURCE_MIN_BYTE = 0.0;
 const float RESOURCE_MAX_BYTE = 255.0;
-const float ROOT_CREATION_COST = 1.0;
-const float BRANCH_CREATION_COST = 1.0;
 const float RESOURCE_SIGNED_MIN = RESOURCE_MIN_BYTE - RESOURCE_ZERO_BYTE;
 const float RESOURCE_SIGNED_MAX = RESOURCE_MAX_BYTE - RESOURCE_ZERO_BYTE - 1.0;
 const float RESOURCE_RELAX_BRANCH = 0.0;
 const float RESOURCE_RELAX_ROOT = 0.0;
-const float RESOURCE_CANOPY_TRANSFER_FRACTION = 0.75;
-const float RESOURCE_ANTI_CANOPY_TRANSFER_FRACTION = 0.1;
-const float DIRT_DIFFUSION_FRACTION = 0.25;
-const float ROOT_SAP_THRESHOLD = 4.0;
-const float ROOT_SAP_AMOUNT = 1.0;
 const int RESOURCE_ZERO_BYTE_I = 127;
 const int RESOURCE_MIN_BYTE_I = 0;
 const int RESOURCE_MAX_BYTE_I = 255;
 const int RESOURCE_SIGNED_MIN_I = -127;
 const int RESOURCE_SIGNED_MAX_I = 127;
-const int ROOT_CREATION_COST_I = 1;
-const int BRANCH_CREATION_COST_I = 1;
-const int ROOT_SAP_THRESHOLD_I = 4;
-const int ROOT_SAP_AMOUNT_I = 1;
 // Version: Energy conversation version
 // const float RESOURCE_ZERO_BYTE = 127.0;
 // const float RESOURCE_MIN_BYTE = 0.0;
@@ -168,7 +162,23 @@ float selectByType(uint cellType, float branchValue, float rootValue) {
 }
 
 float creationCostForType(uint cellType) {
-  return selectByType(cellType, BRANCH_CREATION_COST, ROOT_CREATION_COST);
+  return selectByType(cellType, u_branch_creation_cost, u_root_creation_cost);
+}
+
+int rootCreationCostI() {
+  return int(floor(max(u_root_creation_cost, 0.0) + 0.5));
+}
+
+int branchCreationCostI() {
+  return int(floor(max(u_branch_creation_cost, 0.0) + 0.5));
+}
+
+int rootSapThresholdI() {
+  return int(floor(max(u_root_sap_threshold, 0.0) + 0.5));
+}
+
+int rootSapAmountI() {
+  return int(floor(max(u_root_sap_amount, 0.0) + 0.5));
 }
 
 vec2 selectVec2ByType(uint cellType, vec2 branchValue, vec2 rootValue) {
@@ -209,12 +219,12 @@ int computeResourceTransfer(int sourceResource, int sinkResource, bool parentToC
   float transferFraction;
   if (parentToChildTowardCanopy) {
     transferFraction = (diff > 0)
-      ? RESOURCE_CANOPY_TRANSFER_FRACTION
-      : RESOURCE_ANTI_CANOPY_TRANSFER_FRACTION;
+      ? u_resource_canopy_transfer_fraction
+      : u_resource_anti_canopy_transfer_fraction;
   } else {
     transferFraction = (diff > 0)
-      ? RESOURCE_ANTI_CANOPY_TRANSFER_FRACTION
-      : RESOURCE_CANOPY_TRANSFER_FRACTION;
+      ? u_resource_anti_canopy_transfer_fraction
+      : u_resource_canopy_transfer_fraction;
   }
   int transferredMagnitude = int(floor(float(magnitude) * transferFraction));
   return signDiff * transferredMagnitude;
@@ -236,12 +246,12 @@ int computeDirtDiffusionFlow(int sourceResource, int sinkResource) {
   //   return signDiff;
   // }
 
-  int transferredMagnitude = int(floor(float(magnitude) * DIRT_DIFFUSION_FRACTION));
+  int transferredMagnitude = int(floor(float(magnitude) * u_dirt_diffusion_fraction));
   return signDiff * transferredMagnitude;
 }
 
 int computeRootSapAmount(int dirtNutrient, int rootNutrient) {
-  return ((dirtNutrient - rootNutrient) >= ROOT_SAP_THRESHOLD_I) ? ROOT_SAP_AMOUNT_I : 0;
+  return ((dirtNutrient - rootNutrient) >= rootSapThresholdI()) ? rootSapAmountI() : 0;
 }
 
 uint packResourceSigned(int signedResource) {
@@ -545,7 +555,7 @@ bool blockedInForwardCone(vec2 candidateUV, vec2 sourceUV, vec2 growthDir, vec2 
   for (int k = 0; k < 48; k++) {
     vec2 lattice = probes[k];
     vec2 rel = normalize(lattice);
-    if (dot(rel, dir) < FORWARD_CONE_COS) continue;
+    if (dot(rel, dir) < u_forward_cone_cos) continue;
 
     vec2 probeUV = edgeSafeUV(candidateUV + vec2(lattice.x * texelSize.x, lattice.y * texelSize.y), texelSize);
     if (distance(probeUV, sourceUV) <= sourceEps) continue;
@@ -649,8 +659,8 @@ void runInternalPhase(uvec4 branchPrev, uvec4 branchTex2Prev, uint hereType, vec
   float inhibCenter = unpackInhibition(float(branchPrev.b));
   float inhibNeighborMax = 0.0;
   float inhibitionDecay = (hereType == CELL_TYPE_ROOT)
-    ? ROOT_INHIBITION_DECAY
-    : BRANCH_INHIBITION_DECAY;
+    ? u_root_inhibition_decay
+    : u_branch_inhibition_decay;
   for (int i = 0; i < 8; i++) {
     vec2 nbUV = edgeSafeUV(v_uv + offsets[i], texelSize);
     uvec4 nb = sampleFoliage(nbUV);
@@ -772,12 +782,12 @@ void runGrowthPhase(vec4 mHere, uvec4 branchPrev, uvec4 branchTex2Prev, vec2 tex
     bool sourceIsRoot = sourceType == CELL_TYPE_ROOT;
     if (sourceIsRoot && !candidateIsDirt) continue;
 
-    float sideRate = selectByType(sourceType, BRANCH_SIDE_RATE, ROOT_SIDE_RATE);
-    float sideAngleMin = selectByType(sourceType, BRANCH_SIDE_ANGLE_MIN, ROOT_SIDE_ANGLE_MIN);
-    float sideAngleMax = selectByType(sourceType, BRANCH_SIDE_ANGLE_MAX, ROOT_SIDE_ANGLE_MAX);
-    float mainTurnRate = selectByType(sourceType, MAIN_TURN_RATE, ROOT_TURN_RATE);
-    float mainTurnRateBlocked = selectByType(sourceType, MAIN_TURN_RATE_BLOCKED, ROOT_TURN_RATE_BLOCKED);
-    float mainTurnMax = selectByType(sourceType, MAIN_TURN_MAX, ROOT_TURN_MAX);
+    float sideRate = selectByType(sourceType, u_branch_side_rate, u_root_side_rate);
+    float sideAngleMin = selectByType(sourceType, u_branch_side_angle_min, u_root_side_angle_min);
+    float sideAngleMax = selectByType(sourceType, u_branch_side_angle_max, u_root_side_angle_max);
+    float mainTurnRate = selectByType(sourceType, u_main_turn_rate, u_root_turn_rate);
+    float mainTurnRateBlocked = selectByType(sourceType, u_main_turn_rate_blocked, u_root_turn_rate_blocked);
+    float mainTurnMax = selectByType(sourceType, u_main_turn_max, u_root_turn_max);
 
     vec2 turnSaltA = selectVec2ByType(sourceType, HASH_SALT_TURN_A_BRANCH, HASH_SALT_TURN_A_ROOT);
     vec2 turnSaltSign = selectVec2ByType(sourceType, HASH_SALT_TURN_SIGN_BRANCH, HASH_SALT_TURN_SIGN_ROOT);
@@ -830,7 +840,7 @@ void runGrowthPhase(vec4 mHere, uvec4 branchPrev, uvec4 branchTex2Prev, vec2 tex
 
       if (isChildOf(seedCandidate, sourceNode)) {
         if (blockedInForwardCone(v_uv, sourceUV, vec2(seedDir), texelSize)) continue;
-        int requiredCost = ROOT_CREATION_COST_I;
+        int requiredCost = rootCreationCostI();
         int availableForSpawn = sourceNutrient + candidateNutrient;
         if (availableForSpawn < requiredCost) continue;
         claimCount++;
@@ -958,7 +968,7 @@ void runGrowthPhase(vec4 mHere, uvec4 branchPrev, uvec4 branchTex2Prev, vec2 tex
     }
 
     if (claimed) {
-      int requiredCost = (claimType == CELL_TYPE_ROOT) ? ROOT_CREATION_COST_I : BRANCH_CREATION_COST_I;
+      int requiredCost = (claimType == CELL_TYPE_ROOT) ? rootCreationCostI() : branchCreationCostI();
       int availableForSpawn = sourceNutrient + candidateNutrient;
       if (availableForSpawn < requiredCost) {
         continue;

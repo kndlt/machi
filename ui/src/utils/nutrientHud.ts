@@ -1,4 +1,5 @@
 import type { World } from "../world/types";
+import type { FoliageTuningConfig } from "../simulation/FoliageTuningConfig";
 import { createProgram } from "./gl-utils";
 
 interface NutrientHudController {
@@ -9,8 +10,6 @@ interface NutrientHudController {
 }
 
 const HUD_SAMPLE_INTERVAL_MS = 500;
-const ROOT_CREATION_COST = 1.0;
-const BRANCH_CREATION_COST = 1.0;
 const NUTRIENT_UNIT = "nu";
 
 interface ReductionLevel {
@@ -159,6 +158,7 @@ void main() {
 export function createNutrientHud(
   gl: WebGL2RenderingContext,
   world: World,
+  tuningConfig: FoliageTuningConfig,
 ): NutrientHudController {
   const sampleFbo = gl.createFramebuffer();
   const readbackCache = new Map<string, Uint8Array>();
@@ -437,8 +437,8 @@ export function createNutrientHud(
       gl.uniform1i(uMatter, 3);
       gl.uniform2i(uSourceSize, sourceWidth, sourceHeight);
       gl.uniform1i(uMode, i == 0 ? 0 : 1);
-      gl.uniform1f(uRootCost, ROOT_CREATION_COST);
-      gl.uniform1f(uBranchCost, BRANCH_CREATION_COST);
+      gl.uniform1f(uRootCost, tuningConfig.rootCreationCost);
+      gl.uniform1f(uBranchCost, tuningConfig.branchCreationCost);
 
       gl.drawArrays(gl.TRIANGLES, 0, 3);
 
@@ -530,11 +530,11 @@ export function createNutrientHud(
       if (isDirt) dirtNutrient += nutrient;
       if (isRoot) {
         rootNutrient += nutrient;
-        embodiedUnits += ROOT_CREATION_COST;
+        embodiedUnits += tuningConfig.rootCreationCost;
       }
       if (isBranch) {
         branchNutrient += nutrient;
-        embodiedUnits += BRANCH_CREATION_COST;
+        embodiedUnits += tuningConfig.branchCreationCost;
       }
     }
 
@@ -635,9 +635,9 @@ export function createNutrientHud(
     }
 
     const totalNutrient = dirtNutrient + rootNutrient + branchNutrient;
-    const embodiedUnits = rootCells * ROOT_CREATION_COST + branchCells * BRANCH_CREATION_COST;
+    const embodiedUnits = rootCells * tuningConfig.rootCreationCost + branchCells * tuningConfig.branchCreationCost;
     const nutrientLike = totalNutrient + embodiedUnits;
-    const branchLike = branchNutrient + branchCells * BRANCH_CREATION_COST;
+    const branchLike = branchNutrient + branchCells * tuningConfig.branchCreationCost;
     const fmtNu = (v: number) => `${Math.round(v)}${NUTRIENT_UNIT}`;
 
     label =
