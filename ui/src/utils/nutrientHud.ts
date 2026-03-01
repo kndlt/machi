@@ -36,7 +36,7 @@ interface NutrientLikeTotals {
   dirtNutrient: number;
   rootNutrient: number;
   branchNutrient: number;
-  embodiedUnits: number;
+  branchEnergy: number;
 }
 
 interface CellCounts {
@@ -104,6 +104,7 @@ vec4 seedValue(ivec2 p) {
   vec4 matter = texelFetch(u_matter, p, 0);
 
   float nutrient = floor(clamp(branch2.g, 0.0, 1.0) * 255.0 + 0.5) - 127.0;
+  float energy = floor(clamp(branch2.b, 0.0, 1.0) * 255.0 + 0.5) - 127.0;
   bool occupied = foliage.a > 0.05;
   float packedType = floor(clamp(branch2.r, 0.0, 1.0) * 255.0 + 0.5);
   bool isRoot = occupied && (mod(packedType, 16.0) == 1.0);
@@ -113,9 +114,9 @@ vec4 seedValue(ivec2 p) {
   float dirtN = isDirt ? nutrient : 0.0;
   float rootN = isRoot ? nutrient : 0.0;
   float branchN = isBranch ? nutrient : 0.0;
-  float embodied = (isRoot ? u_root_cost : 0.0) + (isBranch ? u_branch_cost : 0.0);
+  float branchE = isBranch ? energy : 0.0;
 
-  return vec4(dirtN, rootN, branchN, embodied);
+  return vec4(dirtN, rootN, branchN, branchE);
 }
 
 vec4 sourceValue(ivec2 p) {
@@ -461,7 +462,7 @@ export function createNutrientHud(
       dirtNutrient: Math.round(reduceReadback[0]),
       rootNutrient: Math.round(reduceReadback[1]),
       branchNutrient: Math.round(reduceReadback[2]),
-      embodiedUnits: Math.round(reduceReadback[3]),
+      branchEnergy: Math.round(reduceReadback[3]),
     };
   }
 
@@ -509,10 +510,11 @@ export function createNutrientHud(
     let dirtNutrient = 0;
     let rootNutrient = 0;
     let branchNutrient = 0;
-    let embodiedUnits = 0;
+    let branchEnergy = 0;
 
     for (let i = 0; i < branch2.length; i += 4) {
       const nutrient = branch2[i + 1] - 127;
+      const energy = branch2[i + 2] - 127;
       const occupied = foliage[i + 3] > 12;
       const typeNibble = branch2[i] & 0x0f;
       const isRoot = occupied && typeNibble === 1;
@@ -530,15 +532,14 @@ export function createNutrientHud(
       if (isDirt) dirtNutrient += nutrient;
       if (isRoot) {
         rootNutrient += nutrient;
-        embodiedUnits += tuningConfig.rootCreationCost;
       }
       if (isBranch) {
         branchNutrient += nutrient;
-        embodiedUnits += tuningConfig.branchCreationCost;
+        branchEnergy += energy;
       }
     }
 
-    return { dirtNutrient, rootNutrient, branchNutrient, embodiedUnits };
+    return { dirtNutrient, rootNutrient, branchNutrient, branchEnergy };
   }
 
   function readNutrientLikeTotals(
@@ -592,6 +593,7 @@ export function createNutrientHud(
     let dirtNutrient = 0;
     let rootNutrient = 0;
     let branchNutrient = 0;
+    let branchEnergy = 0;
     let rootCells = 0;
     let branchCells = 0;
     for (const placement of world.mapPlacements) {
@@ -615,6 +617,7 @@ export function createNutrientHud(
       dirtNutrient += partial.dirtNutrient;
       rootNutrient += partial.rootNutrient;
       branchNutrient += partial.branchNutrient;
+      branchEnergy += partial.branchEnergy;
 
       const counts = readCellCounts(
         branch2Tex,
@@ -642,7 +645,7 @@ export function createNutrientHud(
 
     label =
       `N-like: ${fmtNu(nutrientLike)} | embodied: ${fmtNu(embodiedUnits)}\n`
-      + `dirt: ${fmtNu(dirtNutrient)} root: ${fmtNu(rootNutrient)} branch: ${fmtNu(branchLike)}\n`
+      + `dirt: ${fmtNu(dirtNutrient)} root: ${fmtNu(rootNutrient)} branch: ${fmtNu(branchLike)} energy: ${fmtNu(branchEnergy)}\n`
       + `cells root: ${rootCells} branch: ${branchCells}`;
   }
 

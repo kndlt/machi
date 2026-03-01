@@ -16,7 +16,7 @@ uniform sampler2D u_light;
 uniform int u_view_mode;       // 0=visual, 1=matter, 2=segmentation, 3=foliage,
                                // 4=branch-R(tree-id), 5=branch-dir(decoded),
                                // 6=branch-err(decoded), 7=branch-A(alpha), 8=noise,
-                               // 9=directional-light(debug), 10=branch-inhibition(B), 11=resource(branchTex2.G)
+                               // 9=directional-light(debug), 10=branch-inhibition(B), 11=resource(branchTex2.G), 12=energy(branchTex2.B), 13=energy-gain-potential(from light)
 uniform int u_foliage_enabled; // 1 = show foliage layer, 0 = hide
 uniform int u_outline_enabled; // 1 = show foliage outline, 0 = hide
 
@@ -215,10 +215,10 @@ void main() {
     return;
   }
 
-  // ── Data visualization modes (4–11) ─────────────────────────────────────
+  // ── Data visualization modes (4–13) ─────────────────────────────────────
   // Show branch-map channels and diagnostics.
   // Background = composited world; branch pixels = channel value visualization.
-  if (u_view_mode >= 4 && u_view_mode <= 11) {
+  if (u_view_mode >= 4 && u_view_mode <= 13) {
     // Base = full visual composite (including foliage), then dim for contrast.
     vec3 sky = texture(u_sky, uv).rgb;
     vec3 base = sky;
@@ -298,6 +298,44 @@ void main() {
       float backgroundBlend = backgroundBaseBlend * dirtBlendScale;
       float blend = mix(backgroundBlend, 1.0, isBranchOrRoot);
       out_color = vec4(mix(base, heat, blend), 1.0);
+      return;
+    }
+
+    if (u_view_mode == 12) {
+      float energyByte = float(sampleBranchTex2Raw(uv).b);
+      float isBranchOrRoot = step(0.05, fol.a);
+      if (isBranchOrRoot < 0.5) {
+        out_color = vec4(base, 1.0);
+        return;
+      }
+
+      float signedEnergy = energyByte - 127.0;
+      float t = clamp((signedEnergy + 127.0) / 254.0, 0.0, 1.0);
+      vec3 heat = heatMap(t);
+      out_color = vec4(heat, 1.0);
+      return;
+    }
+
+    if (u_view_mode == 13) {
+      float isBranchOrRoot = step(0.05, fol.a);
+      if (isBranchOrRoot < 0.5) {
+        out_color = vec4(base, 1.0);
+        return;
+      }
+
+      vec4 packed = texture(u_light, uv);
+      float up = unpackNibble(packed, 0);
+      float upRight = unpackNibble(packed, 1);
+      float right = unpackNibble(packed, 2);
+      float downRight = unpackNibble(packed, 3);
+      float down = unpackNibble(packed, 4);
+      float downLeft = unpackNibble(packed, 5);
+      float left = unpackNibble(packed, 6);
+      float upLeft = unpackNibble(packed, 7);
+
+      float gainPotential = (up + upRight + right + downRight + down + downLeft + left + upLeft) / 8.0;
+      vec3 heat = heatMap(gainPotential);
+      out_color = vec4(heat * gainPotential, 1.0);
       return;
     }
 

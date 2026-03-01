@@ -106,7 +106,7 @@ export function createSimulationRenderer(
     sim.branchInhibitionEnabled = branchInhibitionEnabled;
     sim.mainTurnEnabled = mainTurnEnabled;
     const noise = createNoiseSim(gl, width, height, options?.seed);
-    const light = createLightTransportSim(gl, width, height);
+    const light = createLightTransportSim(gl, width, height, foliageTuningConfig);
 
     const initialBranchTex = placement.map.layers.foliage;
     const initialBranchTex2 = placement.map.layers.branch2;
@@ -138,7 +138,11 @@ export function createSimulationRenderer(
 
     for (let i = 0; i < LIGHT_PREWARM_ITERATIONS; i++) {
       for (const { placement, light } of mapSims) {
-        light.step(placement.map.layers.matter!);
+        light.step(
+          placement.map.layers.matter!,
+          placement.map.layers.foliage!,
+          placement.map.layers.branch2!,
+        );
       }
     }
 
@@ -161,7 +165,11 @@ export function createSimulationRenderer(
       // Use fractional time so the hash seed actually varies between steps
       // (fract(x + integer) ≡ fract(x), so integer stepCount produces a constant hash)
       noise.step(stepCount * 0.7123);
-      light.step(placement.map.layers.matter!);
+      light.step(
+        placement.map.layers.matter!,
+        placement.map.layers.foliage!,
+        placement.map.layers.branch2!,
+      );
       sim.step(placement.map.layers.matter!, noise.currentTexture(), light.currentTexture(), stepCount);
       placement.map.layers.foliage = sim.currentTexture();
       placement.map.layers.branch2 = sim.currentTexture2();

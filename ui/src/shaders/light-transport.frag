@@ -1,6 +1,7 @@
 #version 300 es
 precision highp float;
 precision highp int;
+precision highp usampler2D;
 
 // Directional light transport (MVP)
 //
@@ -28,6 +29,9 @@ in vec2 v_uv;
 
 uniform sampler2D u_matter;
 uniform sampler2D u_light_prev;
+uniform usampler2D u_foliage;
+uniform usampler2D u_branch_tex2;
+uniform float u_light_branch_absorb;
 uniform vec4 u_boundary_seed;
 
 out vec4 out_color;
@@ -53,6 +57,16 @@ int getNibble(ivec4 bytes, int dirIdx) {
 ivec4 sampleBytes(sampler2D tex, ivec2 p) {
   vec4 s = texelFetch(tex, p, 0);
   return ivec4(round(s * 255.0));
+}
+
+bool isAbsorbingBranchAt(ivec2 p, ivec2 sizePx) {
+  if (!inBounds(p, sizePx)) return false;
+  uvec4 foliage = texelFetch(u_foliage, p, 0);
+  bool occupied = foliage.a > 127u;
+  if (!occupied) return false;
+  uvec4 meta = texelFetch(u_branch_tex2, p, 0);
+  uint typeNibble = meta.r & 15u;
+  return typeNibble != 1u;
 }
 
 void main() {
@@ -106,6 +120,17 @@ void main() {
     else if (i == 5) n5 = value;
     else if (i == 6) n6 = value;
     else n7 = value;
+  }
+
+  if (isAbsorbingBranchAt(p, sizePx)) {
+    n0 = max(0, n0 - 1);
+    n1 = max(0, n1 - 1);
+    n2 = max(0, n2 - 1);
+    n3 = max(0, n3 - 1);
+    n4 = max(0, n4 - 1);
+    n5 = max(0, n5 - 1);
+    n6 = max(0, n6 - 1);
+    n7 = max(0, n7 - 1);
   }
 
   ivec4 packed = ivec4(

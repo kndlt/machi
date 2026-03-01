@@ -51,9 +51,14 @@ uniform float u_root_creation_cost;
 uniform float u_branch_creation_cost;
 uniform float u_resource_canopy_transfer_fraction;
 uniform float u_resource_anti_canopy_transfer_fraction;
+uniform float u_energy_canopy_transfer_fraction;
+uniform float u_energy_anti_canopy_transfer_fraction;
 uniform float u_dirt_diffusion_fraction;
 uniform float u_root_sap_threshold;
 uniform float u_root_sap_amount;
+uniform float u_energy_absorb_rate;
+uniform float u_root_energy_growth_cost;
+uniform float u_branch_energy_growth_cost;
 
 layout(location = 0) out uvec4 out_color_u;
 layout(location = 1) out uvec4 out_branch_tex2_u;
@@ -112,6 +117,7 @@ const int RESOURCE_MIN_BYTE_I = 0;
 const int RESOURCE_MAX_BYTE_I = 255;
 const int RESOURCE_SIGNED_MIN_I = -127;
 const int RESOURCE_SIGNED_MAX_I = 127;
+const int ENERGY_STORAGE_LIMIT_I = 15;
 // Version: Energy conversation version
 // const float RESOURCE_ZERO_BYTE = 127.0;
 // const float RESOURCE_MIN_BYTE = 0.0;
@@ -173,6 +179,14 @@ int branchCreationCostI() {
   return int(floor(max(u_branch_creation_cost, 0.0) + 0.5));
 }
 
+int rootEnergyGrowthCostI() {
+  return int(floor(max(u_root_energy_growth_cost, 0.0) + 0.5));
+}
+
+int branchEnergyGrowthCostI() {
+  return int(floor(max(u_branch_energy_growth_cost, 0.0) + 0.5));
+}
+
 int rootSapThresholdI() {
   return int(floor(max(u_root_sap_threshold, 0.0) + 0.5));
 }
@@ -202,6 +216,11 @@ int unpackResourceSigned(uvec4 branchTex2) {
   return clamp(signedResource, RESOURCE_SIGNED_MIN_I, RESOURCE_SIGNED_MAX_I);
 }
 
+int unpackEnergySigned(uvec4 branchTex2) {
+  int signedEnergy = int(branchTex2.b) - RESOURCE_ZERO_BYTE_I;
+  return clamp(signedEnergy, RESOURCE_SIGNED_MIN_I, RESOURCE_SIGNED_MAX_I);
+}
+
 int computeResourceTransfer(int sourceResource, int sinkResource, bool parentToChildTowardCanopy) {
   int diff = sourceResource - sinkResource;
   if (diff == 0) return 0;
@@ -225,6 +244,36 @@ int computeResourceTransfer(int sourceResource, int sinkResource, bool parentToC
     transferFraction = (diff > 0)
       ? u_resource_anti_canopy_transfer_fraction
       : u_resource_canopy_transfer_fraction;
+  }
+  int transferredMagnitude = int(floor(float(magnitude) * transferFraction));
+  return signDiff * transferredMagnitude;
+}
+
+int computeEnergyTransfer(int sourceEnergy, int sinkEnergy, bool parentToChildTowardCanopy) {
+  int diff = sourceEnergy - sinkEnergy;
+  if (diff == 0) return 0;
+
+  int signDiff = (diff < 0) ? -1 : 1;
+  int magnitude = abs(diff);
+  if (magnitude == 1) {
+    return signDiff;
+  } else if (magnitude == 2) {
+    return signDiff;
+  } else if (magnitude == 3) {
+    return signDiff;
+  } else if (magnitude == 4) {
+    return signDiff * 2;
+  }
+
+  float transferFraction;
+  if (parentToChildTowardCanopy) {
+    transferFraction = (diff > 0)
+      ? u_energy_canopy_transfer_fraction
+      : u_energy_anti_canopy_transfer_fraction;
+  } else {
+    transferFraction = (diff > 0)
+      ? u_energy_anti_canopy_transfer_fraction
+      : u_energy_canopy_transfer_fraction;
   }
   int transferredMagnitude = int(floor(float(magnitude) * transferFraction));
   return signDiff * transferredMagnitude;
@@ -258,6 +307,41 @@ uint packResourceSigned(int signedResource) {
   int clampedSigned = clamp(signedResource, RESOURCE_SIGNED_MIN_I, RESOURCE_SIGNED_MAX_I);
   int byteVal = clamp(clampedSigned + RESOURCE_ZERO_BYTE_I, RESOURCE_MIN_BYTE_I, RESOURCE_MAX_BYTE_I);
   return uint(byteVal);
+}
+
+uint packEnergySigned(int signedEnergy) {
+  int clampedSigned = clamp(signedEnergy, RESOURCE_SIGNED_MIN_I, RESOURCE_SIGNED_MAX_I);
+  int byteVal = clamp(clampedSigned + RESOURCE_ZERO_BYTE_I, RESOURCE_MIN_BYTE_I, RESOURCE_MAX_BYTE_I);
+  return uint(byteVal);
+}
+
+int unpackLightDirNibble(int packedByte, int nibbleIndex) {
+  if (nibbleIndex == 0) {
+    return packedByte & 15;
+  }
+  return (packedByte >> 4) & 15;
+}
+
+int getLightDirNibble(ivec4 bytes, int dirIndex) {
+  int channel = dirIndex >> 1;
+  int packedByte = bytes[channel];
+  return unpackLightDirNibble(packedByte, dirIndex & 1);
+}
+
+int computeBranchEnergyGain(vec2 uv) {
+  ivec2 sizeI = textureSize(u_matter, 0);
+  ivec2 center = ivec2(floor(uv * vec2(sizeI)));
+  center = clamp(center, ivec2(0), sizeI - ivec2(1));
+  vec4 lightSample = texelFetch(u_light, center, 0);
+  ivec4 bytes = ivec4(round(clamp(lightSample, 0.0, 1.0) * 255.0));
+
+  int gain = 0;
+  for (int i = 0; i < 8; i++) {
+    if (getLightDirNibble(bytes, i) > 0) {
+      gain += 1;
+    }
+  }
+  return gain;
 }
 
 vec2 edgeSafeUV(vec2 uv, vec2 texelSize) {
@@ -384,6 +468,17 @@ ParentHit makeParentFound(NodeState parentState, ivec2 parentStep) {
 uvec4 withCellTypeAndResource(uvec4 branchTex2Prev, uint cellType, int signedResource) {
   uvec4 outMeta = withCellType(branchTex2Prev, cellType);
   outMeta.g = packResourceSigned(signedResource);
+  return outMeta;
+}
+
+uvec4 withCellTypeResourceAndEnergy(
+  uvec4 branchTex2Prev,
+  uint cellType,
+  int signedResource,
+  int signedEnergy
+) {
+  uvec4 outMeta = withCellTypeAndResource(branchTex2Prev, cellType, signedResource);
+  outMeta.b = packEnergySigned(signedEnergy);
   return outMeta;
 }
 
@@ -569,6 +664,7 @@ void runSappingPhase(vec4 mHere, uvec4 branchPrev, uvec4 branchTex2Prev, uint he
   if (isOccupied(branchPrev)) {
     int hereResourcePrev = unpackResourceSigned(branchTex2Prev);
     int hereResource = hereResourcePrev;
+    int hereEnergy = unpackEnergySigned(branchTex2Prev);
 
     if (hereType == CELL_TYPE_ROOT) {
       int sapGain = 0;
@@ -584,10 +680,19 @@ void runSappingPhase(vec4 mHere, uvec4 branchPrev, uvec4 branchTex2Prev, uint he
         sapGain += computeRootSapAmount(dirtNutrient, hereResourcePrev);
       }
       hereResource += sapGain;
+    } else {
+      int convertedGain = (hereEnergy > ENERGY_STORAGE_LIMIT_I) ? 0 : computeBranchEnergyGain(v_uv);
+      hereEnergy = clamp(
+        hereEnergy + convertedGain,
+        RESOURCE_SIGNED_MIN_I,
+        RESOURCE_SIGNED_MAX_I
+      );
     }
 
     out_color_u = branchPrev;
-    out_branch_tex2_u = withCellTypeAndResource(branchTex2Prev, hereType, hereResource);
+    uvec4 outMeta = withCellTypeAndResource(branchTex2Prev, hereType, hereResource);
+    outMeta.b = packEnergySigned(hereEnergy);
+    out_branch_tex2_u = outMeta;
     return;
   }
 
@@ -623,16 +728,22 @@ void runInternalPhase(uvec4 branchPrev, uvec4 branchTex2Prev, uint hereType, vec
 
   int hereResourcePrev = unpackResourceSigned(branchTex2Prev);
   int hereResource = hereResourcePrev;
+  int hereEnergyPrev = unpackEnergySigned(branchTex2Prev);
+  int hereEnergy = hereEnergyPrev;
 
   int resourceIncoming = 0;
   int resourceOutgoing = 0;
+  int energyIncoming = 0;
+  int energyOutgoing = 0;
   NodeState hereNode = makeNodeState(v_uv, branchPrev, branchTex2Prev);
   ParentHit upstreamHit = getParent(hereNode);
   if (upstreamHit.found) {
     vec2 parentUV = uvFromLatticePos(upstreamHit.parent.pos);
     int parentResource = unpackResourceSigned(sampleBranchTex2(parentUV));
+    int parentEnergy = unpackEnergySigned(sampleBranchTex2(parentUV));
     bool parentToChildTowardCanopy = (hereType != CELL_TYPE_ROOT);
     resourceIncoming += computeResourceTransfer(parentResource, hereResourcePrev, parentToChildTowardCanopy);
+    energyIncoming += computeEnergyTransfer(parentEnergy, hereEnergyPrev, parentToChildTowardCanopy);
   }
 
   for (int i = 0; i < 8; i++) {
@@ -645,14 +756,17 @@ void runInternalPhase(uvec4 branchPrev, uvec4 branchTex2Prev, uint hereType, vec
     if (!isChildOf(childNode, hereNode)) continue;
 
     int childResourcePrev = unpackResourceSigned(childMeta);
+    int childEnergyPrev = unpackEnergySigned(childMeta);
     bool parentToChildTowardCanopy = (childNode.cellType != CELL_TYPE_ROOT);
     resourceOutgoing += computeResourceTransfer(hereResourcePrev, childResourcePrev, parentToChildTowardCanopy);
+    energyOutgoing += computeEnergyTransfer(hereEnergyPrev, childEnergyPrev, parentToChildTowardCanopy);
   }
   hereResource = hereResourcePrev + resourceIncoming - resourceOutgoing;
+  hereEnergy = hereEnergyPrev + energyIncoming - energyOutgoing;
 
   if (u_branch_inhibition_enabled == 0) {
     out_color_u = uvec4(branchPrev.r, branchPrev.g, 0u, branchPrev.a);
-    out_branch_tex2_u = withCellTypeAndResource(branchTex2Prev, hereType, hereResource);
+    out_branch_tex2_u = withCellTypeResourceAndEnergy(branchTex2Prev, hereType, hereResource, hereEnergy);
     return;
   }
 
@@ -675,7 +789,7 @@ void runInternalPhase(uvec4 branchPrev, uvec4 branchTex2Prev, uint hereType, vec
     max(0.0, inhibNeighborMax - inhibitionDecay)
   );
   out_color_u = uvec4(branchPrev.r, branchPrev.g, uint(packInhibition(inhibBase)), branchPrev.a);
-  out_branch_tex2_u = withCellTypeAndResource(branchTex2Prev, hereType, hereResource);
+  out_branch_tex2_u = withCellTypeResourceAndEnergy(branchTex2Prev, hereType, hereResource, hereEnergy);
 }
 
 void runDiffusionPhase(int phase, vec4 mHere, uvec4 branchPrev, uvec4 branchTex2Prev, vec2 texelSize) {
@@ -744,7 +858,9 @@ void runGrowthPhase(vec4 mHere, uvec4 branchPrev, uvec4 branchTex2Prev, vec2 tex
   float chosenInhib = 0.0;
   uint chosenType = CELL_TYPE_BRANCH;
   int chosenResource = 0;
+  int chosenEnergy = 0;
   int candidateNutrient = unpackResourceSigned(branchTex2Prev);
+  int candidateEnergy = unpackEnergySigned(branchTex2Prev);
   ivec2 candidatePos = latticePosFromUV(v_uv);
   bool candidateIsAir = isAir(mHere);
   bool candidateIsDirt = isDirt(mHere);
@@ -752,6 +868,7 @@ void runGrowthPhase(vec4 mHere, uvec4 branchPrev, uvec4 branchTex2Prev, vec2 tex
 
   uvec4 emptyMeta = branchTex2Prev;
   emptyMeta.g = packResourceSigned(candidateNutrient);
+  emptyMeta.b = packEnergySigned(candidateEnergy);
 
   if (!candidateIsAir && !candidateIsDirt) {
     out_color_u = branchPrev;
@@ -778,6 +895,7 @@ void runGrowthPhase(vec4 mHere, uvec4 branchPrev, uvec4 branchTex2Prev, vec2 tex
     uvec4 sourceMeta = sampleBranchTex2(sourceUV);
     NodeState sourceNode = makeNodeState(sourceUV, sourceBranch, sourceMeta);
     int sourceNutrient = unpackResourceSigned(sourceMeta);
+    int sourceEnergy = unpackEnergySigned(sourceMeta);
     uint sourceType = sourceCellType(sourceUV, sourceBranch);
     bool sourceIsRoot = sourceType == CELL_TYPE_ROOT;
     if (sourceIsRoot && !candidateIsDirt) continue;
@@ -855,6 +973,7 @@ void runGrowthPhase(vec4 mHere, uvec4 branchPrev, uvec4 branchTex2Prev, vec2 tex
           chosenInhib = (u_branch_inhibition_enabled == 1) ? INHIBITION_MAX : 0.0;
           chosenType = CELL_TYPE_ROOT;
           chosenResource = candidateNutrient - requiredCost;
+          chosenEnergy = candidateEnergy;
         }
       }
       continue;
@@ -938,6 +1057,7 @@ void runGrowthPhase(vec4 mHere, uvec4 branchPrev, uvec4 branchTex2Prev, vec2 tex
     float claimInhib = sourceInhib;
     uint claimType = sourceType;
     int claimResource = candidateNutrient;
+    int claimEnergy = candidateEnergy;
 
     NodeState claimCandidate = makeEmptyNodeState();
     claimCandidate.occupied = true;
@@ -978,6 +1098,7 @@ void runGrowthPhase(vec4 mHere, uvec4 branchPrev, uvec4 branchTex2Prev, vec2 tex
         continue;
       }
       claimResource = candidateNutrient - requiredCost;
+      claimEnergy = candidateEnergy;
       claimCount++;
       if (claimCount == 1) {
         chosenId = claimId;
@@ -986,6 +1107,7 @@ void runGrowthPhase(vec4 mHere, uvec4 branchPrev, uvec4 branchTex2Prev, vec2 tex
         chosenInhib = claimInhib;
         chosenType = claimType;
         chosenResource = claimResource;
+        chosenEnergy = claimEnergy;
       }
     }
   }
@@ -997,7 +1119,9 @@ void runGrowthPhase(vec4 mHere, uvec4 branchPrev, uvec4 branchTex2Prev, vec2 tex
   }
 
   out_color_u = makeBranch(chosenId, chosenDir, chosenErr, chosenInhib);
-  out_branch_tex2_u = withCellTypeAndResource(branchTex2Prev, chosenType, chosenResource);
+  uvec4 outMeta = withCellTypeAndResource(branchTex2Prev, chosenType, chosenResource);
+  outMeta.b = packEnergySigned(chosenEnergy);
+  out_branch_tex2_u = outMeta;
 }
 
 void main() {

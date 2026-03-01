@@ -73,6 +73,16 @@ function readSimulationStartDelayMs(): number | null {
   return Math.round(seconds * 1000);
 }
 
+function readNonNegativeFloatParam(name: string): number | null {
+  const raw = readLocationParam(name);
+  if (raw == null) return null;
+
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return null;
+
+  return Math.max(0, parsed);
+}
+
 function readSimulationSeed(): number | undefined {
   const raw = readLocationParam("seed");
   if (raw == null) return undefined;
@@ -162,6 +172,21 @@ async function initApp(canvas: HTMLCanvasElement, callbacks: InitAppCallbacks): 
     const perturbNoiseSpeed = readPerturbNoiseSpeed();
     simulation.noiseSpeed = perturbNoiseSpeed ?? 1;
 
+    const energyAbsorbRate = readNonNegativeFloatParam("egain");
+    if (energyAbsorbRate != null) {
+      simulation.foliageTuningConfig.energyAbsorbRate = energyAbsorbRate;
+    }
+
+    const rootEnergyGrowthCost = readNonNegativeFloatParam("ergroot");
+    if (rootEnergyGrowthCost != null) {
+      simulation.foliageTuningConfig.rootEnergyGrowthCost = rootEnergyGrowthCost;
+    }
+
+    const branchEnergyGrowthCost = readNonNegativeFloatParam("ergbranch");
+    if (branchEnergyGrowthCost != null) {
+      simulation.foliageTuningConfig.branchEnergyGrowthCost = branchEnergyGrowthCost;
+    }
+
     const viewMode = readViewMode();
     if (viewMode != null) {
       mapRenderer.viewMode = viewMode;
@@ -178,7 +203,7 @@ async function initApp(canvas: HTMLCanvasElement, callbacks: InitAppCallbacks): 
     renderer.simStartDelayMs = readSimulationStartDelayMs() ?? 0;
 
     console.log(
-      `Location controls applied: perturb=${simulation.noiseSpeed}, speed=${speedMultiplier}, simInterval=${renderer.simInterval}ms, delay=${renderer.simStartDelayMs}ms, seed=${simulationSeed ?? "random"}, view=${mapRenderer.viewMode}, branching=${simulation.branchingEnabled}, inhibition=${simulation.branchInhibitionEnabled}, swerving=${simulation.mainTurnEnabled}, nutrienthud=${nutrientHudEnabled}`,
+      `Location controls applied: perturb=${simulation.noiseSpeed}, speed=${speedMultiplier}, simInterval=${renderer.simInterval}ms, delay=${renderer.simStartDelayMs}ms, seed=${simulationSeed ?? "random"}, view=${mapRenderer.viewMode}, branching=${simulation.branchingEnabled}, inhibition=${simulation.branchInhibitionEnabled}, swerving=${simulation.mainTurnEnabled}, nutrienthud=${nutrientHudEnabled}, egain=${simulation.foliageTuningConfig.energyAbsorbRate}, ergroot=${simulation.foliageTuningConfig.rootEnergyGrowthCost}, ergbranch=${simulation.foliageTuningConfig.branchEnergyGrowthCost}`,
     );
   };
 
@@ -245,8 +270,20 @@ async function initApp(canvas: HTMLCanvasElement, callbacks: InitAppCallbacks): 
     return pixel[1] - 127;
   }
 
+  function sampleEnergyAtCell(
+    texture: WebGLTexture,
+    localX: number,
+    localY: number,
+    width: number,
+    height: number,
+  ): number | null {
+    const pixel = samplePixelAtCell(texture, localX, localY, width, height);
+    if (!pixel) return null;
+    return pixel[2] - 127;
+  }
+
   const refreshHoverResource = () => {
-    if (mapRenderer.viewMode !== 11) {
+    if (mapRenderer.viewMode !== 11 && mapRenderer.viewMode !== 12 && mapRenderer.viewMode !== 13) {
       resourceHoverEl.style.display = "none";
       return;
     }
@@ -291,8 +328,15 @@ async function initApp(canvas: HTMLCanvasElement, callbacks: InitAppCallbacks): 
       placement.map.width,
       placement.map.height,
     );
+    const signedEnergy = sampleEnergyAtCell(
+      placement.map.layers.branch2,
+      localX,
+      localY,
+      placement.map.width,
+      placement.map.height,
+    );
 
-    if (signedResource == null) {
+    if (signedResource == null || signedEnergy == null) {
       if (nutrientLine) {
         resourceHoverEl.textContent = nutrientLine;
         resourceHoverEl.style.display = "block";
@@ -302,7 +346,7 @@ async function initApp(canvas: HTMLCanvasElement, callbacks: InitAppCallbacks): 
       return;
     }
 
-    const cellLine = `cell ${localX},${localY} | resource ${signedResource >= 0 ? "+" : ""}${signedResource}`;
+    const cellLine = `cell ${localX},${localY} | resource ${signedResource >= 0 ? "+" : ""}${signedResource} | energy ${signedEnergy >= 0 ? "+" : ""}${signedEnergy}`;
 
     let directionLine: string | null = null;
     if (placement.map.layers.foliage) {

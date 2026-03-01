@@ -9,6 +9,7 @@
 
 import { createTexture } from "../utils/gl-utils";
 import type { World, MapLayers, WorldMap, MapPlacement } from "../world/types";
+import { DEFAULT_FOLIAGE_TUNING_CONFIG } from "../simulation/FoliageTuningConfig";
 
 // ── Configuration ────────────────────────────────────────────────────────────
 
@@ -93,6 +94,7 @@ function createSyntheticBranch2Texture(
 
   for (let i = 0; i < pixels.length; i += 4) {
     pixels[i + 1] = RESOURCE_ZERO_BYTE;
+    pixels[i + 2] = RESOURCE_ZERO_BYTE;
   }
 
   const dirtTopRow = Math.max(0, Math.min(height, height - dirtRows));
@@ -104,6 +106,14 @@ function createSyntheticBranch2Texture(
       pixels[idx + 1] = nutrientByte;
     }
   }
+
+  const cx = Math.floor(width * 0.5);
+  const seedY = Math.max(0, dirtTopRow - 1);
+  const seedIdx = (seedY * width + cx) * 4;
+  const seedNutrient = Math.max(0, Math.round(DEFAULT_FOLIAGE_TUNING_CONFIG.branchCreationCost));
+  const seedEnergy = Math.max(0, Math.round(DEFAULT_FOLIAGE_TUNING_CONFIG.branchEnergyGrowthCost));
+  pixels[seedIdx + 1] = Math.max(0, Math.min(255, RESOURCE_ZERO_BYTE + seedNutrient));
+  pixels[seedIdx + 2] = Math.max(0, Math.min(255, RESOURCE_ZERO_BYTE + seedEnergy));
 
   return createTexture(gl, width, height, pixels);
 }

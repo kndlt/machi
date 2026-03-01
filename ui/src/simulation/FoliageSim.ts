@@ -100,9 +100,14 @@ export function createFoliageSim(
   const u_branch_creation_cost = gl.getUniformLocation(program, "u_branch_creation_cost");
   const u_resource_canopy_transfer_fraction = gl.getUniformLocation(program, "u_resource_canopy_transfer_fraction");
   const u_resource_anti_canopy_transfer_fraction = gl.getUniformLocation(program, "u_resource_anti_canopy_transfer_fraction");
+  const u_energy_canopy_transfer_fraction = gl.getUniformLocation(program, "u_energy_canopy_transfer_fraction");
+  const u_energy_anti_canopy_transfer_fraction = gl.getUniformLocation(program, "u_energy_anti_canopy_transfer_fraction");
   const u_dirt_diffusion_fraction = gl.getUniformLocation(program, "u_dirt_diffusion_fraction");
   const u_root_sap_threshold = gl.getUniformLocation(program, "u_root_sap_threshold");
   const u_root_sap_amount = gl.getUniformLocation(program, "u_root_sap_amount");
+  const u_energy_absorb_rate = gl.getUniformLocation(program, "u_energy_absorb_rate");
+  const u_root_energy_growth_cost = gl.getUniformLocation(program, "u_root_energy_growth_cost");
+  const u_branch_energy_growth_cost = gl.getUniformLocation(program, "u_branch_energy_growth_cost");
 
   const emptyVAO = gl.createVertexArray()!;
 
@@ -186,9 +191,14 @@ export function createFoliageSim(
     gl.uniform1f(u_branch_creation_cost, config.tuning.branchCreationCost);
     gl.uniform1f(u_resource_canopy_transfer_fraction, config.tuning.resourceCanopyTransferFraction);
     gl.uniform1f(u_resource_anti_canopy_transfer_fraction, config.tuning.resourceAntiCanopyTransferFraction);
+    gl.uniform1f(u_energy_canopy_transfer_fraction, config.tuning.energyCanopyTransferFraction);
+    gl.uniform1f(u_energy_anti_canopy_transfer_fraction, config.tuning.energyAntiCanopyTransferFraction);
     gl.uniform1f(u_dirt_diffusion_fraction, config.tuning.dirtDiffusionFraction);
     gl.uniform1f(u_root_sap_threshold, config.tuning.rootSapThreshold);
     gl.uniform1f(u_root_sap_amount, config.tuning.rootSapAmount);
+    gl.uniform1f(u_energy_absorb_rate, config.tuning.energyAbsorbRate);
+    gl.uniform1f(u_root_energy_growth_cost, config.tuning.rootEnergyGrowthCost);
+    gl.uniform1f(u_branch_energy_growth_cost, config.tuning.branchEnergyGrowthCost);
   }
 
   function setInitialState(branchTex1: Uint8Array, branchTex2?: Uint8Array): void {
@@ -209,6 +219,7 @@ export function createFoliageSim(
     if (!branchTex2) {
       for (let i = 0; i < initialMeta.length; i += 4) {
         initialMeta[i + 1] = 127;
+        initialMeta[i + 2] = 127;
       }
     }
     gl.bindTexture(gl.TEXTURE_2D, tex2A);

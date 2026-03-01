@@ -111,6 +111,8 @@ export function createWebGLRenderer(canvas: HTMLCanvasElement): WebGLRenderer {
     "dir-light",
     "branch-inhib",
     "resource",
+    "energy",
+    "energy-gain",
   ];
 
   function updateFps(frameMs: number, viewMode: number, foliageEnabled: boolean) {
@@ -159,7 +161,15 @@ export function createWebGLRenderer(canvas: HTMLCanvasElement): WebGLRenderer {
       gl.clear(gl.COLOR_BUFFER_BIT);
 
       mapRenderer.render(camera);
-      resourceLegendEl.style.display = mapRenderer.viewMode === 11 ? "flex" : "none";
+      const isHeatView = mapRenderer.viewMode === 11 || mapRenderer.viewMode === 12 || mapRenderer.viewMode === 13;
+      resourceLegendEl.style.display = isHeatView ? "flex" : "none";
+      if (mapRenderer.viewMode === 12) {
+        resourceLegendTitleEl.textContent = "energy heat";
+      } else if (mapRenderer.viewMode === 13) {
+        resourceLegendTitleEl.textContent = "energy gain";
+      } else {
+        resourceLegendTitleEl.textContent = "resource heat";
+      }
 
       const t1 = performance.now();
       updateFps(t1 - t0, mapRenderer.viewMode, mapRenderer.foliageEnabled);

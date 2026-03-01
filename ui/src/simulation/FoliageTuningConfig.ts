@@ -20,9 +20,15 @@ export interface FoliageTuningConfig {
   branchCreationCost: number;
   resourceCanopyTransferFraction: number;
   resourceAntiCanopyTransferFraction: number;
+  energyCanopyTransferFraction: number;
+  energyAntiCanopyTransferFraction: number;
   dirtDiffusionFraction: number;
   rootSapThreshold: number;
   rootSapAmount: number;
+  energyAbsorbRate: number;
+  rootEnergyGrowthCost: number;
+  branchEnergyGrowthCost: number;
+  lightBranchAbsorb: number;
 }
 
 export const DEFAULT_FOLIAGE_TUNING_CONFIG: FoliageTuningConfig = {
@@ -45,7 +51,13 @@ export const DEFAULT_FOLIAGE_TUNING_CONFIG: FoliageTuningConfig = {
   branchCreationCost: 2.0,
   resourceCanopyTransferFraction: 0.75,
   resourceAntiCanopyTransferFraction: 0.1,
+  energyCanopyTransferFraction: 0.1,
+  energyAntiCanopyTransferFraction: 0.75,
   dirtDiffusionFraction: 0.25,
   rootSapThreshold: 4.0,
   rootSapAmount: 1.0,
+  energyAbsorbRate: 0.03,
+  rootEnergyGrowthCost: 0.0,
+  branchEnergyGrowthCost: 1.0,
+  lightBranchAbsorb: 1.0,
 };
